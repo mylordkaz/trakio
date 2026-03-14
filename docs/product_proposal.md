@@ -1,0 +1,107 @@
+# Motorsport Lap Timer App – Product Proposal
+
+## Overview
+A mobile application that records GPS telemetry during motorsport track sessions, automatically computes lap and sector times, and visualizes driving lines over a satellite map. The product is designed primarily for track-day drivers and amateur racers. The application must function reliably without internet connectivity, as many race tracks have limited network coverage.
+
+## Goals
+- Provide accurate lap timing using smartphone GPS.
+- Display driving lines on a satellite map for session review.
+- Store sessions locally for offline access.
+- Allow drivers to analyze laps and sector performance.
+
+## Target Users
+- Track-day drivers
+- Amateur racers
+- Driver coaches
+- Motorsport enthusiasts
+
+## Core Features
+1. **Track Database**
+   - Predefined circuits with start/finish line and sector markers.
+   - Track metadata such as name and location.
+
+2. **GPS Telemetry Recording**
+   - Continuous recording of location, timestamp, speed, and accuracy.
+   - Sampling rate optimized for driving analysis.
+
+3. **Lap Timing Engine**
+   - Automatic lap detection via start/finish line crossing.
+   - Sector split detection.
+   - Protection against false lap triggers.
+
+4. **Satellite Map Visualization**
+   - Display circuit sessions over satellite imagery.
+   - Draw lap path overlays.
+   - Color lap segments based on speed differences.
+
+5. **Session Analysis**
+   - View lap times and sector splits.
+   - Replay laps on the map.
+   - Identify fast and slow sections of the track.
+
+6. **Local Session Storage**
+   - Sessions saved on the device.
+   - Users can reopen and review previous sessions.
+
+7. **Data Export**
+   - Export telemetry data for external analysis tools.
+
+## Technical Architecture
+
+Mobile Application (React Native)
+- Map Layer (satellite tiles)
+- GPS Telemetry Recorder
+- Lap Timing Engine
+- Local SQLite Database
+- Session Analysis UI
+
+## Technology Stack
+- **Framework:** React Native with TypeScript
+- **Map:** Mapbox or react-native-maps, not decided yet.
+- **Database:** SQLite
+- **Location Services:** Native iOS and Android location APIs
+- **State Management:** Zustand or Redux Toolkit
+
+## Data Model
+
+### Track
+- id
+- name
+- location
+- start_finish_line
+- sector_lines[]
+
+### Session
+- id
+- track_id
+- date
+- laps[]
+
+
+### Lap
+- id
+- session_id
+- lap_time
+- sector_times[]
+- gps_points[]
+
+### GPS Point
+- latitude
+- longitude
+- timestamp
+- speed
+- accuracy
+
+## Key Challenges
+- Reliable lap detection with noisy GPS signals
+- Accurate timing at high speeds
+- Efficient storage of large telemetry datasets
+- Ensuring smooth map rendering with long lap traces
+
+## Future Expansion
+- Lap comparison tools
+- Predictive lap timing
+- External GPS receiver support
+- Video overlays
+- Cloud synchronization
+- Community track sharing
