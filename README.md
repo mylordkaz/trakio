@@ -1,50 +1,94 @@
-# Welcome to your Expo app 👋
+# trakio - Motorsport Lap Timer
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A mobile app that records GPS telemetry during motorsport track sessions, automatically detects laps and sector splits, and displays driving lines on a satellite map. Built for track-day drivers, amateur racers, and driver coaches.
 
-## Get started
+Designed to work fully offline — most race tracks have limited network coverage.
 
-1. Install dependencies
+## Features
 
-   ```bash
-   npm install
-   ```
+- **Predefined Track Database** — circuits with start/finish lines and sector markers stored locally
+- **GPS Telemetry Recording** — continuous capture of location, speed, timestamp, and accuracy at 1-5 Hz
+- **Automatic Lap Detection** — detects start/finish line crossings with debounce and minimum lap time safeguards
+- **Sector Timing** — split times calculated as sector lines are crossed
+- **Live Session Display** — current lap timer, last lap, best lap, sector splits, and lap count in a large, glanceable UI
+- **Satellite Map Replay** — view lap paths over satellite imagery with optional speed-based coloring
+- **Session History** — browse past sessions by track, date, best lap, and lap count
+- **Local Storage** — all data stored on-device via SQLite
 
-2. Start the app
+## Tech Stack
 
-   ```bash
-   npx expo start
-   ```
+| Layer              | Technology                          |
+| ------------------ | ----------------------------------- |
+| Framework          | React Native (Expo SDK 54)          |
+| Language           | TypeScript                          |
+| Routing            | Expo Router (file-based)            |
+| Database           | SQLite                              |
+| Maps               | TBD (Mapbox or react-native-maps)   |
+| State Management   | TBD (Zustand or Redux Toolkit)      |
+| Location Services  | Native iOS / Android location APIs  |
 
-In the output, you'll find options to open the app in a
+## Data Model
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+Track       -> has many Sessions
+Session     -> has many Laps
+Lap         -> has many GPS Points, Sector Times
+GPS Point   -> latitude, longitude, timestamp, speed, accuracy
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Getting Started
 
-## Learn more
+### Prerequisites
 
-To learn more about developing your project with Expo, look at the following resources:
+- Node.js
+- Expo CLI (`npm install -g expo-cli`)
+- iOS Simulator, Android Emulator, or [Expo Go](https://expo.dev/go)
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+### Install & Run
 
-## Join the community
+```bash
+npm install
+npx expo start
+```
 
-Join our community of developers creating universal apps.
+Then open the app on your preferred platform from the Expo dev tools.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Project Structure
+
+```
+app/            # Screens and routing (file-based via Expo Router)
+components/     # Reusable UI components
+constants/      # App-wide constants
+hooks/          # Custom React hooks
+assets/         # Images, fonts, and static files
+docs/           # Product proposal, MVP spec, and design mockups
+scripts/        # Utility scripts
+```
+
+## MVP Scope
+
+The MVP delivers a working app that can:
+
+1. Select a predefined track
+2. Start and record a session with GPS telemetry
+3. Automatically detect laps via start/finish line crossing
+4. Calculate sector split times
+5. Save all session data locally
+6. Replay laps on a satellite map
+
+### Excluded from MVP
+
+Delta timing comparisons, optimal lap calculation, external GPS receivers, video overlays, cloud sync, and social sharing.
+
+## Future Roadmap
+
+- Lap comparison tools
+- Predictive lap timing
+- External GPS receiver support
+- Video overlays
+- Cloud synchronization
+- Community track sharing
+
+## License
+
+Private project.
