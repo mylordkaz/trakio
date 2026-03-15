@@ -16,12 +16,6 @@ const SECTORS = [
   { label: 'S3', value: '34.511', status: 'Best' },
 ];
 
-const METRICS = [
-  { label: 'Top Speed', value: '214 km/h' },
-  { label: 'Duration', value: '18:42' },
-  { label: 'Total Laps', value: '12' },
-];
-
 export default function SessionDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -53,21 +47,21 @@ export default function SessionDetailScreen() {
           {/* Title + status */}
           <View className="flex-row items-start justify-between mb-5">
             <View className="flex-1 mr-3">
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">Recorded Session</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.recordedSession')}</Text>
               <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">Track Day · Session 2</Text>
               <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Mar 10, 2026 · 10:24 AM</Text>
             </View>
-            <StatusPill text="Best Run" color="violet" />
+            <StatusPill text={i18n.t('sessions.bestRun')} color="violet" />
           </View>
 
           {/* Circuit view card */}
           <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
             <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">Circuit View</Text>
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">Record Line</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.circuitView')}</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.recordLine')}</Text>
             </View>
             <View className="rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-200 dark:bg-zinc-950/80 p-4 mb-3 h-40 items-center justify-center">
-              <Text className="text-zinc-400 dark:text-zinc-500 text-sm">Track Map with Racing Line</Text>
+              <Text className="text-zinc-400 dark:text-zinc-500 text-sm">{i18n.t('circuits.trackMapRacingLine')}</Text>
             </View>
             <View className="flex-row gap-2">
               {SECTORS.map((s) => (
@@ -78,8 +72,8 @@ export default function SessionDetailScreen() {
               ))}
             </View>
             <View className="flex-row items-center justify-between mt-3">
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">Green = start / finish</Text>
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">Purple = fastest line</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.greenStartFinish')}</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.purpleFastestLine')}</Text>
             </View>
           </View>
         </LinearGradient>
@@ -87,7 +81,11 @@ export default function SessionDetailScreen() {
         <View className="px-5 py-4 gap-4">
           {/* Metrics row */}
           <View className="flex-row gap-3">
-            {METRICS.map((m) => (
+            {[
+              { label: i18n.t('session.topSpeed'), value: '214 km/h' },
+              { label: i18n.t('session.duration'), value: '18:42' },
+              { label: i18n.t('session.totalLaps'), value: '12' },
+            ].map((m) => (
               <View key={m.label} className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{m.label}</Text>
                 <Text className="text-lg font-semibold text-zinc-900 dark:text-white">{m.value}</Text>
@@ -99,10 +97,10 @@ export default function SessionDetailScreen() {
           <Card>
             <View className="flex-row items-center justify-between mb-3">
               <View>
-                <Text className="text-sm font-medium text-zinc-900 dark:text-white">Session Insights</Text>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">Quick performance summary</Text>
+                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('sessions.sessionInsights')}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.performanceSummary')}</Text>
               </View>
-              <Text className="text-sm text-violet-600 dark:text-violet-300">+1.2s vs last</Text>
+              <Text className="text-sm text-violet-600 dark:text-violet-300">{i18n.t('sessions.deltaVsLast', { delta: '+1.2s' })}</Text>
             </View>
             <View className="gap-3">
               <ProgressBar label={i18n.t('postSession.consistency')} value="91%" />
@@ -115,7 +113,7 @@ export default function SessionDetailScreen() {
           <Card>
             <View className="flex-row items-center justify-between mb-3">
               <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('postSession.lapBreakdown')}</Text>
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">Compare</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.compare')}</Text>
             </View>
             <View className="gap-2">
               {LAP_DATA.map((item) => (
@@ -128,10 +126,10 @@ export default function SessionDetailScreen() {
         {/* Bottom buttons */}
         <View className="px-5 pb-5 pt-1 flex-row gap-3">
           <Pressable className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center">
-            <Text className="text-sm font-medium text-zinc-900 dark:text-white">Export Data</Text>
+            <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('sessions.exportData')}</Text>
           </Pressable>
           <Pressable className="flex-1 rounded-2xl bg-violet-500 py-3.5 items-center">
-            <Text className="text-sm font-semibold text-white">View Replay</Text>
+            <Text className="text-sm font-semibold text-white">{i18n.t('sessions.viewReplay')}</Text>
           </Pressable>
         </View>
       </ScrollView>

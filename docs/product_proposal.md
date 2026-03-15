@@ -17,7 +17,7 @@ A mobile application that records GPS telemetry during motorsport track sessions
 
 ## Core Features
 1. **Track Database**
-   - Predefined circuits with start/finish line and sector markers.
+   - Predefined circuits with ordered timing lines.
    - Track metadata such as name and location.
 
 2. **GPS Telemetry Recording**
@@ -66,10 +66,23 @@ Mobile Application (React Native)
 
 ### Track
 - id
+- slug
 - name
+- country
 - location
-- start_finish_line
-- sector_lines[]
+- center_lat
+- center_lng
+
+### Timing Line
+- id
+- track_id
+- name
+- type
+- seq
+- a_lat
+- a_lng
+- b_lat
+- b_lng
 
 ### Session
 - id

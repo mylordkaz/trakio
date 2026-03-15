@@ -50,7 +50,7 @@ export default function PreSessionScreen() {
           {/* Title + READY badge */}
           <View className="flex-row items-start justify-between mb-5">
             <View className="flex-1 mr-3">
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">Ready to record</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.readyToRecord')}</Text>
               <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">Track Day · Session 3</Text>
             </View>
             <View className="flex-row items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1.5 border border-emerald-400/20">
@@ -62,10 +62,10 @@ export default function PreSessionScreen() {
           {/* Track Selection */}
           <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
             <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">Selected Circuit</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.selectedCircuit')}</Text>
               <Pressable onPress={() => setShowCircuitPicker(!showCircuitPicker)}>
                 <Text className="text-sm font-medium text-emerald-400">
-                  {showCircuitPicker ? i18n.t('common.done') : 'Change'}
+                  {showCircuitPicker ? i18n.t('common.done') : i18n.t('common.change')}
                 </Text>
               </Pressable>
             </View>
@@ -76,14 +76,14 @@ export default function PreSessionScreen() {
                   <View className="flex-1">
                     <Text className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-white">{selectedCircuit.name}</Text>
                     <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-                      {selectedCircuit.country} · {selectedCircuit.length} · {selectedCircuit.corners} corners
+                      {selectedCircuit.country} · {selectedCircuit.length} · {i18n.t('preSession.cornersCount', { count: selectedCircuit.corners })}
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color={isDark ? '#71717a' : '#71717a'} />
+                  <Ionicons name="chevron-forward" size={16} color="#71717a" />
                 </View>
                 <View className="flex-row gap-2 mt-3">
                   <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-2">
-                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-0.5">Last Visit</Text>
+                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-0.5">{i18n.t('preSession.lastVisit')}</Text>
                     <Text className="text-sm font-medium text-zinc-900 dark:text-white">Mar 10, 2026</Text>
                   </View>
                   <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-2">
@@ -106,7 +106,7 @@ export default function PreSessionScreen() {
                   >
                     <View>
                       <Text className="text-sm font-medium text-zinc-900 dark:text-white">{c.name}</Text>
-                      <Text className="text-xs text-zinc-400 dark:text-zinc-500">{c.length} · {c.corners} corners</Text>
+                      <Text className="text-xs text-zinc-400 dark:text-zinc-500">{c.length} · {i18n.t('preSession.cornersCount', { count: c.corners })}</Text>
                     </View>
                     {selectedCircuit.name === c.name && (
                       <Ionicons name="checkmark" size={16} color="#34d399" />
@@ -159,7 +159,7 @@ export default function PreSessionScreen() {
             <View className="flex-row items-center justify-between mb-3">
               <View>
                 <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('preSession.sessionChecklist')}</Text>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">All systems verified before recording</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.checklistSubtitle')}</Text>
               </View>
               <Text className="text-sm text-emerald-400">{i18n.t('preSession.allReady', { count: 4, total: 4 })}</Text>
             </View>
@@ -204,7 +204,7 @@ export default function PreSessionScreen() {
             className="w-full rounded-2xl bg-emerald-500 py-4 items-center"
           >
             <Text className="text-sm font-semibold text-black">
-              Start Session at {selectedCircuit.name}
+              {i18n.t('session.startAt', { track: selectedCircuit.name })}
             </Text>
           </Pressable>
         </View>

@@ -13,6 +13,9 @@ The app ships with a small number of predefined circuits.
 
 Each track includes:
 - name
+- timing lines
+
+Timing lines are stored as line segments with two endpoints:
 - start/finish line
 - sector lines
 
@@ -73,8 +76,10 @@ All session data is stored locally on the device.
 
 Database tables:
 - tracks
+- timing_lines
 - sessions
 - laps
+- lap_sectors
 - gps_points
 
 Users can reopen previous sessions.

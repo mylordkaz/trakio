@@ -31,7 +31,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="record"
         options={{
-          tabBarLabel: 'Record',
+          tabBarLabel: i18n.t('tabs.record'),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="radio-button-on" size={size} color={color} />
           ),
@@ -40,7 +40,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="sessions"
         options={{
-          tabBarLabel: 'Sessions',
+          tabBarLabel: i18n.t('sessions.header'),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="timer-outline" size={size} color={color} />
           ),

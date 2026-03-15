@@ -10,7 +10,8 @@ import { SESSIONS } from '@/constants/data';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 
-const FILTERS = ['All', 'Recent', 'Best', 'Saved'];
+const FILTER_KEYS = ['sessions.all', 'sessions.recent', 'sessions.best', 'sessions.saved'] as const;
+const FILTER_VALUES = ['All', 'Recent', 'Best', 'Saved'];
 
 export default function SessionListScreen() {
   const insets = useSafeAreaInsets();
@@ -28,7 +29,7 @@ export default function SessionListScreen() {
       session.layout.toLowerCase().includes(search.toLowerCase());
     const matchesFilter =
       activeFilter === 0 ||
-      session.status === FILTERS[activeFilter];
+      session.status === FILTER_VALUES[activeFilter];
     return matchesSearch && matchesFilter;
   });
 
@@ -49,7 +50,7 @@ export default function SessionListScreen() {
         >
           {/* Header */}
           <View className="flex-row items-center justify-between mb-4">
-            <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.title').split(' ')[0]}</Text>
+            <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.header')}</Text>
             <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.runs', { count: 57 })}</Text>
           </View>
 
@@ -76,9 +77,9 @@ export default function SessionListScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ gap: 8, paddingTop: 12 }}
             >
-              {FILTERS.map((filter, index) => (
+              {FILTER_KEYS.map((key, index) => (
                 <Pressable
-                  key={filter}
+                  key={key}
                   onPress={() => setActiveFilter(index)}
                   className={`rounded-full px-3 py-1.5 border ${
                     activeFilter === index
@@ -91,7 +92,7 @@ export default function SessionListScreen() {
                       activeFilter === index ? 'text-white' : 'text-zinc-600 dark:text-zinc-300'
                     }`}
                   >
-                    {filter}
+                    {i18n.t(key)}
                   </Text>
                 </Pressable>
               ))}
@@ -141,7 +142,7 @@ export default function SessionListScreen() {
         {/* Export button */}
         <View className="px-5 pb-5 pt-1">
           <Pressable className="w-full rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center">
-            <Text className="text-sm font-medium text-zinc-900 dark:text-white">Export Sessions</Text>
+            <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('sessions.exportSessions')}</Text>
           </Pressable>
         </View>
       </ScrollView>

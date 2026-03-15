@@ -51,7 +51,7 @@ export default function PostSessionScreen() {
           <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
             <View className="flex-row items-center justify-between mb-2">
               <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('session.bestLap')}</Text>
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">Lap 3</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('session.lapCount', { count: 3 })}</Text>
             </View>
             <Text
               className="text-zinc-900 dark:text-white mb-3"
@@ -90,7 +90,7 @@ export default function PostSessionScreen() {
             <View className="flex-row items-center justify-between mb-3">
               <View>
                 <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('postSession.sessionOverview')}</Text>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">Performance summary from this run</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('postSession.performanceSummary')}</Text>
               </View>
               <Text className="text-sm text-emerald-400">{i18n.t('postSession.personalBest')}</Text>
             </View>

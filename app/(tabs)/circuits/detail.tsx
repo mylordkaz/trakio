@@ -1,37 +1,156 @@
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { View, Text, ScrollView, Pressable, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
+import { Ionicons } from '@expo/vector-icons';
 import i18n from '@/i18n';
 import StatusPill from '@/components/StatusPill';
 import Card from '@/components/Card';
-import { CIRCUITS } from '@/constants/data';
+import type { TrackDetail, TrackNoteRow } from '@/db';
+import { getTrackById, addTrackNote, updateTrackNote, deleteTrackNote } from '@/db';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 
-const STATS = [
-  { label: 'Length', value: '4.563 km' },
-  { label: 'Corners', value: '16' },
-  { label: 'Direction', value: 'Clockwise' },
-];
+function formatTrackLength(lengthMeters: number | null) {
+  if (lengthMeters === null) {
+    return i18n.t('common.tbd');
+  }
 
-const SECTORS = [
-  { label: 'Sector 1', value: '1.42 km' },
-  { label: 'Sector 2', value: '1.68 km' },
-  { label: 'Sector 3', value: '1.46 km' },
-];
+  return `${(lengthMeters / 1000).toFixed(3)} km`;
+}
 
-const NOTES = [
-  'Long main straight with heavy braking into Turn 1',
-  'Technical middle sector with quick direction changes',
-  'Final sector rewards clean exits and throttle control',
-];
+function formatDirection(direction: TrackDetail['direction']) {
+  if (!direction) {
+    return i18n.t('common.tbd');
+  }
+
+  return direction === 'clockwise'
+    ? i18n.t('circuits.clockwise')
+    : i18n.t('circuits.counterclockwise');
+}
 
 export default function CircuitDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { name } = useLocalSearchParams<{ name: string }>();
-  const circuit = CIRCUITS.find((c) => c.name === name) ?? CIRCUITS[0];
+  const db = useSQLiteContext();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const [circuit, setCircuit] = useState<TrackDetail | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [newNote, setNewNote] = useState('');
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingNoteText, setEditingNoteText] = useState('');
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('sky');
+
+  const loadCircuit = useCallback(async () => {
+    if (!id) {
+      setLoadError(i18n.t('circuits.trackNotFound'));
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const nextCircuit = await getTrackById(db, id);
+
+      if (!nextCircuit) {
+        setLoadError(i18n.t('circuits.trackNotFound'));
+        setCircuit(null);
+        return;
+      }
+
+      setCircuit(nextCircuit);
+      setLoadError(null);
+    } catch {
+      setLoadError(i18n.t('circuits.unableToLoadTrack'));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [db, id]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void loadCircuit().then(() => {
+      if (!isMounted) return;
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [loadCircuit]);
+
+  async function handleAddNote() {
+    const text = newNote.trim();
+    if (!text || !circuit) return;
+
+    const note = await addTrackNote(db, circuit.id, text);
+    setCircuit({ ...circuit, notes: [...circuit.notes, note] });
+    setNewNote('');
+  }
+
+  async function handleUpdateNote(noteId: string) {
+    const text = editingNoteText.trim();
+    if (!text || !circuit) return;
+
+    await updateTrackNote(db, noteId, text);
+    setCircuit({
+      ...circuit,
+      notes: circuit.notes.map((n) =>
+        n.id === noteId ? { ...n, note: text } : n
+      ),
+    });
+    setEditingNoteId(null);
+    setEditingNoteText('');
+  }
+
+  async function handleDeleteNote(noteId: string) {
+    if (!circuit) return;
+
+    await deleteTrackNote(db, noteId);
+    setCircuit({
+      ...circuit,
+      notes: circuit.notes.filter((n) => n.id !== noteId),
+    });
+  }
+
+  function startEditingNote(note: TrackNoteRow) {
+    setEditingNoteId(note.id);
+    setEditingNoteText(note.note);
+  }
+
+  function cancelEditingNote() {
+    setEditingNoteId(null);
+    setEditingNoteText('');
+  }
+
+  const personalBest = circuit?.personalBest ?? null;
+  const sectorCount = circuit?.sectorCount ?? 0;
+
+  function formatLapTime(ms: number): string {
+    const totalSeconds = ms / 1000;
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds - minutes * 60;
+    return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
+  }
+
+  function formatSectorTime(ms: number): string {
+    return (ms / 1000).toFixed(3);
+  }
+
+  function formatSetOnDate(iso: string): string {
+    const d = new Date(iso);
+    return d.toLocaleDateString(i18n.locale === 'ja' ? 'ja-JP' : 'en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  }
 
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
@@ -53,39 +172,61 @@ export default function CircuitDetailScreen() {
             <Pressable onPress={() => router.back()}>
               <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('common.back')}</Text>
             </Pressable>
-            <Text className="text-xs text-zinc-500 dark:text-zinc-400">Track Details</Text>
+            <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.trackDetails')}</Text>
           </View>
 
           {/* Title + status */}
           <View className="flex-row items-start justify-between mb-5">
             <View className="flex-1 mr-3">
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">Circuit Profile</Text>
-              <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">{circuit.name}</Text>
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{circuit.country}</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.circuitProfile')}</Text>
+              <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
+                {circuit?.name ?? i18n.t('common.track')}
+              </Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                {circuit ? [circuit.location, circuit.country].filter(Boolean).join(', ') : isLoading ? i18n.t('common.loading') : i18n.t('common.track')}
+              </Text>
             </View>
-            <StatusPill text="FIA Grade 1" color="sky" />
+            <StatusPill text={circuit?.layoutName ?? i18n.t('common.track')} color="sky" />
           </View>
 
           {/* Track layout card */}
           <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
             <View className="flex-row items-center justify-between mb-3">
               <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.trackLayout')}</Text>
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.fullCourse')}</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{circuit?.layoutName ?? i18n.t('circuits.fullCourse')}</Text>
             </View>
             <View className="rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-200 dark:bg-zinc-950/80 p-5 mb-3 h-36 items-center justify-center">
-              <Text className="text-zinc-400 dark:text-zinc-500 text-sm">Track Map</Text>
+              <Text className="text-zinc-400 dark:text-zinc-500 text-sm">{i18n.t('circuits.trackMap')}</Text>
             </View>
             <View className="flex-row items-center justify-between">
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">Start / Finish</Text>
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">Pit Entry at final corner</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.startFinish')}</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+                {circuit ? i18n.t('circuits.sectorsConfigured', { count: circuit.sectorCount }) : i18n.t('circuits.loadingTimingLines')}
+              </Text>
             </View>
           </View>
         </LinearGradient>
 
         <View className="px-5 py-4 gap-4">
+          {loadError ? (
+            <Card>
+              <Text className="text-sm text-red-700 dark:text-red-200">{loadError}</Text>
+            </Card>
+          ) : null}
+
+          {isLoading ? (
+            <Card>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.loadingTrack')}</Text>
+            </Card>
+          ) : null}
+
           {/* Stats row */}
           <View className="flex-row gap-3">
-            {STATS.map((s) => (
+            {[
+              { label: i18n.t('circuits.length'), value: formatTrackLength(circuit?.lengthMeters ?? null) },
+              { label: i18n.t('circuits.corners'), value: `${circuit?.corners ?? i18n.t('common.tbd')}` },
+              { label: i18n.t('circuits.direction'), value: formatDirection(circuit?.direction ?? null) },
+            ].map((s) => (
               <View key={s.label} className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{s.label}</Text>
                 <Text className="text-sm font-semibold text-zinc-900 dark:text-white">{s.value}</Text>
@@ -93,45 +234,166 @@ export default function CircuitDetailScreen() {
             ))}
           </View>
 
-          {/* Sector Breakdown */}
+          {/* Personal Best */}
           <Card>
             <View className="flex-row items-center justify-between mb-3">
               <View>
-                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('circuits.sectorBreakdown')}</Text>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">Distance split across the lap</Text>
+                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('circuits.personalBest')}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.personalBestSubtitle')}</Text>
               </View>
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">Compare</Text>
+              <Pressable hitSlop={8}>
+                <Text className="text-sm font-medium text-sky-500">{i18n.t('circuits.history')}</Text>
+              </Pressable>
             </View>
-            <View className="gap-2">
-              {SECTORS.map((s, i) => (
-                <View
-                  key={s.label}
-                  className={`flex-row items-center justify-between rounded-2xl px-3 py-2.5 border ${
-                    i === 0 ? 'bg-sky-500/10 border-sky-400/20' : 'bg-zinc-50 dark:bg-black/20 border-zinc-100 dark:border-white/5'
-                  }`}
-                >
-                  <Text className="text-sm text-zinc-900 dark:text-white">{s.label}</Text>
-                  <Text className="text-sm font-medium text-zinc-900 dark:text-white">{s.value}</Text>
+
+            {/* Best Lap time card */}
+            <View className="rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 p-4 mb-3">
+              <View className="flex-row items-start justify-between">
+                <View className="flex-1">
+                  <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('session.bestLap')}</Text>
+                  <Text
+                    className={personalBest ? 'text-zinc-900 dark:text-white' : 'text-zinc-400 dark:text-zinc-600'}
+                    style={{ fontSize: 40, lineHeight: 44, fontWeight: '600', fontVariant: ['tabular-nums'] }}
+                  >
+                    {personalBest ? formatLapTime(personalBest.lapTimeMs) : '--:--.---'}
+                  </Text>
                 </View>
-              ))}
+                {personalBest ? (
+                  <View className="items-end pt-1">
+                    <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.setOn')}</Text>
+                    <Text className="text-sm font-medium text-zinc-900 dark:text-white">{formatSetOnDate(personalBest.setOn)}</Text>
+                  </View>
+                ) : null}
+              </View>
             </View>
+
+            {/* Sector tiles */}
+            {sectorCount > 0 ? (
+              <>
+                <View className="flex-row gap-2 mb-2">
+                  {Array.from({ length: sectorCount }, (_, i) => {
+                    const sectorMs = personalBest?.sectors[i] ?? null;
+                    return (
+                      <View
+                        key={i}
+                        className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 p-3"
+                      >
+                        <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">
+                          {i18n.t('circuits.sectorLabel', { number: i + 1 })}
+                        </Text>
+                        <Text
+                          className={sectorMs !== null ? 'text-zinc-900 dark:text-white' : 'text-zinc-400 dark:text-zinc-600'}
+                          style={{ fontSize: 18, fontWeight: '500', fontVariant: ['tabular-nums'] }}
+                        >
+                          {sectorMs !== null ? formatSectorTime(sectorMs) : '---.---'}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+                <Text className="text-xs text-zinc-400 dark:text-zinc-500 text-center">
+                  {i18n.t('circuits.gpsApproximatedSplits')}
+                </Text>
+              </>
+            ) : null}
           </Card>
 
           {/* Driver Notes */}
           <Card>
             <View className="flex-row items-center justify-between mb-3">
               <View>
-                <Text className="text-sm font-medium text-zinc-900 dark:text-white">Driver Notes</Text>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">Quick reference before the session</Text>
+                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('circuits.driverNotes')}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.driverNotesSubtitle')}</Text>
               </View>
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('common.edit')}</Text>
+              <Pressable
+                onPress={() => { setIsEditing(!isEditing); cancelEditingNote(); setNewNote(''); }}
+                className="rounded-full px-4 py-2"
+                hitSlop={8}
+              >
+                <Text className="text-sm font-medium text-sky-500">
+                  {isEditing ? i18n.t('common.done') : i18n.t('common.edit')}
+                </Text>
+              </Pressable>
             </View>
             <View className="gap-2">
-              {NOTES.map((n) => (
-                <View key={n} className="rounded-2xl bg-zinc-50 dark:bg-black/20 px-3 py-2.5 border border-zinc-100 dark:border-white/5">
-                  <Text className="text-sm text-zinc-700 dark:text-zinc-200">{n}</Text>
+              {circuit?.notes.length ? (
+                circuit.notes.map((note) => (
+                  <View key={note.id}>
+                    {editingNoteId === note.id ? (
+                      <View className="rounded-2xl bg-zinc-50 dark:bg-black/20 border border-sky-400/40 p-4">
+                        <TextInput
+                          style={{ color: isDark ? '#e4e4e7' : '#3f3f46', fontSize: 15, padding: 0, minHeight: 48 }}
+                          value={editingNoteText}
+                          onChangeText={setEditingNoteText}
+                          autoFocus
+                          multiline
+                        />
+                        <View className="flex-row gap-3 justify-end mt-3">
+                          <Pressable
+                            onPress={cancelEditingNote}
+                            className="rounded-xl px-5 py-2.5 bg-zinc-200 dark:bg-white/10"
+                            hitSlop={4}
+                          >
+                            <Text className="text-sm font-medium text-zinc-600 dark:text-zinc-300">{i18n.t('common.cancel')}</Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => handleUpdateNote(note.id)}
+                            className="rounded-xl px-5 py-2.5 bg-sky-500"
+                            hitSlop={4}
+                          >
+                            <Text className="text-sm font-medium text-white">{i18n.t('common.save')}</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    ) : (
+                      <View className="flex-row items-center gap-2">
+                        {isEditing ? (
+                          <Pressable
+                            onPress={() => handleDeleteNote(note.id)}
+                            className="items-center justify-center w-10 h-10 rounded-full bg-red-500/10"
+                            hitSlop={4}
+                          >
+                            <Ionicons name="remove-circle" size={22} color="#ef4444" />
+                          </Pressable>
+                        ) : null}
+                        <Pressable
+                          onPress={isEditing ? () => startEditingNote(note) : undefined}
+                          disabled={!isEditing}
+                          className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 px-4 py-3 border border-zinc-100 dark:border-white/5"
+                        >
+                          <Text className="text-sm text-zinc-700 dark:text-zinc-200 leading-5">{note.note}</Text>
+                        </Pressable>
+                      </View>
+                    )}
+                  </View>
+                ))
+              ) : !isEditing ? (
+                <View className="rounded-2xl bg-zinc-50 dark:bg-black/20 px-4 py-3 border border-zinc-100 dark:border-white/5">
+                  <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.noDriverNotesYet')}</Text>
                 </View>
-              ))}
+              ) : null}
+
+              {isEditing ? (
+                <View className="rounded-2xl bg-zinc-50 dark:bg-black/20 border border-dashed border-zinc-300 dark:border-white/10 p-4">
+                  <TextInput
+                    style={{ color: isDark ? '#e4e4e7' : '#3f3f46', fontSize: 15, padding: 0, minHeight: 44 }}
+                    placeholder={i18n.t('circuits.addNotePlaceholder')}
+                    placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
+                    value={newNote}
+                    onChangeText={setNewNote}
+                    multiline
+                  />
+                  {newNote.trim().length > 0 ? (
+                    <Pressable
+                      onPress={handleAddNote}
+                      className="mt-3 self-end rounded-xl px-5 py-2.5 bg-sky-500"
+                      hitSlop={4}
+                    >
+                      <Text className="text-sm font-medium text-white">{i18n.t('circuits.addNote')}</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : null}
             </View>
           </Card>
         </View>
@@ -139,7 +401,7 @@ export default function CircuitDetailScreen() {
         {/* Bottom buttons */}
         <View className="px-5 pb-5 pt-1 flex-row gap-3">
           <Pressable className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center">
-            <Text className="text-sm font-medium text-zinc-900 dark:text-white">View History</Text>
+            <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('circuits.viewHistory')}</Text>
           </Pressable>
           <Pressable
             onPress={() => router.push('/(tabs)/record')}

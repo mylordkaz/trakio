@@ -1,12 +1,12 @@
 # trakio - Motorsport Lap Timer
 
-A mobile app that records GPS telemetry during motorsport track sessions, automatically detects laps and sector splits, and displays driving lines on a satellite map. Built for track-day drivers, amateur racers, and driver coaches.
+A native mobile app that records GPS telemetry during motorsport track sessions, automatically detects laps and sector splits, and displays driving lines on a satellite map. Built for track-day drivers, amateur racers, and driver coaches.
 
 Designed to work fully offline — most race tracks have limited network coverage.
 
 ## Features
 
-- **Predefined Track Database** — circuits with start/finish lines and sector markers stored locally
+- **Predefined Track Database** — circuits with ordered timing lines stored locally
 - **GPS Telemetry Recording** — continuous capture of location, speed, timestamp, and accuracy at 1-5 Hz
 - **Automatic Lap Detection** — detects start/finish line crossings with debounce and minimum lap time safeguards
 - **Sector Timing** — split times calculated as sector lines are crossed
@@ -30,11 +30,21 @@ Designed to work fully offline — most race tracks have limited network coverag
 ## Data Model
 
 ```
-Track       -> has many Sessions
-Session     -> has many Laps
-Lap         -> has many GPS Points, Sector Times
-GPS Point   -> latitude, longitude, timestamp, speed, accuracy
+Track        -> has many Timing Lines and Sessions
+Timing Line  -> start/finish, sector, speed trap, pit gate
+Session      -> has many Laps
+Lap          -> has many GPS Points and Lap Sectors
+GPS Point    -> latitude, longitude, timestamp, speed, accuracy
 ```
+
+Current SQLite schema:
+
+- `tracks` — track metadata and optional center point
+- `timing_lines` — ordered gate segments with `type`, `seq`, and `a/b` endpoints
+- `sessions`
+- `laps`
+- `lap_sectors`
+- `gps_points`
 
 ## Getting Started
 
@@ -51,7 +61,7 @@ npm install
 npx expo start
 ```
 
-Then open the app on your preferred platform from the Expo dev tools.
+Then open the app on iOS or Android from the Expo dev tools.
 
 ## Project Structure
 
@@ -59,6 +69,7 @@ Then open the app on your preferred platform from the Expo dev tools.
 app/            # Screens and routing (file-based via Expo Router)
 components/     # Reusable UI components
 constants/      # App-wide constants
+db/             # SQLite schema, migrations, and provider
 hooks/          # Custom React hooks
 assets/         # Images, fonts, and static files
 docs/           # Product proposal, MVP spec, and design mockups

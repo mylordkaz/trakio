@@ -44,7 +44,7 @@ export default function RecordingScreen() {
           {/* Title + REC badge */}
           <View className="flex-row items-start justify-between mb-5">
             <View className="flex-1 mr-3">
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">Session Recording</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('recording.sessionRecording')}</Text>
               <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">Track Day · Session 2</Text>
             </View>
             <View className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-3 py-1.5 border border-red-400/20">
@@ -57,7 +57,7 @@ export default function RecordingScreen() {
           <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
             <View className="flex-row items-center justify-between mb-2">
               <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('session.currentLap')}</Text>
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">Lap 5</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('session.lapCount', { count: 5 })}</Text>
             </View>
             <Text
               className="text-zinc-900 dark:text-white mb-3"
@@ -115,8 +115,8 @@ export default function RecordingScreen() {
           {/* Recent Laps */}
           <Card>
             <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-sm font-medium text-zinc-900 dark:text-white">Recent Laps</Text>
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">View all</Text>
+              <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('recording.recentLaps')}</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('common.viewAll')}</Text>
             </View>
             <View className="gap-2">
               {LAP_DATA.map((item) => (
