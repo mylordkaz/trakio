@@ -112,4 +112,3 @@ The MVP is successful if the application can:
 7. Replay laps on a satellite map
 
 If these functions work reliably, the application provides real value for track-day drivers and establishes a solid foundation for future features.
-"""

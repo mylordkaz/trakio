@@ -7,14 +7,11 @@ import Card from '@/components/Card';
 import LapRow from '@/components/LapRow';
 import ProgressBar from '@/components/ProgressBar';
 import { LAP_DATA, SECTOR_HIGHLIGHTS } from '@/constants/data';
-import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 
 export default function PostSessionScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('emerald');
 
   return (

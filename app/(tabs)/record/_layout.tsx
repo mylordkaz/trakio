@@ -1,5 +1,4 @@
 import { Stack } from 'expo-router';
-import i18n from '@/i18n';
 
 export default function RecordLayout() {
   return (

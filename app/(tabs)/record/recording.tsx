@@ -7,7 +7,6 @@ import Card from '@/components/Card';
 import LapRow from '@/components/LapRow';
 import ProgressBar from '@/components/ProgressBar';
 import { LAP_DATA } from '@/constants/data';
-import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 
 const SECTORS = [
@@ -19,8 +18,6 @@ const SECTORS = [
 export default function RecordingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('red');
 
   return (

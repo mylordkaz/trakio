@@ -62,7 +62,6 @@ constants/      # App-wide constants
 hooks/          # Custom React hooks
 assets/         # Images, fonts, and static files
 docs/           # Product proposal, MVP spec, and design mockups
-scripts/        # Utility scripts
 ```
 
 ## MVP Scope
