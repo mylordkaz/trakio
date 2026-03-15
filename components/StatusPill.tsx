@@ -1,10 +1,10 @@
 import { View, Text } from 'react-native';
 
 const COLOR_MAP = {
-  violet: { container: 'bg-violet-500/15 border-violet-400/20', text: 'text-violet-300' },
-  sky: { container: 'bg-sky-500/15 border-sky-400/20', text: 'text-sky-300' },
-  emerald: { container: 'bg-emerald-500/15 border-emerald-400/20', text: 'text-emerald-400' },
-  red: { container: 'bg-red-500/15 border-red-400/20', text: 'text-red-400' },
+  violet: { container: 'bg-violet-500/15 border-violet-400/20', text: 'text-violet-600 dark:text-violet-300' },
+  sky: { container: 'bg-sky-500/15 border-sky-400/20', text: 'text-sky-600 dark:text-sky-300' },
+  emerald: { container: 'bg-emerald-500/15 border-emerald-400/20', text: 'text-emerald-600 dark:text-emerald-400' },
+  red: { container: 'bg-red-500/15 border-red-400/20', text: 'text-red-600 dark:text-red-400' },
 } as const;
 
 type PillColor = keyof typeof COLOR_MAP;

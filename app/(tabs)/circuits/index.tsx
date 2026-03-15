@@ -7,6 +7,8 @@ import { useRouter } from 'expo-router';
 import i18n from '@/i18n';
 import StatusPill from '@/components/StatusPill';
 import { CIRCUITS } from '@/constants/data';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 
 const FILTERS = ['All', 'Recent', 'Popular', 'Saved'];
 
@@ -15,6 +17,9 @@ export default function CircuitsScreen() {
   const router = useRouter();
   const [activeFilter, setActiveFilter] = useState(0);
   const [search, setSearch] = useState('');
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const gradientColors = useHeaderGradient('sky');
 
   const filteredCircuits = CIRCUITS.filter((circuit) => {
     const matchesSearch =
@@ -28,13 +33,13 @@ export default function CircuitsScreen() {
   });
 
   return (
-    <View className="flex-1 bg-zinc-900 overflow-hidden">
+    <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
       <ScrollView
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
         <LinearGradient
-          colors={['rgba(14,165,233,0.15)', '#18181b', '#18181b']}
+          colors={gradientColors}
           locations={[0, 0.5, 1]}
           style={{
             paddingTop: insets.top + 20,
@@ -43,22 +48,22 @@ export default function CircuitsScreen() {
           }}
         >
           <View className="flex-row items-center justify-between mb-4">
-            <Text className="text-xs text-zinc-400">{i18n.t('circuits.header')}</Text>
-            <Text className="text-xs text-zinc-400">{i18n.t('circuits.trackCount', { count: CIRCUITS.length })}</Text>
+            <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.header')}</Text>
+            <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.trackCount', { count: CIRCUITS.length })}</Text>
           </View>
 
           <View className="mb-5">
-            <Text className="text-sm text-zinc-400 mb-1">{i18n.t('circuits.subtitle')}</Text>
-            <Text className="text-2xl font-semibold tracking-tight text-white">{i18n.t('circuits.title')}</Text>
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('circuits.subtitle')}</Text>
+            <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">{i18n.t('circuits.title')}</Text>
           </View>
 
-          <View className="rounded-3xl bg-black/40 border border-white/10 p-3">
-            <View className="flex-row items-center gap-3 rounded-2xl bg-white/5 border border-white/10 px-4 py-3">
-              <Ionicons name="search" size={16} color="#a1a1aa" />
+          <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-3">
+            <View className="flex-row items-center gap-3 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-4 py-3">
+              <Ionicons name="search" size={16} color={isDark ? '#a1a1aa' : '#71717a'} />
               <TextInput
-                style={{ flex: 1, fontSize: 14, color: '#ffffff', padding: 0 }}
+                style={{ flex: 1, fontSize: 14, color: isDark ? '#fff' : '#18181b', padding: 0 }}
                 placeholder={i18n.t('circuits.searchPlaceholder')}
-                placeholderTextColor="#a1a1aa"
+                placeholderTextColor={isDark ? '#a1a1aa' : '#71717a'}
                 value={search}
                 onChangeText={setSearch}
               />
@@ -76,12 +81,12 @@ export default function CircuitsScreen() {
                   className={`rounded-full px-3 py-1.5 border ${
                     activeFilter === index
                       ? 'bg-sky-500 border-sky-400'
-                      : 'bg-white/10 border-white/10'
+                      : 'bg-zinc-200 dark:bg-white/10 border-zinc-200 dark:border-white/10'
                   }`}
                 >
                   <Text
                     className={`text-sm ${
-                      activeFilter === index ? 'text-black' : 'text-zinc-300'
+                      activeFilter === index ? 'text-black' : 'text-zinc-600 dark:text-zinc-300'
                     }`}
                   >
                     {filter}
@@ -97,23 +102,23 @@ export default function CircuitsScreen() {
             <Pressable
               key={circuit.name}
               onPress={() => router.push({ pathname: '/(tabs)/circuits/detail', params: { name: circuit.name } })}
-              className="w-full rounded-3xl bg-white/5 border border-white/10 p-4"
+              className="w-full rounded-3xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4"
             >
               <View className="flex-row justify-between items-start mb-3">
                 <View className="flex-1 mr-3">
-                  <Text className="text-base font-semibold leading-tight text-white">{circuit.name}</Text>
-                  <Text className="text-sm text-zinc-400">{circuit.country}</Text>
+                  <Text className="text-base font-semibold leading-tight text-zinc-900 dark:text-white">{circuit.name}</Text>
+                  <Text className="text-sm text-zinc-500 dark:text-zinc-400">{circuit.country}</Text>
                 </View>
                 <StatusPill text={circuit.status} color="sky" />
               </View>
               <View className="flex-row gap-3">
-                <View className="flex-1 rounded-2xl bg-black/20 border border-white/5 px-3 py-2.5">
-                  <Text className="text-xs text-zinc-500 mb-1">{i18n.t('circuits.length')}</Text>
-                  <Text className="text-sm font-medium text-white">{circuit.length}</Text>
+                <View className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 px-3 py-2.5">
+                  <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{i18n.t('circuits.length')}</Text>
+                  <Text className="text-sm font-medium text-zinc-900 dark:text-white">{circuit.length}</Text>
                 </View>
-                <View className="flex-1 rounded-2xl bg-black/20 border border-white/5 px-3 py-2.5">
-                  <Text className="text-xs text-zinc-500 mb-1">{i18n.t('circuits.corners')}</Text>
-                  <Text className="text-sm font-medium text-white">{circuit.corners}</Text>
+                <View className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 px-3 py-2.5">
+                  <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{i18n.t('circuits.corners')}</Text>
+                  <Text className="text-sm font-medium text-zinc-900 dark:text-white">{circuit.corners}</Text>
                 </View>
               </View>
             </Pressable>
@@ -121,8 +126,8 @@ export default function CircuitsScreen() {
         </View>
 
         <View className="px-5 pb-5 pt-1">
-          <Pressable className="w-full rounded-2xl border border-white/10 bg-white/5 py-3.5 items-center">
-            <Text className="text-sm font-medium text-white">{i18n.t('circuits.importCustom')}</Text>
+          <Pressable className="w-full rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center">
+            <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('circuits.importCustom')}</Text>
           </Pressable>
         </View>
       </ScrollView>

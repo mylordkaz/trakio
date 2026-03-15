@@ -9,15 +9,15 @@ type LapItem = {
 
 export default function LapRow({ item }: { item: LapItem }) {
   return (
-    <View className="flex-row items-center justify-between rounded-2xl bg-black/20 px-3 py-2.5 border border-white/5">
+    <View className="flex-row items-center justify-between rounded-2xl bg-zinc-50 dark:bg-black/20 px-3 py-2.5 border border-zinc-100 dark:border-white/5">
       <View>
-        <Text className="text-sm font-medium text-white">Lap {item.lap}</Text>
-        <Text className="text-xs text-zinc-500">{item.status}</Text>
+        <Text className="text-sm font-medium text-zinc-900 dark:text-white">Lap {item.lap}</Text>
+        <Text className="text-xs text-zinc-400 dark:text-zinc-500">{item.status}</Text>
       </View>
       <View className="items-end">
-        <Text className="text-sm font-semibold text-white">{item.time}</Text>
+        <Text className="text-sm font-semibold text-zinc-900 dark:text-white">{item.time}</Text>
         <Text
-          className={`text-xs ${item.delta.startsWith('-') ? 'text-emerald-400' : 'text-zinc-500'}`}
+          className={`text-xs ${item.delta.startsWith('-') ? 'text-emerald-400' : 'text-zinc-400 dark:text-zinc-500'}`}
         >
           {item.delta}
         </Text>

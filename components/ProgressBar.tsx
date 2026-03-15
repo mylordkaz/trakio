@@ -14,10 +14,10 @@ export default function ProgressBar({
   return (
     <View>
       <View className="flex-row justify-between mb-1">
-        <Text className="text-xs text-zinc-400">{label}</Text>
-        <Text className="text-xs text-zinc-400">{value}</Text>
+        <Text className="text-xs text-zinc-500 dark:text-zinc-400">{label}</Text>
+        <Text className="text-xs text-zinc-500 dark:text-zinc-400">{value}</Text>
       </View>
-      <View className="h-2 rounded-full bg-white/10 overflow-hidden">
+      <View className="h-2 rounded-full bg-zinc-200 dark:bg-white/10 overflow-hidden">
         <View
           className={`h-full rounded-full ${color}`}
           style={{ width: `${numericValue}%` }}
