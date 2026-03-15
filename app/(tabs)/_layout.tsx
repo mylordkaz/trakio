@@ -1,43 +1,33 @@
 import { Tabs } from 'expo-router';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { Colors } from '@/constants/colors';
 import { Ionicons } from '@expo/vector-icons';
 import i18n from '@/i18n';
 
 export default function TabsLayout() {
-  const colorScheme = useColorScheme() ?? 'dark';
-  const colors = Colors[colorScheme];
-
   return (
     <Tabs
       screenOptions={{
-        headerStyle: { backgroundColor: colors.background },
-        headerTintColor: colors.text,
-        headerShadowVisible: false,
+        headerShown: false,
         tabBarStyle: {
-          backgroundColor: colors.background,
-          borderTopColor: colors.surfaceBorder,
+          backgroundColor: '#18181b',
+          borderTopColor: 'rgba(255,255,255,0.10)',
         },
-        tabBarActiveTintColor: colors.tint,
-        tabBarInactiveTintColor: colors.tabIconDefault,
+        tabBarActiveTintColor: '#0ea5e9',
+        tabBarInactiveTintColor: '#a1a1aa',
       }}
     >
       <Tabs.Screen
         name="circuits"
         options={{
-          title: i18n.t('circuits.title'),
-          headerShown: false,
+          tabBarLabel: i18n.t('circuits.header'),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="map-outline" size={size} color={color} />
           ),
-          tabBarLabel: 'Circuits',
         }}
       />
       <Tabs.Screen
         name="record"
         options={{
-          title: 'Record',
-          headerShown: false,
+          tabBarLabel: 'Record',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="radio-button-on" size={size} color={color} />
           ),
@@ -46,12 +36,10 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="sessions"
         options={{
-          title: i18n.t('sessions.title'),
-          headerShown: false,
+          tabBarLabel: 'Sessions',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="timer-outline" size={size} color={color} />
           ),
-          tabBarLabel: 'Sessions',
         }}
       />
     </Tabs>

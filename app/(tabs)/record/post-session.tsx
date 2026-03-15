@@ -1,103 +1,131 @@
-import { StyleSheet, Text, View, Pressable } from 'react-native';
+import { View, Text, ScrollView, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useTheme } from '@/hooks/useThemeColor';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import i18n from '@/i18n';
+import Card from '@/components/Card';
+import LapRow from '@/components/LapRow';
+import ProgressBar from '@/components/ProgressBar';
+import { LAP_DATA, SECTOR_HIGHLIGHTS } from '@/constants/data';
 
 export default function PostSessionScreen() {
-  const colors = useTheme();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.badge, { backgroundColor: colors.accent + '20' }]}>
-        <View style={[styles.dot, { backgroundColor: colors.accent }]} />
-        <Text style={[styles.badgeText, { color: colors.accent }]}>
-          {i18n.t('session.saved')}
-        </Text>
-      </View>
-
-      <Text style={[styles.title, { color: colors.text }]}>
-        {i18n.t('postSession.title')}
-      </Text>
-      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-        {i18n.t('postSession.sessionOverview')}
-      </Text>
-
-      <View style={styles.actions}>
-        <Pressable
-          style={[styles.secondaryButton, { borderColor: colors.surfaceBorder }]}
-          onPress={() => router.replace('/(tabs)/record')}
+    <View className="flex-1 bg-zinc-900 overflow-hidden">
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <LinearGradient
+          colors={['rgba(16,185,129,0.15)', '#18181b', '#18181b']}
+          locations={[0, 0.5, 1]}
+          style={{
+            paddingTop: insets.top + 20,
+            paddingHorizontal: 20,
+            paddingBottom: 16,
+          }}
         >
-          <Text style={[styles.buttonText, { color: colors.text }]}>
-            {i18n.t('postSession.export')}
-          </Text>
-        </Pressable>
+          {/* Header */}
+          <View className="flex-row items-center justify-between mb-4">
+            <Text className="text-xs text-zinc-400">Fuji Speedway</Text>
+            <Text className="text-xs text-zinc-400">12:41 PM</Text>
+          </View>
 
-        <Pressable
-          style={[styles.primaryButton, { backgroundColor: colors.accent }]}
-          onPress={() => router.replace('/(tabs)/record')}
-        >
-          <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>
-            {i18n.t('session.newSession')}
-          </Text>
-        </Pressable>
-      </View>
+          {/* Title + SAVED badge */}
+          <View className="flex-row items-start justify-between mb-5">
+            <View className="flex-1 mr-3">
+              <Text className="text-sm text-zinc-400">{i18n.t('postSession.title')}</Text>
+              <Text className="text-2xl font-semibold tracking-tight text-white">Track Day · Session 2</Text>
+            </View>
+            <View className="flex-row items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1.5 border border-emerald-400/20">
+              <View className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+              <Text className="text-sm text-emerald-400">{i18n.t('session.saved')}</Text>
+            </View>
+          </View>
+
+          {/* Best lap card */}
+          <View className="rounded-3xl bg-black/40 border border-white/10 p-4">
+            <View className="flex-row items-center justify-between mb-2">
+              <Text className="text-sm text-zinc-400">{i18n.t('session.bestLap')}</Text>
+              <Text className="text-sm text-zinc-400">Lap 3</Text>
+            </View>
+            <Text
+              className="text-white mb-3"
+              style={{ fontSize: 56, lineHeight: 56, fontWeight: '600', fontVariant: ['tabular-nums'] }}
+            >
+              1:48.771
+            </Text>
+            <View className="flex-row gap-2">
+              {SECTOR_HIGHLIGHTS.map((s) => (
+                <View key={s.label} className="flex-1 rounded-2xl p-3 border bg-emerald-500/10 border-emerald-400/30">
+                  <Text className="text-xs text-zinc-400 mb-1">{s.label}</Text>
+                  <Text className="text-lg font-medium text-white">{s.time}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        </LinearGradient>
+
+        <View className="px-5 py-4 gap-4">
+          {/* Stats row */}
+          <View className="flex-row gap-3">
+            {[
+              [i18n.t('session.topSpeed'), '214 km/h'],
+              [i18n.t('session.duration'), '18:42'],
+              [i18n.t('session.totalLaps'), '4'],
+            ].map(([l, v]) => (
+              <View key={l} className="flex-1 rounded-2xl bg-white/5 border border-white/10 p-3">
+                <Text className="text-xs text-zinc-400 mb-1">{l}</Text>
+                <Text className="text-lg font-semibold text-white">{v}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Session Overview */}
+          <Card>
+            <View className="flex-row items-center justify-between mb-3">
+              <View>
+                <Text className="text-sm font-medium text-white">{i18n.t('postSession.sessionOverview')}</Text>
+                <Text className="text-xs text-zinc-400">Performance summary from this run</Text>
+              </View>
+              <Text className="text-sm text-emerald-400">{i18n.t('postSession.personalBest')}</Text>
+            </View>
+            <View className="gap-3">
+              <ProgressBar label={i18n.t('postSession.consistency')} value="91%" />
+              <ProgressBar label={i18n.t('postSession.throttleAvg')} value="76%" />
+              <ProgressBar label={i18n.t('postSession.brakingEfficiency')} value="88%" color="bg-emerald-400" />
+            </View>
+          </Card>
+
+          {/* Lap Breakdown */}
+          <Card>
+            <View className="flex-row items-center justify-between mb-3">
+              <Text className="text-sm font-medium text-white">{i18n.t('postSession.lapBreakdown')}</Text>
+              <Text className="text-xs text-zinc-400">{i18n.t('postSession.export')}</Text>
+            </View>
+            <View className="gap-2">
+              {LAP_DATA.map((item) => (
+                <LapRow key={item.lap} item={item} />
+              ))}
+            </View>
+          </Card>
+        </View>
+
+        {/* Bottom buttons */}
+        <View className="px-5 pb-5 pt-1 flex-row gap-3">
+          <Pressable className="flex-1 rounded-2xl border border-white/10 bg-white/5 py-3.5 items-center">
+            <Text className="text-sm font-medium text-white">{i18n.t('session.saveNotes')}</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.replace('/(tabs)/record')}
+            className="flex-1 rounded-2xl bg-emerald-500 py-3.5 items-center"
+          >
+            <Text className="text-sm font-semibold text-black">{i18n.t('session.newSession')}</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginBottom: 16,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  badgeText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  subtitle: {
-    fontSize: 14,
-    marginTop: 4,
-    color: '#8E8E93',
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 48,
-  },
-  secondaryButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  primaryButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderRadius: 12,
-  },
-  buttonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});
