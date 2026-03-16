@@ -10,8 +10,8 @@ import { SESSIONS } from '@/constants/data';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 
-const FILTER_KEYS = ['sessions.all', 'sessions.recent', 'sessions.best', 'sessions.saved'] as const;
-const FILTER_VALUES = ['All', 'Recent', 'Best', 'Saved'];
+const FILTER_KEYS = ['sessions.all', 'sessions.recent', 'sessions.best'] as const;
+const FILTER_VALUES = ['All', 'Recent', 'Best'];
 
 export default function SessionListScreen() {
   const insets = useSafeAreaInsets();
@@ -25,8 +25,8 @@ export default function SessionListScreen() {
   const filteredSessions = SESSIONS.filter((session) => {
     const matchesSearch =
       !search ||
-      session.track.toLowerCase().includes(search.toLowerCase()) ||
-      session.layout.toLowerCase().includes(search.toLowerCase());
+      session.name.toLowerCase().includes(search.toLowerCase()) ||
+      session.track.toLowerCase().includes(search.toLowerCase());
     const matchesFilter =
       activeFilter === 0 ||
       session.status === FILTER_VALUES[activeFilter];
@@ -104,14 +104,14 @@ export default function SessionListScreen() {
         <View className="px-5 py-4 gap-3">
           {filteredSessions.map((s) => (
             <Pressable
-              key={`${s.track}-${s.date}`}
+              key={`${s.name}-${s.date}`}
               onPress={() => router.push({ pathname: '/(tabs)/sessions/detail', params: { track: s.track, date: s.date } })}
               className="w-full rounded-3xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4"
             >
               <View className="flex-row justify-between items-start mb-3">
                 <View className="flex-1 mr-3">
-                  <Text className="text-base font-semibold leading-tight text-zinc-900 dark:text-white">{s.track}</Text>
-                  <Text className="text-sm text-zinc-500 dark:text-zinc-400">{s.layout}</Text>
+                  <Text className="text-base font-semibold leading-tight text-zinc-900 dark:text-white">{s.name}</Text>
+                  <Text className="text-sm text-zinc-500 dark:text-zinc-400">{s.track}</Text>
                 </View>
                 <StatusPill text={s.status} color="violet" />
               </View>

@@ -7,8 +7,8 @@ export type Circuit = {
 };
 
 export type Session = {
+  name: string;
   track: string;
-  layout: string;
   date: string;
   time: string;
   bestLap: string;
@@ -32,11 +32,11 @@ export const CIRCUITS: Circuit[] = [
 ];
 
 export const SESSIONS: Session[] = [
-  { track: 'Fuji Speedway', layout: 'Full Course', date: 'Mar 10, 2026', time: '10:24 AM', bestLap: '1:48.771', laps: 12, status: 'Best' },
-  { track: 'Suzuka Circuit', layout: 'East Course', date: 'Mar 2, 2026', time: '2:18 PM', bestLap: '58.214', laps: 9, status: 'Recent' },
-  { track: 'Tsukuba Circuit', layout: 'TC2000', date: 'Feb 21, 2026', time: '8:42 AM', bestLap: '1:03.998', laps: 15, status: 'Saved' },
-  { track: 'Mobility Resort Motegi', layout: 'Road Course', date: 'Feb 8, 2026', time: '11:06 AM', bestLap: '2:07.441', laps: 11, status: 'Wet' },
-  { track: 'Okayama International Circuit', layout: 'Full Course', date: 'Jan 29, 2026', time: '3:51 PM', bestLap: '1:56.320', laps: 10, status: 'Archived' },
+  { name: 'Track Day · Session 2', track: 'Fuji Speedway', date: 'Mar 10, 2026', time: '10:24 AM', bestLap: '1:48.771', laps: 12, status: 'Best' },
+  { name: 'Practice Run', track: 'Suzuka Circuit', date: 'Mar 2, 2026', time: '2:18 PM', bestLap: '58.214', laps: 9, status: 'Recent' },
+  { name: 'Morning Session', track: 'Tsukuba Circuit', date: 'Feb 21, 2026', time: '8:42 AM', bestLap: '1:03.998', laps: 15, status: 'Recent' },
+  { name: 'Wet Practice', track: 'Mobility Resort Motegi', date: 'Feb 8, 2026', time: '11:06 AM', bestLap: '2:07.441', laps: 11, status: 'Best' },
+  { name: 'Afternoon Session', track: 'Okayama International Circuit', date: 'Jan 29, 2026', time: '3:51 PM', bestLap: '1:56.320', laps: 10, status: 'Recent' },
 ];
 
 export const LAP_DATA: LapItem[] = [

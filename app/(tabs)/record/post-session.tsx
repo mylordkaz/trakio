@@ -4,10 +4,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import i18n from '@/i18n';
 import Card from '@/components/Card';
-import LapRow from '@/components/LapRow';
+import LapBreakdown from '@/components/LapBreakdown';
+import type { LapBreakdownItem } from '@/components/LapBreakdown';
 import ProgressBar from '@/components/ProgressBar';
-import { LAP_DATA, SECTOR_HIGHLIGHTS } from '@/constants/data';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
+
+const MOCK_LAPS: LapBreakdownItem[] = [
+  { lap: 1, time: '1:54.238', timeMs: 114238, delta: '+5.467', sectors: ['32.184', '43.102', '38.952'], sectorMs: [32184, 43102, 38952] },
+  { lap: 2, time: '1:49.914', timeMs: 109914, delta: '+1.143', sectors: ['31.902', '41.890', '36.122'], sectorMs: [31902, 41890, 36122] },
+  { lap: 3, time: '1:48.771', timeMs: 108771, delta: null, sectors: ['31.842', '41.317', '35.612'], sectorMs: [31842, 41317, 35612] },
+  { lap: 4, time: '1:49.102', timeMs: 109102, delta: '+0.331', sectors: ['32.011', '41.580', '35.511'], sectorMs: [32011, 41580, 35511] },
+];
 
 export default function PostSessionScreen() {
   const router = useRouter();
@@ -60,7 +67,11 @@ export default function PostSessionScreen() {
               1:48.771
             </Text>
             <View className="flex-row gap-2">
-              {SECTOR_HIGHLIGHTS.map((s) => (
+              {[
+                { label: 'S1', time: '31.842' },
+                { label: 'S2', time: '41.317' },
+                { label: 'S3', time: '35.612' },
+              ].map((s) => (
                 <View key={s.label} className="flex-1 rounded-2xl p-3 border bg-emerald-500/10 border-emerald-400/30">
                   <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{s.label}</Text>
                   <Text className="text-lg font-medium text-zinc-900 dark:text-white">{s.time}</Text>
@@ -85,34 +96,63 @@ export default function PostSessionScreen() {
             ))}
           </View>
 
-          {/* Session Overview */}
+          {/* Session Insights */}
           <Card>
-            <View className="flex-row items-center justify-between mb-3">
-              <View>
-                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('postSession.sessionOverview')}</Text>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('postSession.performanceSummary')}</Text>
-              </View>
-              <Text className="text-sm text-emerald-400">{i18n.t('postSession.personalBest')}</Text>
+            <View className="mb-4">
+              <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('sessions.sessionInsights')}</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.performanceSummary')}</Text>
             </View>
-            <View className="gap-3">
-              <ProgressBar label={i18n.t('postSession.consistency')} value="91%" />
-              <ProgressBar label={i18n.t('postSession.throttleAvg')} value="76%" />
-              <ProgressBar label={i18n.t('postSession.brakingEfficiency')} value="88%" color="bg-emerald-400" />
+
+            {/* Consistency */}
+            <View className="mb-4">
+              <ProgressBar label={i18n.t('postSession.consistency')} value="91%" color="bg-white dark:bg-white" />
+            </View>
+
+            {/* Theoretical Best */}
+            <View className="mb-4">
+              <View className="flex-row justify-between mb-1">
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.theoreticalBest')}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">1:47.670</Text>
+              </View>
+              <View className="flex-row items-center gap-2">
+                <View className="flex-1 h-2 rounded-full bg-zinc-200 dark:bg-white/10 overflow-hidden">
+                  <View className="h-full rounded-full bg-emerald-400" style={{ width: '96%' }} />
+                </View>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.gap', { gap: '1.101' })}</Text>
+              </View>
+              <Text className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">{i18n.t('sessions.bestSectorsCombined')}</Text>
+            </View>
+
+            {/* Lap Delta Trend */}
+            <View>
+              <View className="flex-row justify-between mb-2">
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.lapDeltaTrend')}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.avgPerLap', { delta: '−0.8s' })}</Text>
+              </View>
+              <View className="flex-row gap-1.5 items-end h-16">
+                {[
+                  { lap: 1, height: 85, best: false },
+                  { lap: 2, height: 65, best: false },
+                  { lap: 3, height: 100, best: true },
+                  { lap: 4, height: 70, best: false },
+                ].map((bar) => (
+                  <View key={bar.lap} className="flex-1 items-center">
+                    <View
+                      className={`w-full rounded-md ${bar.best ? 'bg-emerald-400' : 'bg-zinc-300 dark:bg-zinc-700'}`}
+                      style={{ height: `${bar.height}%` }}
+                    />
+                  </View>
+                ))}
+              </View>
+              <View className="flex-row justify-between mt-1">
+                <Text className="text-xs text-zinc-400 dark:text-zinc-500">{i18n.t('sessions.lapLabel', { number: 1 })}</Text>
+                <Text className="text-xs text-zinc-400 dark:text-zinc-500">{i18n.t('sessions.lapLabel', { number: 4 })}</Text>
+              </View>
             </View>
           </Card>
 
           {/* Lap Breakdown */}
-          <Card>
-            <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('postSession.lapBreakdown')}</Text>
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('postSession.export')}</Text>
-            </View>
-            <View className="gap-2">
-              {LAP_DATA.map((item) => (
-                <LapRow key={item.lap} item={item} />
-              ))}
-            </View>
-          </Card>
+          <LapBreakdown laps={MOCK_LAPS} accentColor="emerald" />
         </View>
 
         {/* Bottom buttons */}
