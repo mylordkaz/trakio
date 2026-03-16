@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { syncSessionTestSeeds } from '@/db/sessions';
 import { syncTrackSeeds } from '@/db/tracks';
 
 type Migration = {
@@ -45,6 +46,7 @@ async function createBaseSchema(db: SQLiteDatabase) {
 
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY NOT NULL,
+        name TEXT,
         track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE RESTRICT,
         started_at TEXT NOT NULL,
         ended_at TEXT,
@@ -105,6 +107,16 @@ async function createBaseSchema(db: SQLiteDatabase) {
         UNIQUE(track_id, seq)
       );
 
+      CREATE TABLE IF NOT EXISTS session_notes (
+        id TEXT PRIMARY KEY NOT NULL,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        note TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(session_id, seq)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_timing_lines_track_seq
         ON timing_lines(track_id, seq);
 
@@ -128,6 +140,9 @@ async function createBaseSchema(db: SQLiteDatabase) {
 
       CREATE INDEX IF NOT EXISTS idx_track_notes_track_seq
         ON track_notes(track_id, seq);
+
+      CREATE INDEX IF NOT EXISTS idx_session_notes_session_seq
+        ON session_notes(session_id, seq);
   `);
 }
 
@@ -343,6 +358,31 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 4,
+    up: async (db) => {
+      const sessionColumns = await getColumnNames(db, 'sessions');
+
+      if (!sessionColumns.includes('name')) {
+        await db.execAsync('ALTER TABLE sessions ADD COLUMN name TEXT;');
+      }
+
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS session_notes (
+          id TEXT PRIMARY KEY NOT NULL,
+          session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          note TEXT NOT NULL,
+          seq INTEGER NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(session_id, seq)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_session_notes_session_seq
+          ON session_notes(session_id, seq);
+      `);
+    },
+  },
 ];
 
 export const DATABASE_NAME = 'trakio.db';
@@ -367,4 +407,5 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   }
 
   await syncTrackSeeds(db);
+  await syncSessionTestSeeds(db);
 }

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
 import MapView, { Polyline } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import i18n from '@/i18n';
@@ -11,91 +12,407 @@ import Card from '@/components/Card';
 import LapBreakdown from '@/components/LapBreakdown';
 import type { LapBreakdownItem } from '@/components/LapBreakdown';
 import ProgressBar from '@/components/ProgressBar';
+import type { SessionDetail, SessionNoteRow } from '@/db';
+import {
+  addSessionNote,
+  deleteSessionNote,
+  getSessionById,
+  updateSessionNote,
+} from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 
-// Mock data — will be replaced when wired to real session data
-const MOCK_MAP_REGION = {
-  latitude: 36.3686,
-  longitude: 140.2268,
-  latitudeDelta: 0.003,
-  longitudeDelta: 0.00375,
-};
+function formatLapTime(lapTimeMs: number | null) {
+  if (lapTimeMs === null) {
+    return '--:--.---';
+  }
 
-const MOCK_START_FINISH = [
-  { latitude: 36.36955, longitude: 140.22683 },
-  { latitude: 36.36938, longitude: 140.22695 },
-];
+  const totalSeconds = lapTimeMs / 1000;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds - minutes * 60;
 
-const MOCK_GPS_LINE = [
-  { latitude: 36.3696, longitude: 140.2269 },
-  { latitude: 36.3698, longitude: 140.2264 },
-  { latitude: 36.3701, longitude: 140.2258 },
-  { latitude: 36.3699, longitude: 140.2250 },
-  { latitude: 36.3693, longitude: 140.2245 },
-  { latitude: 36.3686, longitude: 140.2248 },
-  { latitude: 36.3680, longitude: 140.2255 },
-  { latitude: 36.3677, longitude: 140.2265 },
-  { latitude: 36.3680, longitude: 140.2275 },
-  { latitude: 36.3686, longitude: 140.2282 },
-  { latitude: 36.3692, longitude: 140.2278 },
-  { latitude: 36.3696, longitude: 140.2269 },
-];
+  return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
+}
 
-const MOCK_LAPS: LapBreakdownItem[] = [
-  { lap: 1, time: '1:54.238', timeMs: 114238, delta: '+5.467', sectors: ['32.184', '43.102', '38.952'], sectorMs: [32184, 43102, 38952] },
-  { lap: 2, time: '1:49.914', timeMs: 109914, delta: '+1.143', sectors: ['31.902', '41.890', '36.122'], sectorMs: [31902, 41890, 36122] },
-  { lap: 3, time: '1:48.771', timeMs: 108771, delta: null, sectors: ['31.842', '41.317', '35.612'], sectorMs: [31842, 41317, 35612] },
-  { lap: 4, time: '1:49.102', timeMs: 109102, delta: '+0.331', sectors: ['32.011', '41.580', '35.511'], sectorMs: [32011, 41580, 35511] },
-];
+function formatSectorTime(splitTimeMs: number | null) {
+  if (splitTimeMs === null) {
+    return '---.---';
+  }
 
-type Note = { id: string; text: string };
+  return (splitTimeMs / 1000).toFixed(3);
+}
 
-const MOCK_NOTES: Note[] = [
-  { id: '1', text: 'Braking too late into T3, losing time on exit' },
-  { id: '2', text: 'Good traction out of the hairpin on lap 3' },
-];
+function formatDeltaMs(deltaMs: number | null) {
+  if (deltaMs === null) {
+    return null;
+  }
+
+  const sign = deltaMs >= 0 ? '+' : '−';
+  return `${sign}${(Math.abs(deltaMs) / 1000).toFixed(3)}`;
+}
+
+function formatGapSeconds(deltaMs: number | null) {
+  if (deltaMs === null) {
+    return i18n.t('common.tbd');
+  }
+
+  return (Math.abs(deltaMs) / 1000).toFixed(3);
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) {
+    return i18n.t('common.tbd');
+  }
+
+  return new Date(value).toLocaleString(i18n.locale === 'ja' ? 'ja-JP' : 'en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatDuration(startedAt: string, endedAt: string | null) {
+  if (!endedAt) {
+    return i18n.t('common.tbd');
+  }
+
+  const diffMs = new Date(endedAt).getTime() - new Date(startedAt).getTime();
+  if (!Number.isFinite(diffMs) || diffMs <= 0) {
+    return i18n.t('common.tbd');
+  }
+
+  const totalSeconds = Math.floor(diffMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function formatSpeed(maxSpeedKph: number | null) {
+  if (maxSpeedKph === null) {
+    return i18n.t('common.tbd');
+  }
+
+  return `${Math.round(maxSpeedKph)} km/h`;
+}
+
+function getMapLatitudeDelta(lengthMeters: number | null) {
+  if (!lengthMeters) {
+    return 0.0035;
+  }
+
+  return Math.min(Math.max(lengthMeters / 450000, 0.0015), 0.0055);
+}
+
+function getSectorCount(sessionDetail: SessionDetail | null) {
+  if (!sessionDetail) {
+    return 0;
+  }
+
+  const sectorLineCount = sessionDetail.timingLines.filter((timingLine) => timingLine.type === 'sector').length;
+  const hasStartFinish = sessionDetail.timingLines.some((timingLine) => timingLine.type === 'start_finish');
+
+  if (sectorLineCount === 0) {
+    return 0;
+  }
+
+  return sectorLineCount + (hasStartFinish ? 1 : 0);
+}
+
+function getValidTimedLaps(sessionDetail: SessionDetail | null) {
+  return (sessionDetail?.laps ?? []).filter(
+    (lap) => lap.lapTimeMs !== null && lap.isInvalid === 0 && lap.isOutLap === 0
+  );
+}
+
+function getBestLapMs(sessionDetail: SessionDetail | null) {
+  if (!sessionDetail) {
+    return null;
+  }
+
+  if (sessionDetail.session.bestLapMs !== null) {
+    return sessionDetail.session.bestLapMs;
+  }
+
+  const validTimedLaps = getValidTimedLaps(sessionDetail);
+  if (validTimedLaps.length === 0) {
+    return null;
+  }
+
+  return Math.min(...validTimedLaps.map((lap) => lap.lapTimeMs ?? Number.MAX_SAFE_INTEGER));
+}
+
+function getTopSpeedKph(sessionDetail: SessionDetail | null) {
+  if (!sessionDetail) {
+    return null;
+  }
+
+  const speedCandidates = [
+    sessionDetail.session.maxSpeedKph,
+    ...sessionDetail.laps.map((lap) => lap.maxSpeedKph),
+    ...sessionDetail.gpsPoints.map((point) => (point.speedMps !== null ? point.speedMps * 3.6 : null)),
+  ].filter((value): value is number => value !== null);
+
+  if (speedCandidates.length === 0) {
+    return null;
+  }
+
+  return Math.max(...speedCandidates);
+}
+
+function getTheoreticalBestMs(sessionDetail: SessionDetail | null) {
+  const validTimedLaps = getValidTimedLaps(sessionDetail);
+  const sectorCount = getSectorCount(sessionDetail);
+
+  if (validTimedLaps.length === 0 || sectorCount === 0) {
+    return null;
+  }
+
+  const bestSectors = Array.from({ length: sectorCount }, (_, index) => {
+    const candidates = validTimedLaps
+      .map((lap) => lap.sectors.find((sector) => sector.sectorIndex === index)?.splitTimeMs ?? null)
+      .filter((value): value is number => value !== null);
+
+    return candidates.length > 0 ? Math.min(...candidates) : null;
+  });
+
+  if (bestSectors.some((value) => value === null)) {
+    return null;
+  }
+
+  return bestSectors
+    .filter((value): value is number => value !== null)
+    .reduce((sum, value) => sum + value, 0);
+}
+
+function getConsistencyValue(sessionDetail: SessionDetail | null) {
+  const validTimedLaps = getValidTimedLaps(sessionDetail);
+
+  if (validTimedLaps.length < 2) {
+    return 100;
+  }
+
+  const lapTimes = validTimedLaps.map((lap) => lap.lapTimeMs ?? 0);
+  const average = lapTimes.reduce((sum, value) => sum + value, 0) / lapTimes.length;
+  const spread = Math.max(...lapTimes) - Math.min(...lapTimes);
+  const score = 100 - (spread / average) * 100;
+
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function getLapBreakdownItems(sessionDetail: SessionDetail | null): LapBreakdownItem[] {
+  const validTimedLaps = getValidTimedLaps(sessionDetail);
+  const bestLapMs = getBestLapMs(sessionDetail);
+  const sectorCount = getSectorCount(sessionDetail);
+
+  return validTimedLaps.map((lap) => {
+    const sectorMs = Array.from({ length: sectorCount }, (_, index) => {
+      const sector = lap.sectors.find((lapSector) => lapSector.sectorIndex === index);
+      return sector?.splitTimeMs ?? null;
+    });
+    const deltaMs =
+      bestLapMs !== null && lap.lapTimeMs !== null && lap.lapTimeMs !== bestLapMs
+        ? lap.lapTimeMs - bestLapMs
+        : null;
+
+    return {
+      lap: lap.lapNumber,
+      time: formatLapTime(lap.lapTimeMs),
+      timeMs: lap.lapTimeMs ?? 0,
+      delta: deltaMs === null ? null : formatDeltaMs(deltaMs),
+      sectors: sectorMs.map((value) => formatSectorTime(value)),
+      sectorMs,
+    };
+  });
+}
+
+function getAverageLapDeltaLabel(sessionDetail: SessionDetail | null) {
+  const validTimedLaps = getValidTimedLaps(sessionDetail);
+
+  if (validTimedLaps.length < 2) {
+    return i18n.t('common.tbd');
+  }
+
+  const deltas = validTimedLaps.slice(1).map((lap, index) => {
+    const previousLap = validTimedLaps[index];
+    return (lap.lapTimeMs ?? 0) - (previousLap.lapTimeMs ?? 0);
+  });
+  const averageDelta = deltas.reduce((sum, value) => sum + value, 0) / deltas.length;
+  const sign = averageDelta >= 0 ? '+' : '−';
+
+  return `${sign}${(Math.abs(averageDelta) / 1000).toFixed(1)}s`;
+}
+
+function getTrendBars(sessionDetail: SessionDetail | null) {
+  const validTimedLaps = getValidTimedLaps(sessionDetail);
+
+  if (validTimedLaps.length === 0) {
+    return [];
+  }
+
+  const lapTimes = validTimedLaps.map((lap) => lap.lapTimeMs ?? 0);
+  const fastest = Math.min(...lapTimes);
+  const slowest = Math.max(...lapTimes);
+  const range = slowest - fastest;
+
+  return validTimedLaps.map((lap) => ({
+    lap: lap.lapNumber,
+    best: lap.lapTimeMs === fastest,
+    height:
+      range === 0
+        ? 100
+        : Math.round(55 + ((slowest - (lap.lapTimeMs ?? slowest)) / range) * 45),
+  }));
+}
+
+function getMapRegion(sessionDetail: SessionDetail | null) {
+  if (!sessionDetail) {
+    return null;
+  }
+
+  const mapLatitudeDelta = getMapLatitudeDelta(sessionDetail.track.lengthMeters);
+
+  if (
+    sessionDetail.track.centerLatitude !== null &&
+    sessionDetail.track.centerLongitude !== null
+  ) {
+    return {
+      latitude: sessionDetail.track.centerLatitude,
+      longitude: sessionDetail.track.centerLongitude,
+      latitudeDelta: mapLatitudeDelta,
+      longitudeDelta: mapLatitudeDelta * 1.25,
+    };
+  }
+
+  if (sessionDetail.gpsPoints.length === 0) {
+    return null;
+  }
+
+  const latitudes = sessionDetail.gpsPoints.map((point) => point.latitude);
+  const longitudes = sessionDetail.gpsPoints.map((point) => point.longitude);
+  const minLat = Math.min(...latitudes);
+  const maxLat = Math.max(...latitudes);
+  const minLng = Math.min(...longitudes);
+  const maxLng = Math.max(...longitudes);
+
+  return {
+    latitude: (minLat + maxLat) / 2,
+    longitude: (minLng + maxLng) / 2,
+    latitudeDelta: Math.max(maxLat - minLat, 0.0015) * 1.4,
+    longitudeDelta: Math.max(maxLng - minLng, 0.0015) * 1.4,
+  };
+}
 
 export default function SessionDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const db = useSQLiteContext();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const gradientColors = useHeaderGradient('violet');
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const [notes, setNotes] = useState<Note[]>(MOCK_NOTES);
+  const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [newNote, setNewNote] = useState('');
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingNoteText, setEditingNoteText] = useState('');
 
-  function handleAddNote() {
+  const loadSession = useCallback(async () => {
+    if (!id) {
+      setLoadError(i18n.t('sessions.sessionNotFound'));
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const nextSessionDetail = await getSessionById(db, id);
+
+      if (!nextSessionDetail) {
+        setLoadError(i18n.t('sessions.sessionNotFound'));
+        setSessionDetail(null);
+        return;
+      }
+
+      setSessionDetail(nextSessionDetail);
+      setLoadError(null);
+    } catch {
+      setLoadError(i18n.t('sessions.unableToLoadSession'));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [db, id]);
+
+  useEffect(() => {
+    void loadSession();
+  }, [loadSession]);
+
+  async function handleAddNote() {
     const text = newNote.trim();
-    if (!text) return;
-    setNotes([...notes, { id: `${Date.now()}`, text }]);
+    if (!text || !sessionDetail) {
+      return;
+    }
+
+    const note = await addSessionNote(db, sessionDetail.session.id, text);
+    setSessionDetail({ ...sessionDetail, notes: [...sessionDetail.notes, note] });
     setNewNote('');
   }
 
-  function handleUpdateNote(noteId: string) {
+  async function handleUpdateNote(noteId: string) {
     const text = editingNoteText.trim();
-    if (!text) return;
-    setNotes(notes.map((n) => (n.id === noteId ? { ...n, text } : n)));
+    if (!text || !sessionDetail) {
+      return;
+    }
+
+    await updateSessionNote(db, noteId, text);
+    setSessionDetail({
+      ...sessionDetail,
+      notes: sessionDetail.notes.map((note) =>
+        note.id === noteId ? { ...note, note: text } : note
+      ),
+    });
     setEditingNoteId(null);
     setEditingNoteText('');
   }
 
-  function handleDeleteNote(noteId: string) {
-    setNotes(notes.filter((n) => n.id !== noteId));
+  async function handleDeleteNote(noteId: string) {
+    if (!sessionDetail) {
+      return;
+    }
+
+    await deleteSessionNote(db, noteId);
+    setSessionDetail({
+      ...sessionDetail,
+      notes: sessionDetail.notes.filter((note) => note.id !== noteId),
+    });
   }
 
-  function startEditingNote(note: Note) {
+  function startEditingNote(note: SessionNoteRow) {
     setEditingNoteId(note.id);
-    setEditingNoteText(note.text);
+    setEditingNoteText(note.note);
   }
 
   function cancelEditingNote() {
     setEditingNoteId(null);
     setEditingNoteText('');
   }
+
+  const bestLapMs = getBestLapMs(sessionDetail);
+  const topSpeedKph = getTopSpeedKph(sessionDetail);
+  const theoreticalBestMs = getTheoreticalBestMs(sessionDetail);
+  const lapBreakdownItems = getLapBreakdownItems(sessionDetail);
+  const trendBars = getTrendBars(sessionDetail);
+  const mapRegion = getMapRegion(sessionDetail);
+  const startFinishLine =
+    sessionDetail?.timingLines.find((timingLine) => timingLine.type === 'start_finish') ?? null;
+  const gpsLine = (sessionDetail?.gpsPoints ?? []).map((point) => ({
+    latitude: point.latitude,
+    longitude: point.longitude,
+  }));
 
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
@@ -112,46 +429,66 @@ export default function SessionDetailScreen() {
             paddingBottom: 16,
           }}
         >
-          {/* Header */}
           <View className="flex-row items-center justify-between mb-4">
             <Pressable onPress={() => router.back()}>
               <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('common.back')}</Text>
             </Pressable>
-            <Text className="text-xs text-zinc-500 dark:text-zinc-400">Fuji Speedway</Text>
+            <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+              {sessionDetail?.track.name ?? i18n.t('common.track')}
+            </Text>
           </View>
 
-          {/* Title + status */}
           <View className="flex-row items-start justify-between mb-5">
             <View className="flex-1 mr-3">
               <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.recordedSession')}</Text>
-              <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">Track Day · Session 2</Text>
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Mar 10, 2026 · 10:24 AM</Text>
+              <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
+                {sessionDetail?.session.name ?? i18n.t('sessions.recordedSession')}
+              </Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                {sessionDetail ? formatDateTime(sessionDetail.session.startedAt) : i18n.t('common.loading')}
+              </Text>
             </View>
-            <StatusPill text={i18n.t('sessions.bestRun')} color="violet" />
+            <StatusPill
+              text={
+                sessionDetail?.displayStatus === 'Best'
+                  ? i18n.t('sessions.bestRun')
+                  : i18n.t('sessions.recent')
+              }
+              color="violet"
+            />
           </View>
 
-          {/* Track map card */}
           <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
             <View className="rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-200 dark:bg-zinc-950/80 mb-3 h-80 overflow-hidden">
-              <MapView
-                initialRegion={MOCK_MAP_REGION}
-                mapType="satellite"
-                rotateEnabled={true}
-                pitchEnabled={true}
-                toolbarEnabled={false}
-                style={{ flex: 1 }}
-              >
-                <Polyline
-                  coordinates={MOCK_GPS_LINE}
-                  strokeColor="#a78bfa"
-                  strokeWidth={3}
-                />
-                <Polyline
-                  coordinates={MOCK_START_FINISH}
-                  strokeColor="#ef4444"
-                  strokeWidth={4}
-                />
-              </MapView>
+              {mapRegion ? (
+                <MapView
+                  initialRegion={mapRegion}
+                  mapType="satellite"
+                  rotateEnabled={true}
+                  pitchEnabled={true}
+                  toolbarEnabled={false}
+                  style={{ flex: 1 }}
+                >
+                  {gpsLine.length > 1 ? (
+                    <Polyline
+                      coordinates={gpsLine}
+                      strokeColor="#a78bfa"
+                      strokeWidth={3}
+                    />
+                  ) : null}
+                  {startFinishLine ? (
+                    <Polyline
+                      coordinates={[startFinishLine.a, startFinishLine.b]}
+                      strokeColor="#ef4444"
+                      strokeWidth={4}
+                    />
+                  ) : null}
+                </MapView>
+              ) : (
+                <View className="flex-1 items-center justify-center p-5">
+                  <Text className="text-zinc-400 dark:text-zinc-500 text-sm">{i18n.t('circuits.trackMap')}</Text>
+                </View>
+              )}
             </View>
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-1.5">
@@ -171,71 +508,101 @@ export default function SessionDetailScreen() {
         </LinearGradient>
 
         <View className="px-5 py-4 gap-4">
-          {/* Best Lap */}
+          {loadError ? (
+            <Card>
+              <Text className="text-sm text-red-700 dark:text-red-200">{loadError}</Text>
+            </Card>
+          ) : null}
+
+          {isLoading ? (
+            <Card>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.loadingSession')}</Text>
+            </Card>
+          ) : null}
+
           <View className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4">
             <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('session.bestLap')}</Text>
             <Text
               className="text-zinc-900 dark:text-white text-center"
               style={{ fontSize: 40, lineHeight: 44, fontWeight: '600', fontVariant: ['tabular-nums'] }}
             >
-              1:48.771
+              {formatLapTime(bestLapMs)}
             </Text>
           </View>
 
-          {/* Metrics row */}
           <View className="flex-row gap-3">
             {[
-              { label: i18n.t('session.topSpeed'), value: '214 km/h' },
-              { label: i18n.t('session.duration'), value: '18:42' },
-              { label: i18n.t('session.totalLaps'), value: '12' },
-            ].map((m) => (
-              <View key={m.label} className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{m.label}</Text>
-                <Text className="text-lg font-semibold text-zinc-900 dark:text-white">{m.value}</Text>
+              { label: i18n.t('session.topSpeed'), value: formatSpeed(topSpeedKph) },
+              {
+                label: i18n.t('session.duration'),
+                value: sessionDetail
+                  ? formatDuration(sessionDetail.session.startedAt, sessionDetail.session.endedAt)
+                  : i18n.t('common.tbd'),
+              },
+              {
+                label: i18n.t('session.totalLaps'),
+                value: `${sessionDetail?.session.totalLaps ?? 0}`,
+              },
+            ].map((metric) => (
+              <View key={metric.label} className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{metric.label}</Text>
+                <Text className="text-lg font-semibold text-zinc-900 dark:text-white">{metric.value}</Text>
               </View>
             ))}
           </View>
 
-          {/* Session Insights */}
           <Card>
             <View className="mb-4">
               <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('sessions.sessionInsights')}</Text>
               <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.performanceSummary')}</Text>
             </View>
 
-            {/* Consistency */}
             <View className="mb-4">
-              <ProgressBar label={i18n.t('postSession.consistency')} value="91%" color="bg-white dark:bg-white" />
+              <ProgressBar
+                label={i18n.t('postSession.consistency')}
+                value={`${getConsistencyValue(sessionDetail)}%`}
+                color="bg-white dark:bg-white"
+              />
             </View>
 
-            {/* Theoretical Best */}
             <View className="mb-4">
               <View className="flex-row justify-between mb-1">
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.theoreticalBest')}</Text>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">1:47.670</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{formatLapTime(theoreticalBestMs)}</Text>
               </View>
               <View className="flex-row items-center gap-2">
                 <View className="flex-1 h-2 rounded-full bg-zinc-200 dark:bg-white/10 overflow-hidden">
-                  <View className="h-full rounded-full bg-violet-400" style={{ width: '96%' }} />
+                  <View
+                    className="h-full rounded-full bg-violet-400"
+                    style={{
+                      width:
+                        bestLapMs !== null && theoreticalBestMs !== null && bestLapMs > 0
+                          ? `${Math.max(0, Math.min(100, Math.round((theoreticalBestMs / bestLapMs) * 100)))}%`
+                          : '0%',
+                    }}
+                  />
                 </View>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.gap', { gap: '1.101' })}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {i18n.t('sessions.gap', {
+                    gap:
+                      bestLapMs !== null && theoreticalBestMs !== null
+                        ? formatGapSeconds(bestLapMs - theoreticalBestMs)
+                        : i18n.t('common.tbd'),
+                  })}
+                </Text>
               </View>
               <Text className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">{i18n.t('sessions.bestSectorsCombined')}</Text>
             </View>
 
-            {/* Lap Delta Trend */}
             <View>
               <View className="flex-row justify-between mb-2">
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.lapDeltaTrend')}</Text>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.avgPerLap', { delta: '−0.8s' })}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {i18n.t('sessions.avgPerLap', { delta: getAverageLapDeltaLabel(sessionDetail) })}
+                </Text>
               </View>
               <View className="flex-row gap-1.5 items-end h-16">
-                {[
-                  { lap: 1, height: 85, best: false },
-                  { lap: 2, height: 65, best: false },
-                  { lap: 3, height: 100, best: true },
-                  { lap: 4, height: 70, best: false },
-                ].map((bar) => (
+                {trendBars.map((bar) => (
                   <View key={bar.lap} className="flex-1 items-center">
                     <View
                       className={`w-full rounded-md ${bar.best ? 'bg-violet-400' : 'bg-zinc-300 dark:bg-zinc-700'}`}
@@ -245,16 +612,24 @@ export default function SessionDetailScreen() {
                 ))}
               </View>
               <View className="flex-row justify-between mt-1">
-                <Text className="text-xs text-zinc-400 dark:text-zinc-500">{i18n.t('sessions.lapLabel', { number: 1 })}</Text>
-                <Text className="text-xs text-zinc-400 dark:text-zinc-500">{i18n.t('sessions.lapLabel', { number: 4 })}</Text>
+                <Text className="text-xs text-zinc-400 dark:text-zinc-500">
+                  {i18n.t('sessions.lapLabel', { number: trendBars[0]?.lap ?? 0 })}
+                </Text>
+                <Text className="text-xs text-zinc-400 dark:text-zinc-500">
+                  {i18n.t('sessions.lapLabel', { number: trendBars[trendBars.length - 1]?.lap ?? 0 })}
+                </Text>
               </View>
             </View>
           </Card>
 
-          {/* Lap Breakdown */}
-          <LapBreakdown laps={MOCK_LAPS} accentColor="violet" />
+          {lapBreakdownItems.length > 0 ? (
+            <LapBreakdown laps={lapBreakdownItems} accentColor="violet" />
+          ) : (
+            <Card>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.noLapDataYet')}</Text>
+            </Card>
+          )}
 
-          {/* Session Notes */}
           <Card>
             <View className="flex-row items-center justify-between mb-3">
               <View>
@@ -262,7 +637,11 @@ export default function SessionDetailScreen() {
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.sessionNotesSubtitle')}</Text>
               </View>
               <Pressable
-                onPress={() => { setIsEditing(!isEditing); cancelEditingNote(); setNewNote(''); }}
+                onPress={() => {
+                  setIsEditing(!isEditing);
+                  cancelEditingNote();
+                  setNewNote('');
+                }}
                 className="rounded-full px-4 py-2"
                 hitSlop={8}
               >
@@ -272,8 +651,8 @@ export default function SessionDetailScreen() {
               </Pressable>
             </View>
             <View className="gap-2">
-              {notes.length ? (
-                notes.map((note) => (
+              {sessionDetail?.notes.length ? (
+                sessionDetail.notes.map((note) => (
                   <View key={note.id}>
                     {editingNoteId === note.id ? (
                       <View className="rounded-2xl bg-zinc-50 dark:bg-black/20 border border-violet-400/40 p-4">
@@ -317,7 +696,7 @@ export default function SessionDetailScreen() {
                           disabled={!isEditing}
                           className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 px-4 py-3 border border-zinc-100 dark:border-white/5"
                         >
-                          <Text className="text-sm text-zinc-700 dark:text-zinc-200 leading-5">{note.text}</Text>
+                          <Text className="text-sm text-zinc-700 dark:text-zinc-200 leading-5">{note.note}</Text>
                         </Pressable>
                       </View>
                     )}
@@ -354,7 +733,6 @@ export default function SessionDetailScreen() {
           </Card>
         </View>
 
-        {/* Bottom buttons */}
         <View className="px-5 pb-5 pt-1 flex-row gap-3">
           <Pressable className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center">
             <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('sessions.exportData')}</Text>

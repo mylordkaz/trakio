@@ -59,6 +59,7 @@ export type TrackNoteRow = {
 
 export type SessionRow = {
   id: string;
+  name: string | null;
   trackId: string;
   startedAt: ISODateString;
   endedAt: ISODateString | null;
@@ -67,6 +68,15 @@ export type SessionRow = {
   bestLapMs: number | null;
   totalLaps: number;
   maxSpeedKph: number | null;
+  createdAt: ISODateString;
+  updatedAt: ISODateString;
+};
+
+export type SessionNoteRow = {
+  id: string;
+  sessionId: string;
+  note: string;
+  seq: number;
   createdAt: ISODateString;
   updatedAt: ISODateString;
 };
