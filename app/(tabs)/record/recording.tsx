@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import { Animated, View, Text, ScrollView, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import type { LocationSubscription } from 'expo-location';
@@ -85,6 +85,7 @@ export default function RecordingScreen() {
   const runtimeRef = useRef<ReturnType<typeof createSessionRuntime> | null>(null);
   const locationSubscriptionRef = useRef<LocationSubscription | null>(null);
   const hasStoppedRef = useRef(false);
+  const pulseOpacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     let isMounted = true;
@@ -235,6 +236,30 @@ export default function RecordingScreen() {
     };
   }, [runtimeSnapshot?.sessionEndedAtMs, runtimeSnapshot?.sessionStartedAtMs]);
 
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseOpacity, {
+          toValue: 0.45,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseOpacity, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+      pulseOpacity.setValue(1);
+    };
+  }, [pulseOpacity]);
+
   const sectorCount = track?.sectorCount ?? 0;
   const sessionDurationMs =
     runtimeSnapshot?.sessionStartedAtMs !== null && runtimeSnapshot?.sessionStartedAtMs !== undefined
@@ -303,10 +328,12 @@ export default function RecordingScreen() {
         {/* Header */}
         <View className="flex-row items-start justify-between mb-3">
           <Text className="text-xs text-zinc-500 dark:text-zinc-400">{track?.name ?? i18n.t('circuits.loadingTrack')}</Text>
-          <View className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-3 py-1.5 border border-red-400/20">
-            <View className="h-2.5 w-2.5 rounded-full bg-red-400" />
-            <Text className="text-sm text-red-400">{i18n.t('session.recording')}</Text>
-          </View>
+          <Animated.View style={{ opacity: pulseOpacity }}>
+            <View className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-3 py-1.5 border border-red-400/20">
+              <View className="h-2.5 w-2.5 rounded-full bg-red-400" />
+              <Text className="text-sm text-red-400">{i18n.t('session.recording')}</Text>
+            </View>
+          </Animated.View>
         </View>
 
         {/* Title + REC badge */}
@@ -350,12 +377,12 @@ export default function RecordingScreen() {
               {formatLapTime(currentElapsedMs)}
             </Text>
           ) : (
-            <Text
+            <Animated.Text
               className="text-zinc-500 dark:text-zinc-400 mb-3 text-center"
-              style={{ fontSize: 24, lineHeight: 32, fontWeight: '500' }}
+              style={{ fontSize: 24, lineHeight: 32, fontWeight: '500', opacity: pulseOpacity }}
             >
               {i18n.t('recording.waitingForStartLine')}
-            </Text>
+            </Animated.Text>
           )}
           <View className="flex-row gap-2">
             {Array.from({ length: sectorCount }, (_, index) => {
