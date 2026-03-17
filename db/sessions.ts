@@ -65,6 +65,7 @@ type DbGpsPointRow = {
   session_id: string;
   lap_id: string | null;
   recorded_at: ISODateString;
+  elapsed_ms: number | null;
   latitude: number;
   longitude: number;
   speed_mps: number | null;
@@ -194,6 +195,7 @@ function mapGpsPointRow(row: DbGpsPointRow): GpsPointRow {
     sessionId: row.session_id,
     lapId: row.lap_id,
     recordedAt: row.recorded_at,
+    elapsedMs: row.elapsed_ms,
     latitude: row.latitude,
     longitude: row.longitude,
     speedMps: row.speed_mps,

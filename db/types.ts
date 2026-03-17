@@ -113,6 +113,7 @@ export type GpsPointRow = {
   sessionId: string;
   lapId: string | null;
   recordedAt: ISODateString;
+  elapsedMs: number | null;
   latitude: number;
   longitude: number;
   speedMps: number | null;

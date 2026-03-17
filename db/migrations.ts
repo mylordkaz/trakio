@@ -87,6 +87,7 @@ async function createBaseSchema(db: SQLiteDatabase) {
         session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
         lap_id TEXT REFERENCES laps(id) ON DELETE SET NULL,
         recorded_at TEXT NOT NULL,
+        elapsed_ms INTEGER,
         latitude REAL NOT NULL,
         longitude REAL NOT NULL,
         speed_mps REAL,
@@ -381,6 +382,16 @@ const MIGRATIONS: Migration[] = [
         CREATE INDEX IF NOT EXISTS idx_session_notes_session_seq
           ON session_notes(session_id, seq);
       `);
+    },
+  },
+  {
+    version: 5,
+    up: async (db) => {
+      const gpsPointColumns = await getColumnNames(db, 'gps_points');
+
+      if (!gpsPointColumns.includes('elapsed_ms')) {
+        await db.execAsync('ALTER TABLE gps_points ADD COLUMN elapsed_ms INTEGER;');
+      }
     },
   },
 ];
