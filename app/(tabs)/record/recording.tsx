@@ -264,6 +264,11 @@ export default function RecordingScreen() {
       hasStoppedRef.current = true;
       const stoppedSnapshot = await activeRuntime.stop();
       setRuntimeSnapshot(stoppedSnapshot);
+      router.replace({
+        pathname: '/(tabs)/record/post-session',
+        params: { id: stoppedSnapshot.sessionId ?? '' },
+      });
+      return;
     }
 
     router.replace('/(tabs)/record/post-session');
