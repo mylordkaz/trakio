@@ -156,6 +156,8 @@ export default {
     noLapDataYet: 'ラップデータはまだありません',
     noSessionNotesYet: 'セッションノートはまだありません',
     addSessionNotePlaceholder: 'このセッションについてノートを追加...',
+    deleteTitle: 'セッションを削除',
+    deleteMessage: '「%{name}」を削除しますか？ラップ、GPSデータ、ノートがすべて完全に削除されます。',
     share: '共有',
     viewReplay: 'リプレイを見る',
     sessionInsights: 'セッションインサイト',

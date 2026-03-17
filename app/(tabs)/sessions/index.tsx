@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TextInput, Pressable } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, View, Text, ScrollView, TextInput, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,7 +8,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import i18n from '@/i18n';
 import StatusPill from '@/components/StatusPill';
 import type { SessionListItem } from '@/db';
-import { listSessions } from '@/db';
+import { listSessions, deleteSession } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 
@@ -51,6 +51,7 @@ export default function SessionListScreen() {
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('violet');
@@ -103,6 +104,27 @@ export default function SessionListScreen() {
     return matchesSearch && matchesFilter;
   });
 
+  const handleDeleteSession = useCallback(
+    (session: SessionListItem) => {
+      Alert.alert(
+        i18n.t('sessions.deleteTitle'),
+        i18n.t('sessions.deleteMessage', { name: session.name }),
+        [
+          { text: i18n.t('common.cancel'), style: 'cancel' },
+          {
+            text: i18n.t('common.delete'),
+            style: 'destructive',
+            onPress: async () => {
+              await deleteSession(db, session.id);
+              setSessions((prev) => prev.filter((s) => s.id !== session.id));
+            },
+          },
+        ]
+      );
+    },
+    [db]
+  );
+
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
       <ScrollView
@@ -120,7 +142,11 @@ export default function SessionListScreen() {
         >
           <View className="flex-row items-center justify-between mb-4">
             <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.header')}</Text>
-            <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.runs', { count: sessions.length })}</Text>
+            <Pressable onPress={() => setEditMode((prev) => !prev)}>
+              <Text className="text-sm font-medium text-violet-400">
+                {editMode ? i18n.t('common.done') : i18n.t('common.edit')}
+              </Text>
+            </Pressable>
           </View>
 
           <View className="mb-5">
@@ -191,39 +217,49 @@ export default function SessionListScreen() {
           ) : null}
 
           {filteredSessions.map((session) => (
-            <Pressable
-              key={session.id}
-              onPress={() => router.push({ pathname: '/(tabs)/sessions/detail', params: { id: session.id } })}
-              className="w-full rounded-3xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4"
-            >
-              <View className="flex-row justify-between items-start mb-3">
-                <View className="flex-1 mr-3">
-                  <Text className="text-base font-semibold leading-tight text-zinc-900 dark:text-white">{session.name}</Text>
-                  <Text className="text-sm text-zinc-500 dark:text-zinc-400">{session.trackName}</Text>
+            <View key={session.id} className="flex-row items-center gap-3">
+              {editMode ? (
+                <Pressable onPress={() => handleDeleteSession(session)}>
+                  <Ionicons name="remove-circle" size={24} color="#ef4444" />
+                </Pressable>
+              ) : null}
+              <Pressable
+                onPress={() => {
+                  if (!editMode) {
+                    router.push({ pathname: '/(tabs)/sessions/detail', params: { id: session.id } });
+                  }
+                }}
+                className="flex-1 rounded-3xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4"
+              >
+                <View className="flex-row justify-between items-start mb-3">
+                  <View className="flex-1 mr-3">
+                    <Text className="text-base font-semibold leading-tight text-zinc-900 dark:text-white">{session.name}</Text>
+                    <Text className="text-sm text-zinc-500 dark:text-zinc-400">{session.trackName}</Text>
+                  </View>
+                  <StatusPill text={session.displayStatus} color="violet" />
                 </View>
-                <StatusPill text={session.displayStatus} color="violet" />
-              </View>
-              <View className="flex-row gap-3 mb-3">
-                <View className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 px-3 py-2.5">
-                  <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{i18n.t('sessions.date')}</Text>
-                  <Text className="text-sm font-medium text-zinc-900 dark:text-white">{formatSessionDate(session.startedAt)}</Text>
+                <View className="flex-row gap-3 mb-3">
+                  <View className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 px-3 py-2.5">
+                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{i18n.t('sessions.date')}</Text>
+                    <Text className="text-sm font-medium text-zinc-900 dark:text-white">{formatSessionDate(session.startedAt)}</Text>
+                  </View>
+                  <View className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 px-3 py-2.5">
+                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{i18n.t('sessions.startTime')}</Text>
+                    <Text className="text-sm font-medium text-zinc-900 dark:text-white">{formatSessionTime(session.startedAt)}</Text>
+                  </View>
                 </View>
-                <View className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 px-3 py-2.5">
-                  <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{i18n.t('sessions.startTime')}</Text>
-                  <Text className="text-sm font-medium text-zinc-900 dark:text-white">{formatSessionTime(session.startedAt)}</Text>
+                <View className="flex-row items-center justify-between rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 px-3 py-2.5">
+                  <View>
+                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{i18n.t('session.bestLap')}</Text>
+                    <Text className="text-sm font-semibold text-zinc-900 dark:text-white">{formatLapTime(session.bestLapMs)}</Text>
+                  </View>
+                  <View className="items-end">
+                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{i18n.t('sessions.laps')}</Text>
+                    <Text className="text-sm font-semibold text-zinc-900 dark:text-white">{session.totalLaps}</Text>
+                  </View>
                 </View>
-              </View>
-              <View className="flex-row items-center justify-between rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 px-3 py-2.5">
-                <View>
-                  <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{i18n.t('session.bestLap')}</Text>
-                  <Text className="text-sm font-semibold text-zinc-900 dark:text-white">{formatLapTime(session.bestLapMs)}</Text>
-                </View>
-                <View className="items-end">
-                  <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{i18n.t('sessions.laps')}</Text>
-                  <Text className="text-sm font-semibold text-zinc-900 dark:text-white">{session.totalLaps}</Text>
-                </View>
-              </View>
-            </Pressable>
+              </Pressable>
+            </View>
           ))}
         </View>
 

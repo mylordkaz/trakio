@@ -156,6 +156,8 @@ export default {
     noLapDataYet: 'No lap data yet',
     noSessionNotesYet: 'No session notes yet',
     addSessionNotePlaceholder: 'Add a note about this session...',
+    deleteTitle: 'Delete Session',
+    deleteMessage: 'Are you sure you want to delete "%{name}"? This will permanently remove all laps, GPS data, and notes.',
     share: 'Share',
     viewReplay: 'View Replay',
     sessionInsights: 'Session Insights',

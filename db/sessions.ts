@@ -690,3 +690,10 @@ export async function deleteSessionNote(
 ): Promise<void> {
   await db.runAsync('DELETE FROM session_notes WHERE id = ?;', noteId);
 }
+
+export async function deleteSession(
+  db: SQLiteDatabase,
+  sessionId: string
+): Promise<void> {
+  await db.runAsync('DELETE FROM sessions WHERE id = ?;', sessionId);
+}
