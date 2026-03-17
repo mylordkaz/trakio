@@ -1,7 +1,18 @@
 import { Tabs } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import i18n from '@/i18n';
 import { useColorScheme } from '@/hooks/useColorScheme';
+
+function UnmountOnBlur({ children }: { children: React.ReactNode }) {
+  const isFocused = useIsFocused();
+
+  if (!isFocused) {
+    return null;
+  }
+
+  return <>{children}</>;
+}
 
 export default function TabsLayout() {
   const { colorScheme } = useColorScheme();
@@ -9,6 +20,7 @@ export default function TabsLayout() {
 
   return (
     <Tabs
+      screenLayout={({ children }) => <UnmountOnBlur>{children}</UnmountOnBlur>}
       screenOptions={{
         headerShown: false,
         tabBarStyle: {

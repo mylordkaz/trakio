@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import i18n from '@/i18n';
 import Card from '@/components/Card';
 import type { TrackListItem } from '@/db';
-import { getTrackSessionSummary, listTracks } from '@/db';
+import { getNextTrackSessionNumber, getTrackSessionSummary, listTracks } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 
@@ -31,10 +31,10 @@ export default function PreSessionScreen() {
     lastVisit: null,
     bestLapMs: null,
   });
+  const [sessionNumber, setSessionNumber] = useState(1);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('emerald');
-  const sessionNumber = 3; // TODO: derive from DB
   const sessionTitle = i18n.t('preSession.sessionTitle', { number: sessionNumber });
 
   useEffect(() => {
@@ -107,6 +107,41 @@ export default function PreSessionScreen() {
     }
 
     void loadTrackSummary();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [db, selectedCircuit]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSessionNumber() {
+      if (!selectedCircuit) {
+        if (isMounted) {
+          setSessionNumber(1);
+        }
+        return;
+      }
+
+      try {
+        const nextSessionNumber = await getNextTrackSessionNumber(db, selectedCircuit.id);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setSessionNumber(nextSessionNumber);
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        setSessionNumber(1);
+      }
+    }
+
+    void loadSessionNumber();
 
     return () => {
       isMounted = false;
@@ -258,7 +293,16 @@ export default function PreSessionScreen() {
           {/* Start button */}
           <View className="mt-4">
             <Pressable
-              onPress={() => router.push('/(tabs)/record/recording')}
+              onPress={() => {
+                if (!selectedCircuit) {
+                  return;
+                }
+
+                router.push({
+                  pathname: '/(tabs)/record/recording',
+                  params: { trackId: selectedCircuit.id, sessionName: sessionTitle },
+                });
+              }}
               className="w-full rounded-2xl bg-emerald-500 py-4 items-center"
             >
               <Text className="text-sm font-semibold text-black">

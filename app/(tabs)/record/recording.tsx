@@ -1,24 +1,273 @@
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
+import type { LocationSubscription } from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import i18n from '@/i18n';
 import Card from '@/components/Card';
 import LapRow from '@/components/LapRow';
 import ProgressBar from '@/components/ProgressBar';
-import { LAP_DATA } from '@/constants/data';
+import { createSessionRecorder, getTrackById } from '@/db';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
+import {
+  requestForegroundLocationPermission,
+  startLocationSubscription,
+  stopLocationSubscription,
+} from '@/telemetry/location';
+import { createSessionRuntime } from '@/telemetry/session-runtime';
+import type { TrackDetail } from '@/db';
 
-const SECTORS = [
-  { label: 'S1', time: '32.184', active: true },
-  { label: 'S2', time: '41.902', active: false },
-  { label: 'S3', time: '34.685', active: false },
-];
+function formatLapTime(lapTimeMs: number | null) {
+  if (lapTimeMs === null) {
+    return '--:--.---';
+  }
+
+  const totalSeconds = lapTimeMs / 1000;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds - minutes * 60;
+
+  return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
+}
+
+function formatDuration(elapsedMs: number | null) {
+  if (elapsedMs === null) {
+    return '0:00';
+  }
+
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function formatSpeed(speedKph: number | null) {
+  if (speedKph === null) {
+    return i18n.t('common.tbd');
+  }
+
+  return `${Math.round(speedKph)} km/h`;
+}
+
+function formatClockTime() {
+  return new Date().toLocaleTimeString(i18n.locale === 'ja' ? 'ja-JP' : 'en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function getGpsSignalPercent(accuracyM: number | null) {
+  if (accuracyM === null) {
+    return 0;
+  }
+
+  if (accuracyM <= 5) {
+    return 100;
+  }
+
+  if (accuracyM >= 50) {
+    return 10;
+  }
+
+  return Math.max(10, Math.min(100, Math.round(100 - ((accuracyM - 5) / 45) * 90)));
+}
+
+function getGpsSignalLabel(accuracyM: number | null) {
+  return `${getGpsSignalPercent(accuracyM)}%`;
+}
 
 export default function RecordingScreen() {
   const router = useRouter();
+  const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ trackId?: string; sessionName?: string }>();
   const gradientColors = useHeaderGradient('red');
+  const [track, setTrack] = useState<TrackDetail | null>(null);
+  const [isLoadingTrack, setIsLoadingTrack] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<ReturnType<ReturnType<typeof createSessionRuntime>['getSnapshot']> | null>(null);
+  const runtimeRef = useRef<ReturnType<typeof createSessionRuntime> | null>(null);
+  const locationSubscriptionRef = useRef<LocationSubscription | null>(null);
+  const hasStoppedRef = useRef(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadTrack() {
+      if (!params.trackId) {
+        if (isMounted) {
+          setLoadError(i18n.t('circuits.unableToLoadTrack'));
+          setIsLoadingTrack(false);
+        }
+        return;
+      }
+
+      try {
+        setIsLoadingTrack(true);
+        const nextTrack = await getTrackById(db, params.trackId);
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (!nextTrack) {
+          setLoadError(i18n.t('circuits.unableToLoadTrack'));
+          setTrack(null);
+          return;
+        }
+
+        setTrack(nextTrack);
+        setLoadError(null);
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        setLoadError(i18n.t('circuits.unableToLoadTrack'));
+      } finally {
+        if (isMounted) {
+          setIsLoadingTrack(false);
+        }
+      }
+    }
+
+    void loadTrack();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [db, params.trackId]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function startRecordingSession() {
+      if (!track) {
+        return;
+      }
+
+      const permissionState = await requestForegroundLocationPermission();
+      if (!isMounted) {
+        return;
+      }
+
+      if (permissionState !== 'granted') {
+        setLoadError('Location permission is required to record a session.');
+        return;
+      }
+
+      const recorder = createSessionRecorder(db);
+      const runtime = createSessionRuntime({
+        track,
+        timingLines: track.timingLines,
+        recorder,
+        config: {
+          sessionName: params.sessionName ?? null,
+        },
+      });
+      const sessionStartedAtMs = Date.now();
+
+      runtimeRef.current = runtime;
+
+      const startedSnapshot = await runtime.start();
+      if (!isMounted) {
+        return;
+      }
+
+      setRuntimeSnapshot(startedSnapshot);
+
+      locationSubscriptionRef.current = await startLocationSubscription({
+        resolveElapsedMs: (recordedAt) => Math.max(0, recordedAt - sessionStartedAtMs),
+        onSample: (sample) => {
+          const activeRuntime = runtimeRef.current;
+
+          if (!activeRuntime || !isMounted) {
+            return;
+          }
+
+          void activeRuntime.handleSample(sample).then((result) => {
+            if (!isMounted) {
+              return;
+            }
+
+            setRuntimeSnapshot(result.snapshot);
+          }).catch(() => {
+            if (!isMounted) {
+              return;
+            }
+
+            setLoadError('Unable to process telemetry sample.');
+          });
+        },
+        onError: () => {
+          if (!isMounted) {
+            return;
+          }
+
+          setLoadError('Location subscription error.');
+        },
+      });
+    }
+
+    void startRecordingSession();
+
+    return () => {
+      isMounted = false;
+      stopLocationSubscription(locationSubscriptionRef.current);
+      locationSubscriptionRef.current = null;
+
+      const activeRuntime = runtimeRef.current;
+      if (activeRuntime && !hasStoppedRef.current) {
+        void activeRuntime.stop().catch(() => undefined);
+      }
+    };
+  }, [db, params.sessionName, track]);
+
+  const sectorCount = track?.sectorCount ?? 0;
+  const currentElapsedMs =
+    runtimeSnapshot?.status === 'lap_in_progress' &&
+    runtimeSnapshot.currentLapStartedElapsedMs !== null &&
+    runtimeSnapshot.latestAcceptedSample
+      ? runtimeSnapshot.latestAcceptedSample.elapsedMs - runtimeSnapshot.currentLapStartedElapsedMs
+      : null;
+  const currentLapLabel =
+    runtimeSnapshot?.status === 'lap_in_progress'
+      ? runtimeSnapshot.currentLapNumber
+      : runtimeSnapshot?.status === 'armed'
+        ? 1
+        : 0;
+  const currentSpeedKph =
+    runtimeSnapshot?.latestAcceptedSample?.speedMps !== null &&
+    runtimeSnapshot?.latestAcceptedSample?.speedMps !== undefined
+      ? runtimeSnapshot.latestAcceptedSample.speedMps * 3.6
+      : null;
+  const recentLaps = runtimeSnapshot?.lastLapMs !== null && runtimeSnapshot?.lastLapMs !== undefined
+    ? [{
+        lap: runtimeSnapshot.totalLaps,
+        time: formatLapTime(runtimeSnapshot.lastLapMs),
+        delta:
+          runtimeSnapshot.bestLapMs !== null && runtimeSnapshot.lastLapMs !== runtimeSnapshot.bestLapMs
+            ? `+${((runtimeSnapshot.lastLapMs - runtimeSnapshot.bestLapMs) / 1000).toFixed(3)}`
+            : 'Best',
+      }]
+    : [];
+
+  async function handleEndSession() {
+    const activeRuntime = runtimeRef.current;
+
+    stopLocationSubscription(locationSubscriptionRef.current);
+    locationSubscriptionRef.current = null;
+
+    if (activeRuntime && !hasStoppedRef.current) {
+      hasStoppedRef.current = true;
+      const stoppedSnapshot = await activeRuntime.stop();
+      setRuntimeSnapshot(stoppedSnapshot);
+    }
+
+    router.replace('/(tabs)/record/post-session');
+  }
 
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
@@ -34,15 +283,17 @@ export default function RecordingScreen() {
       >
         {/* Header */}
         <View className="flex-row items-center justify-between mb-4">
-          <Text className="text-xs text-zinc-500 dark:text-zinc-400">Fuji Speedway</Text>
-          <Text className="text-xs text-zinc-500 dark:text-zinc-400">12:18 PM</Text>
+          <Text className="text-xs text-zinc-500 dark:text-zinc-400">{track?.name ?? i18n.t('circuits.loadingTrack')}</Text>
+          <Text className="text-xs text-zinc-500 dark:text-zinc-400">{formatClockTime()}</Text>
         </View>
 
         {/* Title + REC badge */}
         <View className="flex-row items-start justify-between mb-5">
           <View className="flex-1 mr-3">
             <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('recording.sessionRecording')}</Text>
-            <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">Track Day · Session 2</Text>
+            <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
+              {params.sessionName ?? track?.layoutName ?? i18n.t('recording.sessionRecording')}
+            </Text>
           </View>
           <View className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-3 py-1.5 border border-red-400/20">
             <View className="h-2.5 w-2.5 rounded-full bg-red-400" />
@@ -50,30 +301,50 @@ export default function RecordingScreen() {
           </View>
         </View>
 
+        {isLoadingTrack ? (
+          <View className="mb-4 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-3">
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.loadingTrack')}</Text>
+          </View>
+        ) : null}
+
+        {loadError ? (
+          <View className="mb-4 rounded-2xl bg-red-500/10 border border-red-500/20 px-3 py-3">
+            <Text className="text-sm text-red-700 dark:text-red-200">{loadError}</Text>
+          </View>
+        ) : null}
+
         {/* Current lap card */}
         <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
           <View className="flex-row items-center justify-between mb-2">
             <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('session.currentLap')}</Text>
-            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('session.lapCount', { count: 5 })}</Text>
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400">
+              {i18n.t('session.lapCount', { count: currentLapLabel })}
+            </Text>
           </View>
           <Text
             className="text-zinc-900 dark:text-white mb-3"
             style={{ fontSize: 56, lineHeight: 56, fontWeight: '600', fontVariant: ['tabular-nums'] }}
           >
-            1:12.48
+            {formatLapTime(currentElapsedMs)}
           </Text>
           <View className="flex-row gap-2">
-            {SECTORS.map((s) => (
+            {Array.from({ length: sectorCount }, (_, index) => {
+              const isActive =
+                runtimeSnapshot?.status === 'lap_in_progress' &&
+                (runtimeSnapshot.lastCrossedSectorSeq ?? 0) + 1 === index + 1;
+
+              return (
               <View
-                key={s.label}
+                key={`sector-${index + 1}`}
                 className={`flex-1 rounded-2xl p-3 border ${
-                  s.active ? 'bg-red-500/10 border-red-400/30' : 'bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10'
+                  isActive ? 'bg-red-500/10 border-red-400/30' : 'bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10'
                 }`}
               >
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{s.label}</Text>
-                <Text className="text-lg font-medium text-zinc-900 dark:text-white">{s.time}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{`S${index + 1}`}</Text>
+                <Text className="text-lg font-medium text-zinc-900 dark:text-white">--.---</Text>
               </View>
-            ))}
+              );
+            })}
           </View>
         </View>
 
@@ -83,7 +354,9 @@ export default function RecordingScreen() {
             <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('session.markPitIn')}</Text>
           </Pressable>
           <Pressable
-            onPress={() => router.replace('/(tabs)/record/post-session')}
+            onPress={() => {
+              void handleEndSession();
+            }}
             className="flex-1 rounded-2xl bg-red-500 py-3.5 items-center"
           >
             <Text className="text-sm font-semibold text-white">{i18n.t('session.end')}</Text>
@@ -100,9 +373,9 @@ export default function RecordingScreen() {
           {/* Stats row */}
           <View className="flex-row gap-3">
             {[
-              [i18n.t('session.bestLap'), '1:48.771'],
-              [i18n.t('session.topSpeed'), '214 km/h'],
-              [i18n.t('session.duration'), '18:42'],
+              [i18n.t('session.bestLap'), formatLapTime(runtimeSnapshot?.bestLapMs ?? null)],
+              [i18n.t('session.topSpeed'), formatSpeed(runtimeSnapshot?.maxSpeedKph ?? null)],
+              [i18n.t('session.duration'), formatDuration(runtimeSnapshot?.latestAcceptedSample?.elapsedMs ?? null)],
             ].map(([l, v]) => (
               <View key={l} className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{l}</Text>
@@ -118,23 +391,39 @@ export default function RecordingScreen() {
                 <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('telemetry.title')}</Text>
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('telemetry.subtitle')}</Text>
               </View>
-              <Text className="text-sm text-emerald-400">{i18n.t('telemetry.stable')}</Text>
+              <Text className="text-sm text-emerald-400">
+                {runtimeSnapshot?.latestAcceptedSample ? i18n.t('telemetry.stable') : i18n.t('common.tbd')}
+              </Text>
             </View>
             <View className="gap-3">
-              <ProgressBar label={i18n.t('telemetry.throttle')} value="78%" />
-              <ProgressBar label={i18n.t('telemetry.brake')} value="12%" />
-              <ProgressBar label={i18n.t('telemetry.gpsSignal')} value="92%" color="bg-emerald-400" />
+              <ProgressBar
+                label={i18n.t('telemetry.throttle')}
+                value={`${Math.min(100, Math.round(currentSpeedKph ?? 0))}%`}
+              />
+              <ProgressBar
+                label={i18n.t('telemetry.brake')}
+                value={`${runtimeSnapshot?.status === 'lap_in_progress' ? 0 : 100}%`}
+              />
+              <ProgressBar
+                label={i18n.t('telemetry.gpsSignal')}
+                value={getGpsSignalLabel(runtimeSnapshot?.latestAcceptedSample?.accuracyM ?? null)}
+                color="bg-emerald-400"
+              />
             </View>
           </Card>
 
           {/* Recent Laps */}
           <Card>
             <Text className="text-sm font-medium text-zinc-900 dark:text-white mb-3">{i18n.t('recording.lapTimes')}</Text>
-            <View className="gap-2">
-              {LAP_DATA.map((item) => (
-                <LapRow key={item.lap} item={item} />
-              ))}
-            </View>
+            {recentLaps.length > 0 ? (
+              <View className="gap-2">
+                {recentLaps.map((item) => (
+                  <LapRow key={item.lap} item={item} />
+                ))}
+              </View>
+            ) : (
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.noLapDataYet')}</Text>
+            )}
           </Card>
         </View>
       </ScrollView>
