@@ -11,7 +11,7 @@ Designed to work fully offline — most race tracks have limited network coverag
 - **Automatic Lap Detection** — detects start/finish line crossings with debounce and minimum lap time safeguards
 - **Sector Timing** — split times calculated as sector lines are crossed
 - **Live Session Display** — current lap timer, last lap, best lap, sector splits, and lap count in a large, glanceable UI
-- **Satellite Map Replay** — view lap paths over satellite imagery with optional speed-based coloring
+- **Lap Path Map View** — display saved lap paths over satellite imagery with optional speed-based coloring
 - **Session History** — browse past sessions by track, date, best lap, and lap count
 - **Local Storage** — all data stored on-device via SQLite
 
@@ -84,7 +84,7 @@ The MVP delivers a working app that can:
 3. Automatically detect laps via start/finish line crossing
 4. Calculate sector split times
 5. Save all session data locally
-6. Replay laps on a satellite map
+6. Display saved lap paths on a satellite map
 
 ### Excluded from MVP
 

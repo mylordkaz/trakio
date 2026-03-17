@@ -130,6 +130,11 @@ export type SessionDetail = {
   displayStatus: SessionDisplayStatus;
 };
 
+export type TrackSessionSummary = {
+  lastVisit: ISODateString | null;
+  bestLapMs: number | null;
+};
+
 function generateId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -515,6 +520,35 @@ export async function listSessions(db: SQLiteDatabase): Promise<SessionListItem[
       displayStatus: toDisplayStatus(session.id, bestSessionId),
     };
   });
+}
+
+export async function getTrackSessionSummary(
+  db: SQLiteDatabase,
+  trackId: string
+): Promise<TrackSessionSummary> {
+  const row = await db.getFirstAsync<{
+    last_visit: ISODateString | null;
+    best_lap_ms: number | null;
+  }>(
+    `SELECT
+      MAX(s.started_at) AS last_visit,
+      MIN(
+        CASE
+          WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0
+            THEN l.lap_time_ms
+        END
+      ) AS best_lap_ms
+    FROM sessions s
+    LEFT JOIN laps l
+      ON l.session_id = s.id
+    WHERE s.track_id = ?;`,
+    trackId
+  );
+
+  return {
+    lastVisit: row?.last_visit ?? null,
+    bestLapMs: row?.best_lap_ms ?? null,
+  };
 }
 
 export async function getSessionById(

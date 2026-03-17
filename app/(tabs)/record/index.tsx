@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import i18n from '@/i18n';
 import Card from '@/components/Card';
-import { CIRCUITS } from '@/constants/data';
+import type { TrackListItem } from '@/db';
+import { getTrackSessionSummary, listTracks } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 
@@ -18,14 +20,130 @@ const CHECKLIST = [
 
 export default function PreSessionScreen() {
   const router = useRouter();
+  const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
-  const [selectedCircuit, setSelectedCircuit] = useState(CIRCUITS[0]);
+  const [circuits, setCircuits] = useState<TrackListItem[]>([]);
+  const [selectedCircuit, setSelectedCircuit] = useState<TrackListItem | null>(null);
   const [showCircuitPicker, setShowCircuitPicker] = useState(false);
+  const [isLoadingCircuits, setIsLoadingCircuits] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [trackSummary, setTrackSummary] = useState<{ lastVisit: string | null; bestLapMs: number | null }>({
+    lastVisit: null,
+    bestLapMs: null,
+  });
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('emerald');
   const sessionNumber = 3; // TODO: derive from DB
   const sessionTitle = i18n.t('preSession.sessionTitle', { number: sessionNumber });
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCircuits() {
+      try {
+        setIsLoadingCircuits(true);
+        const nextCircuits = await listTracks(db);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setCircuits(nextCircuits);
+        setSelectedCircuit((currentCircuit) => {
+          if (currentCircuit) {
+            return nextCircuits.find((circuit) => circuit.id === currentCircuit.id) ?? nextCircuits[0] ?? null;
+          }
+
+          return nextCircuits[0] ?? null;
+        });
+        setLoadError(null);
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        setLoadError(i18n.t('circuits.loadError'));
+      } finally {
+        if (isMounted) {
+          setIsLoadingCircuits(false);
+        }
+      }
+    }
+
+    void loadCircuits();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [db]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadTrackSummary() {
+      if (!selectedCircuit) {
+        if (isMounted) {
+          setTrackSummary({ lastVisit: null, bestLapMs: null });
+        }
+        return;
+      }
+
+      try {
+        const summary = await getTrackSessionSummary(db, selectedCircuit.id);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setTrackSummary(summary);
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        setTrackSummary({ lastVisit: null, bestLapMs: null });
+      }
+    }
+
+    void loadTrackSummary();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [db, selectedCircuit]);
+
+  function formatTrackLength(lengthMeters: number | null) {
+    if (lengthMeters === null) {
+      return i18n.t('common.tbd');
+    }
+
+    return `${(lengthMeters / 1000).toFixed(3)} km`;
+  }
+
+  function formatLastVisit(value: string | null) {
+    if (!value) {
+      return i18n.t('common.tbd');
+    }
+
+    return new Date(value).toLocaleDateString(i18n.locale === 'ja' ? 'ja-JP' : 'en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  }
+
+  function formatLapTime(lapTimeMs: number | null) {
+    if (lapTimeMs === null) {
+      return '--:--.---';
+    }
+
+    const totalSeconds = lapTimeMs / 1000;
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds - minutes * 60;
+
+    return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
+  }
 
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
@@ -71,13 +189,30 @@ export default function PreSessionScreen() {
               </Pressable>
             </View>
 
-            {!showCircuitPicker ? (
+            {isLoadingCircuits ? (
+              <View className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-3">
+                <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.loadingTracks')}</Text>
+              </View>
+            ) : loadError ? (
+              <View className="rounded-2xl bg-red-500/10 border border-red-500/20 px-3 py-3">
+                <Text className="text-sm text-red-700 dark:text-red-200">{loadError}</Text>
+              </View>
+            ) : !selectedCircuit ? (
+              <View className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-3">
+                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('circuits.noTracksFound')}</Text>
+                <Text className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                  {i18n.t('circuits.noTracksFoundHint')}
+                </Text>
+              </View>
+            ) : !showCircuitPicker ? (
               <Pressable onPress={() => setShowCircuitPicker(true)}>
                 <View className="flex-row items-center justify-between">
                   <View className="flex-1">
                     <Text className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-white">{selectedCircuit.name}</Text>
                     <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-                      {selectedCircuit.country} · {selectedCircuit.length} · {i18n.t('preSession.cornersCount', { count: selectedCircuit.corners })}
+                      {[selectedCircuit.country, formatTrackLength(selectedCircuit.lengthMeters), i18n.t('preSession.cornersCount', { count: selectedCircuit.corners ?? 0 })]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </Text>
                   </View>
                   <Ionicons name="chevron-forward" size={16} color="#71717a" />
@@ -85,31 +220,33 @@ export default function PreSessionScreen() {
                 <View className="flex-row gap-2 mt-3">
                   <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-2">
                     <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-0.5">{i18n.t('preSession.lastVisit')}</Text>
-                    <Text className="text-sm font-medium text-zinc-900 dark:text-white">Mar 10, 2026</Text>
+                    <Text className="text-sm font-medium text-zinc-900 dark:text-white">{formatLastVisit(trackSummary.lastVisit)}</Text>
                   </View>
                   <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-2">
                     <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-0.5">{i18n.t('session.bestLap')}</Text>
-                    <Text className="text-sm font-medium text-zinc-900 dark:text-white">1:48.771</Text>
+                    <Text className="text-sm font-medium text-zinc-900 dark:text-white">{formatLapTime(trackSummary.bestLapMs)}</Text>
                   </View>
                 </View>
               </Pressable>
             ) : (
               <View className="gap-2">
-                {CIRCUITS.map((c) => (
+                {circuits.map((circuit) => (
                   <Pressable
-                    key={c.name}
-                    onPress={() => { setSelectedCircuit(c); setShowCircuitPicker(false); }}
+                    key={circuit.id}
+                    onPress={() => { setSelectedCircuit(circuit); setShowCircuitPicker(false); }}
                     className={`flex-row items-center justify-between rounded-2xl px-3 py-2.5 border ${
-                      selectedCircuit.name === c.name
+                      selectedCircuit.id === circuit.id
                         ? 'bg-emerald-500/10 border-emerald-400/30'
                         : 'bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10'
                     }`}
                   >
                     <View>
-                      <Text className="text-sm font-medium text-zinc-900 dark:text-white">{c.name}</Text>
-                      <Text className="text-xs text-zinc-400 dark:text-zinc-500">{c.length} · {i18n.t('preSession.cornersCount', { count: c.corners })}</Text>
+                      <Text className="text-sm font-medium text-zinc-900 dark:text-white">{circuit.name}</Text>
+                      <Text className="text-xs text-zinc-400 dark:text-zinc-500">
+                        {formatTrackLength(circuit.lengthMeters)} · {i18n.t('preSession.cornersCount', { count: circuit.corners ?? 0 })}
+                      </Text>
                     </View>
-                    {selectedCircuit.name === c.name && (
+                    {selectedCircuit.id === circuit.id && (
                       <Ionicons name="checkmark" size={16} color="#34d399" />
                     )}
                   </Pressable>

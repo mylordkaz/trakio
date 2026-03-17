@@ -61,7 +61,7 @@ During driving the app displays:
 
 The UI should be large and easy to read while driving.
 
-### 6. Lap Map Replay
+### 6. Lap Path Map View
 After the session users can view their laps on a map.
 
 The map displays:
@@ -114,6 +114,6 @@ The MVP is successful if the application can:
 4. Detect laps automatically
 5. Calculate sector splits
 6. Save session data
-7. Replay laps on a satellite map
+7. Display lap paths on a satellite map
 
 If these functions work reliably, the application provides real value for track-day drivers and establishes a solid foundation for future features.

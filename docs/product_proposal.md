@@ -36,7 +36,7 @@ A mobile application that records GPS telemetry during motorsport track sessions
 
 5. **Session Analysis**
    - View lap times and sector splits.
-   - Replay laps on the map.
+   - Display saved lap paths on the map.
    - Identify fast and slow sections of the track.
 
 6. **Local Session Storage**
