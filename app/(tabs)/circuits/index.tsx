@@ -196,12 +196,6 @@ export default function CircuitsScreen() {
             </Pressable>
           ))}
         </View>
-
-        <View className="px-5 pb-5 pt-1">
-          <Pressable className="w-full rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center">
-            <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('circuits.importCustom')}</Text>
-          </Pressable>
-        </View>
       </ScrollView>
     </View>
   );
