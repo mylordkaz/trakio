@@ -35,3 +35,25 @@ export type TelemetrySampleValidationResult =
 
 export type TelemetryElapsedMsResolver = (recordedAt: number) => number;
 
+export type DetectionEventType = 'start_finish_crossed' | 'sector_crossed';
+
+export type DetectionState = {
+  lastTimingLineId: string | null;
+  lastCrossingElapsedMs: number | null;
+  expectedSectorSeq: number | null;
+  currentLapStartedElapsedMs: number | null;
+};
+
+export type TelemetryDetectionConfig = {
+  debounceMs: number;
+  minLapTimeMs: number;
+};
+
+export type TelemetryDetectionEvent = {
+  type: DetectionEventType;
+  timingLineId: string;
+  seq: number;
+  sampleRecordedAt: number;
+  sampleElapsedMs: number;
+};
+
