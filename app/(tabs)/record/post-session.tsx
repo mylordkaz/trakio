@@ -4,16 +4,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import i18n from '@/i18n';
 import Card from '@/components/Card';
-import LapBreakdown from '@/components/LapBreakdown';
-import type { LapBreakdownItem } from '@/components/LapBreakdown';
 import ProgressBar from '@/components/ProgressBar';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 
-const MOCK_LAPS: LapBreakdownItem[] = [
-  { lap: 1, time: '1:54.238', timeMs: 114238, delta: '+5.467', sectors: ['32.184', '43.102', '38.952'], sectorMs: [32184, 43102, 38952] },
-  { lap: 2, time: '1:49.914', timeMs: 109914, delta: '+1.143', sectors: ['31.902', '41.890', '36.122'], sectorMs: [31902, 41890, 36122] },
-  { lap: 3, time: '1:48.771', timeMs: 108771, delta: null, sectors: ['31.842', '41.317', '35.612'], sectorMs: [31842, 41317, 35612] },
-  { lap: 4, time: '1:49.102', timeMs: 109102, delta: '+0.331', sectors: ['32.011', '41.580', '35.511'], sectorMs: [32011, 41580, 35511] },
+const MOCK_LAPS = [
+  { lap: 1, time: '1:54.238' },
+  { lap: 2, time: '1:49.914' },
+  { lap: 3, time: '1:48.771', best: true },
+  { lap: 4, time: '1:49.102' },
 ];
 
 export default function PostSessionScreen() {
@@ -151,14 +149,48 @@ export default function PostSessionScreen() {
             </View>
           </Card>
 
-          {/* Lap Breakdown */}
-          <LapBreakdown laps={MOCK_LAPS} accentColor="emerald" />
+          {/* Lap List */}
+          <Card>
+            <Text className="text-sm font-medium text-zinc-900 dark:text-white mb-3">
+              {i18n.t('postSession.lapBreakdown')}
+            </Text>
+            <View className="gap-2">
+              {MOCK_LAPS.map((lap) => (
+                <View
+                  key={lap.lap}
+                  className={`flex-row items-center justify-between rounded-2xl px-4 py-3 border ${
+                    lap.best
+                      ? 'bg-emerald-500/10 border-emerald-400/30'
+                      : 'bg-zinc-50 dark:bg-black/20 border-zinc-100 dark:border-white/5'
+                  }`}
+                >
+                  <View className="flex-row items-center gap-2">
+                    <Text className="text-sm font-medium text-zinc-900 dark:text-white">
+                      {i18n.t('sessions.lapLabel', { number: lap.lap })}
+                    </Text>
+                    {lap.best ? (
+                      <Text className="text-xs font-medium text-emerald-400">{i18n.t('sessions.best')}</Text>
+                    ) : null}
+                  </View>
+                  <Text
+                    className="text-sm font-semibold text-zinc-900 dark:text-white"
+                    style={{ fontVariant: ['tabular-nums'] }}
+                  >
+                    {lap.time}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </Card>
         </View>
 
         {/* Bottom buttons */}
         <View className="px-5 pb-5 pt-1 flex-row gap-3">
-          <Pressable className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center">
-            <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('session.saveNotes')}</Text>
+          <Pressable
+            onPress={() => router.replace('/(tabs)/sessions')}
+            className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center"
+          >
+            <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('postSession.viewSessions')}</Text>
           </Pressable>
           <Pressable
             onPress={() => router.replace('/(tabs)/record')}

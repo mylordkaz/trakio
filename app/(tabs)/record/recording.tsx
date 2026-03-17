@@ -22,65 +22,80 @@ export default function RecordingScreen() {
 
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
+      {/* Fixed top: header + current lap + buttons */}
+      <LinearGradient
+        colors={gradientColors}
+        locations={[0, 0.5, 1]}
+        style={{
+          paddingTop: insets.top + 20,
+          paddingHorizontal: 20,
+          paddingBottom: 16,
+        }}
+      >
+        {/* Header */}
+        <View className="flex-row items-center justify-between mb-4">
+          <Text className="text-xs text-zinc-500 dark:text-zinc-400">Fuji Speedway</Text>
+          <Text className="text-xs text-zinc-500 dark:text-zinc-400">12:18 PM</Text>
+        </View>
+
+        {/* Title + REC badge */}
+        <View className="flex-row items-start justify-between mb-5">
+          <View className="flex-1 mr-3">
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('recording.sessionRecording')}</Text>
+            <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">Track Day · Session 2</Text>
+          </View>
+          <View className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-3 py-1.5 border border-red-400/20">
+            <View className="h-2.5 w-2.5 rounded-full bg-red-400" />
+            <Text className="text-sm text-red-400">{i18n.t('session.recording')}</Text>
+          </View>
+        </View>
+
+        {/* Current lap card */}
+        <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
+          <View className="flex-row items-center justify-between mb-2">
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('session.currentLap')}</Text>
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('session.lapCount', { count: 5 })}</Text>
+          </View>
+          <Text
+            className="text-zinc-900 dark:text-white mb-3"
+            style={{ fontSize: 56, lineHeight: 56, fontWeight: '600', fontVariant: ['tabular-nums'] }}
+          >
+            1:12.48
+          </Text>
+          <View className="flex-row gap-2">
+            {SECTORS.map((s) => (
+              <View
+                key={s.label}
+                className={`flex-1 rounded-2xl p-3 border ${
+                  s.active ? 'bg-red-500/10 border-red-400/30' : 'bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10'
+                }`}
+              >
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{s.label}</Text>
+                <Text className="text-lg font-medium text-zinc-900 dark:text-white">{s.time}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Pit In + End buttons */}
+        <View className="flex-row gap-3 mt-4">
+          <Pressable className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center">
+            <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('session.markPitIn')}</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.replace('/(tabs)/record/post-session')}
+            className="flex-1 rounded-2xl bg-red-500 py-3.5 items-center"
+          >
+            <Text className="text-sm font-semibold text-white">{i18n.t('session.end')}</Text>
+          </Pressable>
+        </View>
+      </LinearGradient>
+
+      {/* Scrollable content below */}
       <ScrollView
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
       >
-        <LinearGradient
-          colors={gradientColors}
-          locations={[0, 0.5, 1]}
-          style={{
-            paddingTop: insets.top + 20,
-            paddingHorizontal: 20,
-            paddingBottom: 16,
-          }}
-        >
-          {/* Header */}
-          <View className="flex-row items-center justify-between mb-4">
-            <Text className="text-xs text-zinc-500 dark:text-zinc-400">Fuji Speedway</Text>
-            <Text className="text-xs text-zinc-500 dark:text-zinc-400">12:18 PM</Text>
-          </View>
-
-          {/* Title + REC badge */}
-          <View className="flex-row items-start justify-between mb-5">
-            <View className="flex-1 mr-3">
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('recording.sessionRecording')}</Text>
-              <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">Track Day · Session 2</Text>
-            </View>
-            <View className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-3 py-1.5 border border-red-400/20">
-              <View className="h-2.5 w-2.5 rounded-full bg-red-400" />
-              <Text className="text-sm text-red-400">{i18n.t('session.recording')}</Text>
-            </View>
-          </View>
-
-          {/* Current lap card */}
-          <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
-            <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('session.currentLap')}</Text>
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('session.lapCount', { count: 5 })}</Text>
-            </View>
-            <Text
-              className="text-zinc-900 dark:text-white mb-3"
-              style={{ fontSize: 56, lineHeight: 56, fontWeight: '600', fontVariant: ['tabular-nums'] }}
-            >
-              1:12.48
-            </Text>
-            <View className="flex-row gap-2">
-              {SECTORS.map((s) => (
-                <View
-                  key={s.label}
-                  className={`flex-1 rounded-2xl p-3 border ${
-                    s.active ? 'bg-red-500/10 border-red-400/30' : 'bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10'
-                  }`}
-                >
-                  <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{s.label}</Text>
-                  <Text className="text-lg font-medium text-zinc-900 dark:text-white">{s.time}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        </LinearGradient>
-
         <View className="px-5 py-4 gap-4">
           {/* Stats row */}
           <View className="flex-row gap-3">
@@ -114,29 +129,13 @@ export default function RecordingScreen() {
 
           {/* Recent Laps */}
           <Card>
-            <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('recording.recentLaps')}</Text>
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('common.viewAll')}</Text>
-            </View>
+            <Text className="text-sm font-medium text-zinc-900 dark:text-white mb-3">{i18n.t('recording.lapTimes')}</Text>
             <View className="gap-2">
               {LAP_DATA.map((item) => (
                 <LapRow key={item.lap} item={item} />
               ))}
             </View>
           </Card>
-        </View>
-
-        {/* Bottom buttons */}
-        <View className="px-5 pb-5 pt-1 flex-row gap-3">
-          <Pressable className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center">
-            <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('session.markPitIn')}</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => router.replace('/(tabs)/record/post-session')}
-            className="flex-1 rounded-2xl bg-red-500 py-3.5 items-center"
-          >
-            <Text className="text-sm font-semibold text-white">{i18n.t('session.end')}</Text>
-          </Pressable>
         </View>
       </ScrollView>
     </View>

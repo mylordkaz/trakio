@@ -20,7 +20,6 @@ export type LapItem = {
   lap: number;
   time: string;
   delta: string;
-  status: string;
 };
 
 export const CIRCUITS: Circuit[] = [
@@ -40,10 +39,10 @@ export const SESSIONS: Session[] = [
 ];
 
 export const LAP_DATA: LapItem[] = [
-  { lap: 1, time: '1:54.238', delta: '+0.82', status: 'Warm-up' },
-  { lap: 2, time: '1:49.914', delta: '-4.32', status: 'Push' },
-  { lap: 3, time: '1:48.771', delta: '-1.14', status: 'Best Lap' },
-  { lap: 4, time: '1:49.102', delta: '+0.33', status: 'Cool Down' },
+  { lap: 1, time: '1:54.238', delta: '+0.82' },
+  { lap: 2, time: '1:49.914', delta: '-4.32' },
+  { lap: 3, time: '1:48.771', delta: '-1.14' },
+  { lap: 4, time: '1:49.102', delta: '+0.33' },
 ];
 
 export const SECTOR_HIGHLIGHTS = [

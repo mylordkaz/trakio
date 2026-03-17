@@ -11,10 +11,9 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 
 const CHECKLIST = [
-  'startFinishDetected',
-  'gpsLock',
-  'vehicleSelected',
-  'storageAvailable',
+  { key: 'gpsLock', value: i18n.t('telemetry.strong') },
+  { key: 'battery', value: '92%' },
+  { key: 'startFinishLineSet', value: i18n.t('common.ok') },
 ] as const;
 
 export default function PreSessionScreen() {
@@ -25,6 +24,8 @@ export default function PreSessionScreen() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('emerald');
+  const sessionNumber = 3; // TODO: derive from DB
+  const sessionTitle = i18n.t('preSession.sessionTitle', { number: sessionNumber });
 
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
@@ -51,7 +52,7 @@ export default function PreSessionScreen() {
           <View className="flex-row items-start justify-between mb-5">
             <View className="flex-1 mr-3">
               <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.readyToRecord')}</Text>
-              <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">Track Day · Session 3</Text>
+              <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">{sessionTitle}</Text>
             </View>
             <View className="flex-row items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1.5 border border-emerald-400/20">
               <View className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
@@ -116,41 +117,36 @@ export default function PreSessionScreen() {
               </View>
             )}
           </View>
+
+          {/* Start button */}
+          <View className="mt-4">
+            <Pressable
+              onPress={() => router.push('/(tabs)/record/recording')}
+              className="w-full rounded-2xl bg-emerald-500 py-4 items-center"
+            >
+              <Text className="text-sm font-semibold text-black">
+                {i18n.t('session.start')}
+              </Text>
+            </Pressable>
+          </View>
         </LinearGradient>
 
         <View className="px-5 py-4 gap-4">
-          {/* Vehicle & GPS */}
-          <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
-            <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.selectedVehicle')}</Text>
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.trackMode')}</Text>
-            </View>
-            <Text className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-white mb-3">GR86 Track Build</Text>
-            <View className="flex-row gap-2">
-              <View className="flex-1 rounded-2xl p-3 border bg-emerald-500/10 border-emerald-400/30">
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('preSession.gps')}</Text>
-                <Text className="text-base font-medium text-zinc-900 dark:text-white">{i18n.t('telemetry.strong')}</Text>
-              </View>
-              <View className="flex-1 rounded-2xl p-3 border bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10">
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('preSession.satellites')}</Text>
-                <Text className="text-base font-medium text-zinc-900 dark:text-white">18</Text>
-              </View>
-              <View className="flex-1 rounded-2xl p-3 border bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10">
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('preSession.battery')}</Text>
-                <Text className="text-base font-medium text-zinc-900 dark:text-white">92%</Text>
-              </View>
-            </View>
-          </View>
-
           {/* Conditions */}
           <View className="flex-row gap-3">
             <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('preSession.trackTemp')}</Text>
-              <Text className="text-lg font-semibold text-zinc-900 dark:text-white">28°C</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('preSession.condition')}</Text>
+              <Text className="text-2xl mb-1">☀️</Text>
+              <Text className="text-sm font-semibold text-zinc-900 dark:text-white">{i18n.t('preSession.clear')}</Text>
             </View>
             <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
               <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('preSession.airTemp')}</Text>
               <Text className="text-lg font-semibold text-zinc-900 dark:text-white">24°C</Text>
+            </View>
+            <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('preSession.wind')}</Text>
+              <Text className="text-lg font-semibold text-zinc-900 dark:text-white">14 km/h</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400">NW</Text>
             </View>
           </View>
 
@@ -161,52 +157,17 @@ export default function PreSessionScreen() {
                 <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('preSession.sessionChecklist')}</Text>
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.checklistSubtitle')}</Text>
               </View>
-              <Text className="text-sm text-emerald-400">{i18n.t('preSession.allReady', { count: 4, total: 4 })}</Text>
+              <Text className="text-sm text-emerald-400">{i18n.t('preSession.allReady', { count: 3, total: 3 })}</Text>
             </View>
             <View className="gap-2">
-              {CHECKLIST.map((key) => (
-                <View key={key} className="flex-row items-center justify-between rounded-2xl bg-zinc-50 dark:bg-black/20 px-3 py-2.5 border border-zinc-100 dark:border-white/5">
-                  <Text className="text-sm text-zinc-900 dark:text-white">{i18n.t(`preSession.${key}`)}</Text>
-                  <Text className="text-sm font-medium text-emerald-400">{i18n.t('common.ok')}</Text>
+              {CHECKLIST.map((item) => (
+                <View key={item.key} className="flex-row items-center justify-between rounded-2xl bg-zinc-50 dark:bg-black/20 px-3 py-2.5 border border-zinc-100 dark:border-white/5">
+                  <Text className="text-sm text-zinc-900 dark:text-white">{i18n.t(`preSession.${item.key}`)}</Text>
+                  <Text className="text-sm font-medium text-emerald-400">{item.value}</Text>
                 </View>
               ))}
             </View>
           </Card>
-
-          {/* Session Config */}
-          <Card>
-            <View className="flex-row items-center justify-between mb-3">
-              <View>
-                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('sessionConfig.title')}</Text>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessionConfig.subtitle')}</Text>
-              </View>
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('common.edit')}</Text>
-            </View>
-            <View className="gap-3">
-              {[
-                [i18n.t('sessionConfig.timingMode'), 'Auto Lap'],
-                [i18n.t('sessionConfig.units'), 'km/h'],
-                [i18n.t('sessionConfig.dataCapture'), 'GPS + Speed'],
-              ].map(([k, v]) => (
-                <View key={k} className="flex-row items-center justify-between">
-                  <Text className="text-sm text-zinc-500 dark:text-zinc-400">{k}</Text>
-                  <Text className="text-sm font-medium text-zinc-900 dark:text-white">{v}</Text>
-                </View>
-              ))}
-            </View>
-          </Card>
-        </View>
-
-        {/* Start button */}
-        <View className="px-5 pb-5 pt-1">
-          <Pressable
-            onPress={() => router.push('/(tabs)/record/recording')}
-            className="w-full rounded-2xl bg-emerald-500 py-4 items-center"
-          >
-            <Text className="text-sm font-semibold text-black">
-              {i18n.t('session.startAt', { track: selectedCircuit.name })}
-            </Text>
-          </Pressable>
         </View>
       </ScrollView>
     </View>
