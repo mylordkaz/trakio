@@ -24,6 +24,8 @@ type SessionRuntimeSnapshot = {
   status: RuntimeStatus;
   sessionId: string | null;
   trackId: string;
+  sessionStartedAtMs: number | null;
+  sessionEndedAtMs: number | null;
   currentLapId: string | null;
   currentLapNumber: number;
   currentLapStartedElapsedMs: number | null;
@@ -102,6 +104,8 @@ export function createSessionRuntime(args: {
     status: 'idle',
     sessionId: null,
     trackId: track.id,
+    sessionStartedAtMs: null,
+    sessionEndedAtMs: null,
     currentLapId: null,
     currentLapNumber: 0,
     currentLapStartedElapsedMs: null,
@@ -123,7 +127,8 @@ export function createSessionRuntime(args: {
     }
 
     const sessionId = generateId();
-    const startedAt = new Date().toISOString();
+    const sessionStartedAtMs = Date.now();
+    const startedAt = new Date(sessionStartedAtMs).toISOString();
 
     await recorder.createSession({
       id: sessionId,
@@ -137,6 +142,8 @@ export function createSessionRuntime(args: {
       ...snapshot,
       status: 'recording',
       sessionId,
+      sessionStartedAtMs,
+      sessionEndedAtMs: null,
       currentLapId: null,
       currentLapNumber: 0,
       currentLapStartedElapsedMs: null,
@@ -344,16 +351,19 @@ export function createSessionRuntime(args: {
 
     await recorder.finalizeSession({
       sessionId: snapshot.sessionId,
-      endedAt: new Date().toISOString(),
+      endedAt: new Date(Date.now()).toISOString(),
       status: 'completed',
       bestLapMs: snapshot.bestLapMs,
       totalLaps: snapshot.totalLaps,
       maxSpeedKph: snapshot.maxSpeedKph,
     });
 
+    const sessionEndedAtMs = Date.now();
+
     snapshot = {
       ...snapshot,
       status: 'stopped',
+      sessionEndedAtMs,
       bufferedPointCount: recorder.getBufferedPointCount(),
     };
 
@@ -371,4 +381,3 @@ export function createSessionRuntime(args: {
     getSnapshot,
   };
 }
-

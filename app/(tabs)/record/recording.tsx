@@ -51,13 +51,6 @@ function formatSpeed(speedKph: number | null) {
   return `${Math.round(speedKph)} km/h`;
 }
 
-function formatClockTime() {
-  return new Date().toLocaleTimeString(i18n.locale === 'ja' ? 'ja-JP' : 'en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
 function getGpsSignalPercent(accuracyM: number | null) {
   if (accuracyM === null) {
     return 0;
@@ -87,6 +80,7 @@ export default function RecordingScreen() {
   const [track, setTrack] = useState<TrackDetail | null>(null);
   const [isLoadingTrack, setIsLoadingTrack] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ReturnType<ReturnType<typeof createSessionRuntime>['getSnapshot']> | null>(null);
   const runtimeRef = useRef<ReturnType<typeof createSessionRuntime> | null>(null);
   const locationSubscriptionRef = useRef<LocationSubscription | null>(null);
@@ -167,7 +161,6 @@ export default function RecordingScreen() {
           sessionName: params.sessionName ?? null,
         },
       });
-      const sessionStartedAtMs = Date.now();
 
       runtimeRef.current = runtime;
 
@@ -179,7 +172,8 @@ export default function RecordingScreen() {
       setRuntimeSnapshot(startedSnapshot);
 
       locationSubscriptionRef.current = await startLocationSubscription({
-        resolveElapsedMs: (recordedAt) => Math.max(0, recordedAt - sessionStartedAtMs),
+        resolveElapsedMs: (recordedAt) =>
+          Math.max(0, recordedAt - (startedSnapshot.sessionStartedAtMs ?? recordedAt)),
         onSample: (sample) => {
           const activeRuntime = runtimeRef.current;
 
@@ -225,7 +219,27 @@ export default function RecordingScreen() {
     };
   }, [db, params.sessionName, track]);
 
+  useEffect(() => {
+    const sessionStartedAtMs = runtimeSnapshot?.sessionStartedAtMs;
+
+    if (!sessionStartedAtMs || runtimeSnapshot?.sessionEndedAtMs !== null) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [runtimeSnapshot?.sessionEndedAtMs, runtimeSnapshot?.sessionStartedAtMs]);
+
   const sectorCount = track?.sectorCount ?? 0;
+  const sessionDurationMs =
+    runtimeSnapshot?.sessionStartedAtMs !== null && runtimeSnapshot?.sessionStartedAtMs !== undefined
+      ? (runtimeSnapshot.sessionEndedAtMs ?? nowMs) - runtimeSnapshot.sessionStartedAtMs
+      : null;
   const currentElapsedMs =
     runtimeSnapshot?.status === 'lap_in_progress' &&
     runtimeSnapshot.currentLapStartedElapsedMs !== null &&
@@ -287,23 +301,25 @@ export default function RecordingScreen() {
         }}
       >
         {/* Header */}
-        <View className="flex-row items-center justify-between mb-4">
+        <View className="flex-row items-start justify-between mb-3">
           <Text className="text-xs text-zinc-500 dark:text-zinc-400">{track?.name ?? i18n.t('circuits.loadingTrack')}</Text>
-          <Text className="text-xs text-zinc-500 dark:text-zinc-400">{formatClockTime()}</Text>
+          <View className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-3 py-1.5 border border-red-400/20">
+            <View className="h-2.5 w-2.5 rounded-full bg-red-400" />
+            <Text className="text-sm text-red-400">{i18n.t('session.recording')}</Text>
+          </View>
         </View>
 
         {/* Title + REC badge */}
-        <View className="flex-row items-start justify-between mb-5">
+        <View className="flex-row items-start justify-between mb-4">
           <View className="flex-1 mr-3">
             <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('recording.sessionRecording')}</Text>
             <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
               {params.sessionName ?? track?.layoutName ?? i18n.t('recording.sessionRecording')}
             </Text>
           </View>
-          <View className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-3 py-1.5 border border-red-400/20">
-            <View className="h-2.5 w-2.5 rounded-full bg-red-400" />
-            <Text className="text-sm text-red-400">{i18n.t('session.recording')}</Text>
-          </View>
+          <Text className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mt-0.5 pr-1">
+            {formatDuration(sessionDurationMs)}
+          </Text>
         </View>
 
         {isLoadingTrack ? (
@@ -326,12 +342,21 @@ export default function RecordingScreen() {
               {i18n.t('session.lapCount', { count: currentLapLabel })}
             </Text>
           </View>
-          <Text
-            className="text-zinc-900 dark:text-white mb-3"
-            style={{ fontSize: 56, lineHeight: 56, fontWeight: '600', fontVariant: ['tabular-nums'] }}
-          >
-            {formatLapTime(currentElapsedMs)}
-          </Text>
+          {runtimeSnapshot?.status === 'lap_in_progress' ? (
+            <Text
+              className="text-zinc-900 dark:text-white mb-3 text-center"
+              style={{ fontSize: 56, lineHeight: 56, fontWeight: '600', fontVariant: ['tabular-nums'] }}
+            >
+              {formatLapTime(currentElapsedMs)}
+            </Text>
+          ) : (
+            <Text
+              className="text-zinc-500 dark:text-zinc-400 mb-3 text-center"
+              style={{ fontSize: 24, lineHeight: 32, fontWeight: '500' }}
+            >
+              {i18n.t('recording.waitingForStartLine')}
+            </Text>
+          )}
           <View className="flex-row gap-2">
             {Array.from({ length: sectorCount }, (_, index) => {
               const isActive =

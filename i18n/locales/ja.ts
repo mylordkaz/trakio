@@ -184,6 +184,7 @@ export default {
     sessionRecording: 'セッション録画中',
     lapTimes: 'ラップタイム',
     recentLaps: '最近のラップ',
+    waitingForStartLine: 'スタートライン待機中...',
   },
   telemetry: {
     title: 'ライブテレメトリー',

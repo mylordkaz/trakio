@@ -184,6 +184,7 @@ export default {
     sessionRecording: 'Session Recording',
     lapTimes: 'Lap Times',
     recentLaps: 'Recent Laps',
+    waitingForStartLine: 'Waiting for start line...',
   },
   telemetry: {
     title: 'Live Telemetry',

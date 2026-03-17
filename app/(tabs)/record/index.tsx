@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import i18n from '@/i18n';
 import Card from '@/components/Card';
 import type { TrackListItem } from '@/db';
-import { getNextTrackSessionNumber, getTrackSessionSummary, listTracks } from '@/db';
+import { getNextSessionNumber, getTrackSessionSummary, listTracks } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 
@@ -125,7 +125,7 @@ export default function PreSessionScreen() {
       }
 
       try {
-        const nextSessionNumber = await getNextTrackSessionNumber(db, selectedCircuit.id);
+        const nextSessionNumber = await getNextSessionNumber(db);
 
         if (!isMounted) {
           return;
@@ -196,21 +196,18 @@ export default function PreSessionScreen() {
           }}
         >
           {/* Header */}
-          <View className="flex-row items-center justify-between mb-4">
+          <View className="flex-row items-center justify-between mb-3">
             <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.title')}</Text>
-            <Text className="text-xs text-zinc-500 dark:text-zinc-400">12:12 PM</Text>
-          </View>
-
-          {/* Title + READY badge */}
-          <View className="flex-row items-start justify-between mb-5">
-            <View className="flex-1 mr-3">
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.readyToRecord')}</Text>
-              <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">{sessionTitle}</Text>
-            </View>
             <View className="flex-row items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1.5 border border-emerald-400/20">
               <View className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
               <Text className="text-sm text-emerald-400">{i18n.t('session.ready')}</Text>
             </View>
+          </View>
+
+          {/* Title + READY badge */}
+          <View className="mb-4">
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.readyToRecord')}</Text>
+            <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">{sessionTitle}</Text>
           </View>
 
           {/* Track Selection */}

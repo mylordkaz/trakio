@@ -553,15 +553,12 @@ export async function getTrackSessionSummary(
   };
 }
 
-export async function getNextTrackSessionNumber(
-  db: SQLiteDatabase,
-  trackId: string
+export async function getNextSessionNumber(
+  db: SQLiteDatabase
 ): Promise<number> {
   const row = await db.getFirstAsync<{ session_count: number }>(
     `SELECT COUNT(*) AS session_count
-     FROM sessions
-     WHERE track_id = ?;`,
-    trackId
+     FROM sessions;`
   );
 
   return (row?.session_count ?? 0) + 1;
