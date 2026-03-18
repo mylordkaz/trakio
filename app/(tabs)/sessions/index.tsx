@@ -3,7 +3,7 @@ import { Alert, View, Text, ScrollView, TextInput, Pressable } from 'react-nativ
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import i18n from '@/i18n';
 import StatusPill from '@/components/StatusPill';
@@ -45,6 +45,7 @@ function formatLapTime(lapTimeMs: number | null) {
 export default function SessionListScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { trackId } = useLocalSearchParams<{ trackId?: string }>();
   const db = useSQLiteContext();
   const [activeFilter, setActiveFilter] = useState(0);
   const [search, setSearch] = useState('');
@@ -92,6 +93,7 @@ export default function SessionListScreen() {
 
   const filteredSessions = sessions.filter((session) => {
     const dateLabel = formatSessionDate(session.startedAt);
+    const matchesTrack = !trackId || session.trackId === trackId;
     const matchesSearch =
       !search ||
       session.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -101,7 +103,7 @@ export default function SessionListScreen() {
       activeFilter === 0 ||
       session.displayStatus === FILTER_VALUES[activeFilter];
 
-    return matchesSearch && matchesFilter;
+    return matchesTrack && matchesSearch && matchesFilter;
   });
 
   const handleDeleteSession = useCallback(

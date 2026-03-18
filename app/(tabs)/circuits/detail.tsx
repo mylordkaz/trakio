@@ -336,7 +336,15 @@ export default function CircuitDetailScreen() {
                   {i18n.t("circuits.personalBestSubtitle")}
                 </Text>
               </View>
-              <Pressable hitSlop={8}>
+              <Pressable
+                hitSlop={8}
+                onPress={() =>
+                  router.push({
+                    pathname: "/(tabs)/sessions",
+                    params: { trackId: circuit?.id ?? "" },
+                  })
+                }
+              >
                 <Text className="text-sm font-medium text-sky-500">
                   {i18n.t("circuits.history")}
                 </Text>
