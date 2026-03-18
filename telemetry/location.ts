@@ -89,6 +89,17 @@ export async function requestForegroundLocationPermission(): Promise<LocationPer
   return mapPermissionStatus(permission.status);
 }
 
+export async function getCurrentLocationSample(
+  resolveElapsedMs: TelemetryElapsedMsResolver = () => 0
+): Promise<TelemetrySample | null> {
+  const location = await Location.getCurrentPositionAsync({
+    accuracy: Location.Accuracy.BestForNavigation,
+    mayShowUserSettingsDialog: true,
+  });
+
+  return normalizeLocationSample(location, resolveElapsedMs);
+}
+
 export async function startLocationSubscription(
   options: StartLocationSubscriptionOptions
 ): Promise<LocationSubscription> {

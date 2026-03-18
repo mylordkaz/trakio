@@ -5,18 +5,39 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import * as Battery from 'expo-battery';
 import i18n from '@/i18n';
 import Card from '@/components/Card';
 import type { TrackListItem } from '@/db';
-import { getNextSessionNumber, getTrackSessionSummary, listTracks } from '@/db';
+import { getNextSessionNumber, getTrackById, getTrackSessionSummary, listTracks } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
+import {
+  getCurrentLocationSample,
+  getForegroundLocationPermissionState,
+  requestForegroundLocationPermission,
+} from '@/telemetry/location';
 
-const CHECKLIST = [
-  { key: 'gpsLock', value: i18n.t('telemetry.strong') },
-  { key: 'battery', value: '92%' },
-  { key: 'startFinishLineSet', value: i18n.t('common.ok') },
-] as const;
+type ChecklistItemKey = 'gpsLock' | 'battery' | 'startFinishLineSet';
+
+type ChecklistStatus = 'ready' | 'warning' | 'error';
+
+type ChecklistItem = {
+  key: ChecklistItemKey;
+  value: string;
+  status: ChecklistStatus;
+};
+
+function getChecklistValueClass(status: ChecklistStatus) {
+  switch (status) {
+    case 'ready':
+      return 'text-emerald-400';
+    case 'warning':
+      return 'text-amber-400';
+    case 'error':
+      return 'text-red-400';
+  }
+}
 
 export default function PreSessionScreen() {
   const router = useRouter();
@@ -32,6 +53,11 @@ export default function PreSessionScreen() {
     bestLapMs: null,
   });
   const [sessionNumber, setSessionNumber] = useState(1);
+  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([
+    { key: 'gpsLock', value: i18n.t('telemetry.searching'), status: 'warning' },
+    { key: 'battery', value: i18n.t('common.tbd'), status: 'warning' },
+    { key: 'startFinishLineSet', value: i18n.t('common.tbd'), status: 'warning' },
+  ]);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('emerald');
@@ -116,6 +142,120 @@ export default function PreSessionScreen() {
   useEffect(() => {
     let isMounted = true;
 
+    async function loadChecklist() {
+      let gpsItem: ChecklistItem = {
+        key: 'gpsLock',
+        value: i18n.t('telemetry.searching'),
+        status: 'warning',
+      };
+      let batteryItem: ChecklistItem = {
+        key: 'battery',
+        value: i18n.t('common.tbd'),
+        status: 'warning',
+      };
+      let startFinishItem: ChecklistItem = {
+        key: 'startFinishLineSet',
+        value: i18n.t('common.tbd'),
+        status: 'warning',
+      };
+
+      try {
+        let permissionState = await getForegroundLocationPermissionState();
+
+        if (permissionState === 'undetermined') {
+          permissionState = await requestForegroundLocationPermission();
+        }
+
+        if (permissionState === 'denied') {
+          gpsItem = {
+            key: 'gpsLock',
+            value: i18n.t('telemetry.blocked'),
+            status: 'error',
+          };
+        } else if (permissionState === 'granted') {
+          const locationSample = await getCurrentLocationSample();
+          const accuracyM = locationSample?.accuracyM ?? null;
+
+          if (accuracyM === null) {
+            gpsItem = {
+              key: 'gpsLock',
+              value: i18n.t('telemetry.searching'),
+              status: 'warning',
+            };
+          } else if (accuracyM <= 10) {
+            gpsItem = {
+              key: 'gpsLock',
+              value: i18n.t('telemetry.strong'),
+              status: 'ready',
+            };
+          } else {
+            gpsItem = {
+              key: 'gpsLock',
+              value: i18n.t('telemetry.weak'),
+              status: 'warning',
+            };
+          }
+        }
+      } catch {
+        gpsItem = {
+          key: 'gpsLock',
+          value: i18n.t('telemetry.searching'),
+          status: 'warning',
+        };
+      }
+
+      try {
+        const batteryLevel = await Battery.getBatteryLevelAsync();
+
+        batteryItem = {
+          key: 'battery',
+          value: `${Math.round(batteryLevel * 100)}%`,
+          status: 'ready',
+        };
+      } catch {
+        batteryItem = {
+          key: 'battery',
+          value: i18n.t('common.tbd'),
+          status: 'warning',
+        };
+      }
+
+      if (selectedCircuit) {
+        try {
+          const trackDetail = await getTrackById(db, selectedCircuit.id);
+          const hasStartFinishLine = !!trackDetail?.timingLines.some((timingLine) => timingLine.type === 'start_finish');
+
+          startFinishItem = {
+            key: 'startFinishLineSet',
+            value: hasStartFinishLine ? i18n.t('common.ok') : i18n.t('common.tbd'),
+            status: hasStartFinishLine ? 'ready' : 'error',
+          };
+        } catch {
+          startFinishItem = {
+            key: 'startFinishLineSet',
+            value: i18n.t('common.tbd'),
+            status: 'error',
+          };
+        }
+      }
+
+      if (!isMounted) {
+        return;
+      }
+
+      setChecklistItems([gpsItem, batteryItem, startFinishItem]);
+    }
+
+    void loadChecklist();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [db, selectedCircuit]);
+
+  useEffect(() => {
+    let isMounted = true;
+
     async function loadSessionNumber() {
       if (!selectedCircuit) {
         if (isMounted) {
@@ -179,6 +319,8 @@ export default function PreSessionScreen() {
 
     return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
   }
+
+  const readyChecklistCount = checklistItems.filter((item) => item.status === 'ready').length;
 
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
@@ -335,13 +477,13 @@ export default function PreSessionScreen() {
                 <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('preSession.sessionChecklist')}</Text>
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.checklistSubtitle')}</Text>
               </View>
-              <Text className="text-sm text-emerald-400">{i18n.t('preSession.allReady', { count: 3, total: 3 })}</Text>
+              <Text className="text-sm text-emerald-400">{i18n.t('preSession.allReady', { count: readyChecklistCount, total: checklistItems.length })}</Text>
             </View>
             <View className="gap-2">
-              {CHECKLIST.map((item) => (
+              {checklistItems.map((item) => (
                 <View key={item.key} className="flex-row items-center justify-between rounded-2xl bg-zinc-50 dark:bg-black/20 px-3 py-2.5 border border-zinc-100 dark:border-white/5">
                   <Text className="text-sm text-zinc-900 dark:text-white">{i18n.t(`preSession.${item.key}`)}</Text>
-                  <Text className="text-sm font-medium text-emerald-400">{item.value}</Text>
+                  <Text className={`text-sm font-medium ${getChecklistValueClass(item.status)}`}>{item.value}</Text>
                 </View>
               ))}
             </View>

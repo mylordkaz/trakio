@@ -48,7 +48,7 @@ export default {
     wind: 'Wind',
     sessionChecklist: 'Session Checklist',
     allReady: '%{count}/%{total} Ready',
-    gpsLock: 'GPS lock · 18 satellites',
+    gpsLock: 'GPS Lock',
     battery: 'Battery',
     startFinishLineSet: 'Start/finish line set',
     readyToRecord: 'Ready to record',
@@ -194,5 +194,8 @@ export default {
     brake: 'Brake',
     gpsSignal: 'GPS Signal',
     strong: 'Strong',
+    weak: 'Weak',
+    searching: 'Searching',
+    blocked: 'Blocked',
   },
 };

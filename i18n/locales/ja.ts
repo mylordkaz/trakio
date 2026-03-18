@@ -48,7 +48,7 @@ export default {
     wind: '風',
     sessionChecklist: 'セッションチェックリスト',
     allReady: '%{count}/%{total} 準備完了',
-    gpsLock: 'GPS ロック · 衛星18基',
+    gpsLock: 'GPS ロック',
     battery: 'バッテリー',
     startFinishLineSet: 'スタート/フィニッシュライン設定済み',
     readyToRecord: '録画準備完了',
@@ -194,5 +194,8 @@ export default {
     brake: 'ブレーキ',
     gpsSignal: 'GPS信号',
     strong: '強い',
+    weak: '弱い',
+    searching: '探索中',
+    blocked: 'ブロック中',
   },
 };
