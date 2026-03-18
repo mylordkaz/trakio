@@ -347,16 +347,14 @@ export default function RecordingScreen() {
           nowMs - (runtimeSnapshot.sessionStartedAtMs + runtimeSnapshot.currentSectorStartedElapsedMs)
         )
       : null;
-  const recentLaps = runtimeSnapshot?.lastLapMs !== null && runtimeSnapshot?.lastLapMs !== undefined
-    ? [{
-        lap: runtimeSnapshot.totalLaps,
-        time: formatLapTime(runtimeSnapshot.lastLapMs),
-        delta:
-          runtimeSnapshot.bestLapMs !== null && runtimeSnapshot.lastLapMs !== runtimeSnapshot.bestLapMs
-            ? `+${((runtimeSnapshot.lastLapMs - runtimeSnapshot.bestLapMs) / 1000).toFixed(3)}`
-            : 'Best',
-      }]
-    : [];
+  const recentLaps = (runtimeSnapshot?.completedLaps ?? []).map((lap) => ({
+    lap: lap.lapNumber,
+    time: formatLapTime(lap.lapTimeMs),
+    delta:
+      lap.isBest || lap.deltaToBestMs === null
+        ? 'Best'
+        : `+${(lap.deltaToBestMs / 1000).toFixed(3)}`,
+  }));
 
   async function handleEndSession() {
     const activeRuntime = runtimeRef.current;

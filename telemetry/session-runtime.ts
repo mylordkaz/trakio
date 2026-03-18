@@ -40,6 +40,12 @@ type SessionRuntimeSnapshot = {
   latestEvent: TelemetryDetectionEvent | null;
   bufferedPointCount: number;
   currentLapSectorSplitsMs: Record<number, number>;
+  completedLaps: {
+    lapNumber: number;
+    lapTimeMs: number;
+    deltaToBestMs: number | null;
+    isBest: boolean;
+  }[];
 };
 
 type HandleSampleResult =
@@ -121,6 +127,7 @@ export function createSessionRuntime(args: {
     latestEvent: null,
     bufferedPointCount: 0,
     currentLapSectorSplitsMs: {},
+    completedLaps: [],
   };
 
   async function start() {
@@ -157,6 +164,7 @@ export function createSessionRuntime(args: {
       latestEvent: null,
       bufferedPointCount: recorder.getBufferedPointCount(),
       currentLapSectorSplitsMs: {},
+      completedLaps: [],
     };
 
     return getSnapshot();
@@ -207,6 +215,21 @@ export function createSessionRuntime(args: {
     }
 
     const lapTimeMs = Math.max(0, Math.round(event.sampleElapsedMs - snapshot.currentLapStartedElapsedMs));
+    const updatedBestLapMs =
+      snapshot.bestLapMs === null ? lapTimeMs : Math.min(snapshot.bestLapMs, lapTimeMs);
+    const completedLaps = [
+      ...snapshot.completedLaps,
+      {
+        lapNumber: snapshot.currentLapNumber,
+        lapTimeMs,
+        deltaToBestMs: null,
+        isBest: false,
+      },
+    ].map((lap) => ({
+      ...lap,
+      deltaToBestMs: lap.lapTimeMs === updatedBestLapMs ? null : lap.lapTimeMs - updatedBestLapMs,
+      isBest: lap.lapTimeMs === updatedBestLapMs,
+    }));
 
     await recorder.finishLap({
       lapId: snapshot.currentLapId,
@@ -234,12 +257,12 @@ export function createSessionRuntime(args: {
       currentSectorStartedElapsedMs: event.sampleElapsedMs,
       lastCrossedSectorSeq: null,
       lastCrossingElapsedMs: event.sampleElapsedMs,
-      bestLapMs:
-        snapshot.bestLapMs === null ? lapTimeMs : Math.min(snapshot.bestLapMs, lapTimeMs),
+      bestLapMs: updatedBestLapMs,
       lastLapMs: lapTimeMs,
       totalLaps: snapshot.totalLaps + 1,
       latestEvent: event,
       currentLapSectorSplitsMs: {},
+      completedLaps,
     };
   }
 
