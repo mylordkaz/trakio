@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSQLiteContext } from 'expo-sqlite';
 import i18n from '@/i18n';
 import StatusPill from '@/components/StatusPill';
@@ -48,6 +49,7 @@ export default function SessionListScreen() {
   const { trackId } = useLocalSearchParams<{ trackId?: string }>();
   const db = useSQLiteContext();
   const [activeFilter, setActiveFilter] = useState(0);
+  const [activeTrackFilter, setActiveTrackFilter] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -91,9 +93,26 @@ export default function SessionListScreen() {
     };
   }, [db]);
 
+  useEffect(() => {
+    if (!trackId) {
+      return;
+    }
+
+    setActiveTrackFilter(trackId);
+    router.replace('/(tabs)/sessions');
+  }, [router, trackId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setActiveTrackFilter(null);
+      };
+    }, [])
+  );
+
   const filteredSessions = sessions.filter((session) => {
     const dateLabel = formatSessionDate(session.startedAt);
-    const matchesTrack = !trackId || session.trackId === trackId;
+    const matchesTrack = !activeTrackFilter || session.trackId === activeTrackFilter;
     const matchesSearch =
       !search ||
       session.name.toLowerCase().includes(search.toLowerCase()) ||

@@ -6,6 +6,7 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 
 export default function RootLayout() {
   const { colorScheme } = useColorScheme();
+  const screenBackground = colorScheme === 'dark' ? '#18181b' : '#fafafa';
 
   return (
     <DatabaseProvider>
@@ -13,7 +14,7 @@ export default function RootLayout() {
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: 'transparent' },
+          contentStyle: { backgroundColor: screenBackground },
         }}
       >
         <Stack.Screen name="(tabs)" />

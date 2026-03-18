@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable, TextInput } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import i18n from '@/i18n';
 import StatusPill from '@/components/StatusPill';
 import Card from '@/components/Card';
+import EditableSessionTitle from '@/components/EditableSessionTitle';
 import LapBreakdown from '@/components/LapBreakdown';
 import type { LapBreakdownItem } from '@/components/LapBreakdown';
 import ProgressBar from '@/components/ProgressBar';
@@ -17,6 +18,7 @@ import {
   addSessionNote,
   deleteSessionNote,
   getSessionById,
+  updateSessionName,
   updateSessionNote,
 } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
@@ -313,6 +315,7 @@ export default function SessionDetailScreen() {
   const gradientColors = useHeaderGradient('violet');
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const scrollRef = useRef<ScrollView>(null);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -391,6 +394,15 @@ export default function SessionDetailScreen() {
     });
   }
 
+  async function handleChangeTitle(newTitle: string) {
+    if (!sessionDetail) return;
+    await updateSessionName(db, sessionDetail.session.id, newTitle);
+    setSessionDetail({
+      ...sessionDetail,
+      session: { ...sessionDetail.session, name: newTitle },
+    });
+  }
+
   function startEditingNote(note: SessionNoteRow) {
     setEditingNoteId(note.id);
     setEditingNoteText(note.note);
@@ -415,10 +427,18 @@ export default function SessionDetailScreen() {
   }));
 
   return (
+    <KeyboardAvoidingView
+      className="flex-1"
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={0}
+      style={{ backgroundColor: isDark ? '#18181b' : '#fafafa' }}
+    >
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <LinearGradient
           colors={gradientColors}
@@ -441,9 +461,10 @@ export default function SessionDetailScreen() {
           <View className="flex-row items-start justify-between mb-5">
             <View className="flex-1 mr-3">
               <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.recordedSession')}</Text>
-              <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
-                {sessionDetail?.session.name ?? i18n.t('sessions.recordedSession')}
-              </Text>
+              <EditableSessionTitle
+                title={sessionDetail?.session.name ?? i18n.t('sessions.recordedSession')}
+                onChangeTitle={handleChangeTitle}
+              />
               <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
                 {sessionDetail ? formatDateTime(sessionDetail.session.startedAt) : i18n.t('common.loading')}
               </Text>
@@ -716,6 +737,7 @@ export default function SessionDetailScreen() {
                     placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
                     value={newNote}
                     onChangeText={setNewNote}
+                    onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300)}
                     multiline
                   />
                   {newNote.trim().length > 0 ? (
@@ -743,5 +765,6 @@ export default function SessionDetailScreen() {
         </View>
       </ScrollView>
     </View>
+    </KeyboardAvoidingView>
   );
 }

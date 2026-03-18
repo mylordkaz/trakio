@@ -738,6 +738,20 @@ export async function deleteSessionNote(
   await db.runAsync('DELETE FROM session_notes WHERE id = ?;', noteId);
 }
 
+export async function updateSessionName(
+  db: SQLiteDatabase,
+  sessionId: string,
+  name: string
+): Promise<void> {
+  await db.runAsync(
+    `UPDATE sessions
+     SET name = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?;`,
+    name,
+    sessionId
+  );
+}
+
 export async function deleteSession(
   db: SQLiteDatabase,
   sessionId: string

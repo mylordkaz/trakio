@@ -6,8 +6,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import i18n from "@/i18n";
 import Card from "@/components/Card";
+import EditableSessionTitle from "@/components/EditableSessionTitle";
 import ProgressBar from "@/components/ProgressBar";
-import { getSessionById } from "@/db";
+import { getSessionById, updateSessionName } from "@/db";
 import type { SessionDetail } from "@/db";
 import { useHeaderGradient } from "@/hooks/useHeaderGradient";
 
@@ -223,6 +224,15 @@ export default function PostSessionScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  async function handleChangeTitle(newTitle: string) {
+    if (!sessionDetail) return;
+    await updateSessionName(db, sessionDetail.session.id, newTitle);
+    setSessionDetail({
+      ...sessionDetail,
+      session: { ...sessionDetail.session, name: newTitle },
+    });
+  }
+
   useEffect(() => {
     let isMounted = true;
 
@@ -312,10 +322,10 @@ export default function PostSessionScreen() {
             <Text className="text-sm text-zinc-500 dark:text-zinc-400">
               {i18n.t("postSession.title")}
             </Text>
-            <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
-              {sessionDetail?.session.name ??
-                i18n.t("sessions.sessionNotFound")}
-            </Text>
+            <EditableSessionTitle
+              title={sessionDetail?.session.name ?? i18n.t("sessions.sessionNotFound")}
+              onChangeTitle={handleChangeTitle}
+            />
           </View>
 
           {isLoading ? (

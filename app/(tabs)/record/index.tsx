@@ -8,10 +8,12 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Battery from 'expo-battery';
 import i18n from '@/i18n';
 import Card from '@/components/Card';
+import EditableSessionTitle from '@/components/EditableSessionTitle';
 import type { TrackListItem } from '@/db';
 import { getNextSessionNumber, getTrackById, getTrackSessionSummary, listTracks } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
+import { fetchTrackWeather, type TrackWeather } from '@/services/weather';
 import {
   getCurrentLocationSample,
   getForegroundLocationPermissionState,
@@ -58,10 +60,12 @@ export default function PreSessionScreen() {
     { key: 'battery', value: i18n.t('common.tbd'), status: 'warning' },
     { key: 'startFinishLineSet', value: i18n.t('common.tbd'), status: 'warning' },
   ]);
+  const [weather, setWeather] = useState<TrackWeather | null>(null);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('emerald');
-  const sessionTitle = i18n.t('preSession.sessionTitle', { number: sessionNumber });
+  const [customSessionTitle, setCustomSessionTitle] = useState<string | null>(null);
+  const sessionTitle: string = customSessionTitle ?? (i18n.t('preSession.sessionTitle', { number: sessionNumber }) as string);
 
   useEffect(() => {
     let isMounted = true;
@@ -138,6 +142,48 @@ export default function PreSessionScreen() {
       isMounted = false;
     };
   }, [db, selectedCircuit]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadWeather() {
+      if (
+        !selectedCircuit ||
+        selectedCircuit.centerLatitude === null ||
+        selectedCircuit.centerLongitude === null
+      ) {
+        if (isMounted) {
+          setWeather(null);
+        }
+        return;
+      }
+
+      try {
+        const nextWeather = await fetchTrackWeather(
+          selectedCircuit.centerLatitude,
+          selectedCircuit.centerLongitude
+        );
+
+        if (!isMounted) {
+          return;
+        }
+
+        setWeather(nextWeather);
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        setWeather(null);
+      }
+    }
+
+    void loadWeather();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedCircuit]);
 
   useEffect(() => {
     let isMounted = true;
@@ -320,6 +366,22 @@ export default function PreSessionScreen() {
     return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
   }
 
+  function formatTemperature(value: number | null) {
+    if (value === null) {
+      return i18n.t('common.tbd');
+    }
+
+    return `${Math.round(value)}°C`;
+  }
+
+  function formatWindSpeed(value: number | null) {
+    if (value === null) {
+      return i18n.t('common.tbd');
+    }
+
+    return `${Math.round(value)} km/h`;
+  }
+
   const readyChecklistCount = checklistItems.filter((item) => item.status === 'ready').length;
 
   return (
@@ -349,7 +411,7 @@ export default function PreSessionScreen() {
           {/* Title + READY badge */}
           <View className="mb-4">
             <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.readyToRecord')}</Text>
-            <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">{sessionTitle}</Text>
+            <EditableSessionTitle title={sessionTitle} onChangeTitle={(t) => setCustomSessionTitle(t)} />
           </View>
 
           {/* Track Selection */}
@@ -456,17 +518,23 @@ export default function PreSessionScreen() {
           <View className="flex-row gap-3">
             <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
               <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('preSession.condition')}</Text>
-              <Text className="text-2xl mb-1">☀️</Text>
-              <Text className="text-sm font-semibold text-zinc-900 dark:text-white">{i18n.t('preSession.clear')}</Text>
+              <Text className="text-2xl mb-1 text-center">{weather?.emoji ?? '—'}</Text>
+              <Text className="text-sm font-semibold text-zinc-900 dark:text-white text-center">
+                {weather ? i18n.t(`preSession.${weather.conditionKey}`) : i18n.t('common.tbd')}
+              </Text>
             </View>
             <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
               <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('preSession.airTemp')}</Text>
-              <Text className="text-lg font-semibold text-zinc-900 dark:text-white">24°C</Text>
+              <View className="flex-1 justify-center">
+                <Text className="text-lg font-semibold text-zinc-900 dark:text-white text-center">{formatTemperature(weather?.temperatureC ?? null)}</Text>
+              </View>
             </View>
             <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
               <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('preSession.wind')}</Text>
-              <Text className="text-lg font-semibold text-zinc-900 dark:text-white">14 km/h</Text>
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">NW</Text>
+              <View className="flex-1 justify-center">
+                <Text className="text-lg font-semibold text-zinc-900 dark:text-white text-center">{formatWindSpeed(weather?.windSpeedKph ?? null)}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400 text-center">{weather?.windDirectionCardinal ?? i18n.t('common.tbd')}</Text>
+              </View>
             </View>
           </View>
 

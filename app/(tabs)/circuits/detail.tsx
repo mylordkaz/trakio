@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { View, Text, ScrollView, Pressable, TextInput } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -59,6 +59,7 @@ export default function CircuitDetailScreen() {
   const [editingNoteText, setEditingNoteText] = useState("");
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
+  const scrollRef = useRef<ScrollView>(null);
   const gradientColors = useHeaderGradient("sky");
 
   const loadCircuit = useCallback(async () => {
@@ -181,10 +182,18 @@ export default function CircuitDetailScreen() {
   }
 
   return (
+    <KeyboardAvoidingView
+      className="flex-1"
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={0}
+      style={{ backgroundColor: isDark ? "#18181b" : "#fafafa" }}
+    >
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <LinearGradient
           colors={gradientColors}
@@ -545,6 +554,7 @@ export default function CircuitDetailScreen() {
                     placeholderTextColor={isDark ? "#71717a" : "#a1a1aa"}
                     value={newNote}
                     onChangeText={setNewNote}
+                    onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300)}
                     multiline
                   />
                   {newNote.trim().length > 0 ? (
@@ -566,7 +576,15 @@ export default function CircuitDetailScreen() {
 
         {/* Bottom buttons */}
         <View className="px-5 pb-5 pt-1 flex-row gap-3">
-          <Pressable className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center">
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/(tabs)/sessions",
+                params: { trackId: circuit?.id ?? "" },
+              })
+            }
+            className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center"
+          >
             <Text className="text-sm font-medium text-zinc-900 dark:text-white">
               {i18n.t("circuits.viewHistory")}
             </Text>
@@ -582,5 +600,6 @@ export default function CircuitDetailScreen() {
         </View>
       </ScrollView>
     </View>
+    </KeyboardAvoidingView>
   );
 }
