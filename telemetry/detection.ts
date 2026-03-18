@@ -16,6 +16,10 @@ type Point = {
   y: number;
 };
 
+type Intersection = {
+  movementFraction: number;
+};
+
 function orientation(a: Point, b: Point, c: Point) {
   const value = (b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y);
 
@@ -62,6 +66,49 @@ function segmentsIntersect(a1: Point, a2: Point, b1: Point, b2: Point) {
   }
 
   return false;
+}
+
+function cross(a: Point, b: Point) {
+  return a.x * b.y - a.y * b.x;
+}
+
+function subtract(a: Point, b: Point): Point {
+  return {
+    x: a.x - b.x,
+    y: a.y - b.y,
+  };
+}
+
+function getSegmentIntersection(
+  movementStart: Point,
+  movementEnd: Point,
+  timingLineStart: Point,
+  timingLineEnd: Point
+): Intersection | null {
+  const movement = subtract(movementEnd, movementStart);
+  const timingLine = subtract(timingLineEnd, timingLineStart);
+  const denominator = cross(movement, timingLine);
+
+  if (Math.abs(denominator) < 1e-10) {
+    return null;
+  }
+
+  const originDelta = subtract(timingLineStart, movementStart);
+  const movementFraction = cross(originDelta, timingLine) / denominator;
+  const timingLineFraction = cross(originDelta, movement) / denominator;
+
+  if (
+    movementFraction < 0 ||
+    movementFraction > 1 ||
+    timingLineFraction < 0 ||
+    timingLineFraction > 1
+  ) {
+    return null;
+  }
+
+  return {
+    movementFraction: movementFraction,
+  };
 }
 
 function sampleToPoint(sample: TelemetrySample): Point {
@@ -125,14 +172,23 @@ function satisfiesMinLapTime(
 
 function toDetectionEvent(
   timingLine: TimingLineRow,
-  sample: TelemetrySample
+  previousSample: TelemetrySample,
+  currentSample: TelemetrySample,
+  intersection: Intersection
 ): TelemetryDetectionEvent {
+  const interpolatedRecordedAt =
+    previousSample.recordedAt +
+    (currentSample.recordedAt - previousSample.recordedAt) * intersection.movementFraction;
+  const interpolatedElapsedMs =
+    previousSample.elapsedMs +
+    (currentSample.elapsedMs - previousSample.elapsedMs) * intersection.movementFraction;
+
   return {
     type: timingLine.type === 'start_finish' ? 'start_finish_crossed' : 'sector_crossed',
     timingLineId: timingLine.id,
     seq: timingLine.seq,
-    sampleRecordedAt: sample.recordedAt,
-    sampleElapsedMs: sample.elapsedMs,
+    sampleRecordedAt: Math.round(interpolatedRecordedAt),
+    sampleElapsedMs: Math.round(interpolatedElapsedMs),
   };
 }
 
@@ -154,16 +210,41 @@ export function detectTimingLineCrossing(
   const sortedTimingLines = [...timingLines].sort((a, b) => a.seq - b.seq);
 
   for (const timingLine of sortedTimingLines) {
+    const timingLineStart = timingLineStartPoint(timingLine);
+    const timingLineEnd = timingLineEndPoint(timingLine);
+
     if (!segmentsIntersect(
       movementStart,
       movementEnd,
-      timingLineStartPoint(timingLine),
-      timingLineEndPoint(timingLine)
+      timingLineStart,
+      timingLineEnd
     )) {
       continue;
     }
 
-    if (isDebounced(state, currentSample, timingLine.id, mergedConfig)) {
+    const intersection = getSegmentIntersection(
+      movementStart,
+      movementEnd,
+      timingLineStart,
+      timingLineEnd
+    );
+
+    if (!intersection) {
+      continue;
+    }
+
+    const interpolatedElapsedMs =
+      previousSample.elapsedMs +
+      (currentSample.elapsedMs - previousSample.elapsedMs) * intersection.movementFraction;
+    const interpolatedSample = {
+      ...currentSample,
+      recordedAt:
+        previousSample.recordedAt +
+        (currentSample.recordedAt - previousSample.recordedAt) * intersection.movementFraction,
+      elapsedMs: interpolatedElapsedMs,
+    };
+
+    if (isDebounced(state, interpolatedSample, timingLine.id, mergedConfig)) {
       continue;
     }
 
@@ -171,13 +252,12 @@ export function detectTimingLineCrossing(
       continue;
     }
 
-    if (!satisfiesMinLapTime(state, currentSample, timingLine, mergedConfig)) {
+    if (!satisfiesMinLapTime(state, interpolatedSample, timingLine, mergedConfig)) {
       continue;
     }
 
-    return toDetectionEvent(timingLine, currentSample);
+    return toDetectionEvent(timingLine, previousSample, currentSample, intersection);
   }
 
   return null;
 }
-

@@ -39,6 +39,7 @@ type SessionRuntimeSnapshot = {
   latestAcceptedSample: TelemetrySample | null;
   latestEvent: TelemetryDetectionEvent | null;
   bufferedPointCount: number;
+  currentLapSectorSplitsMs: Record<number, number>;
 };
 
 type HandleSampleResult =
@@ -119,6 +120,7 @@ export function createSessionRuntime(args: {
     latestAcceptedSample: null,
     latestEvent: null,
     bufferedPointCount: 0,
+    currentLapSectorSplitsMs: {},
   };
 
   async function start() {
@@ -154,6 +156,7 @@ export function createSessionRuntime(args: {
       latestAcceptedSample: null,
       latestEvent: null,
       bufferedPointCount: recorder.getBufferedPointCount(),
+      currentLapSectorSplitsMs: {},
     };
 
     return getSnapshot();
@@ -184,6 +187,7 @@ export function createSessionRuntime(args: {
         lastCrossedSectorSeq: null,
         lastCrossingElapsedMs: event.sampleElapsedMs,
         latestEvent: event,
+        currentLapSectorSplitsMs: {},
       };
 
       return;
@@ -235,6 +239,7 @@ export function createSessionRuntime(args: {
       lastLapMs: lapTimeMs,
       totalLaps: snapshot.totalLaps + 1,
       latestEvent: event,
+      currentLapSectorSplitsMs: {},
     };
   }
 
@@ -260,6 +265,13 @@ export function createSessionRuntime(args: {
       lastCrossingElapsedMs: event.sampleElapsedMs,
       currentSectorStartedElapsedMs: event.sampleElapsedMs,
       latestEvent: event,
+      currentLapSectorSplitsMs: {
+        ...snapshot.currentLapSectorSplitsMs,
+        [event.seq - 1]: Math.max(
+          0,
+          Math.round(event.sampleElapsedMs - snapshot.currentSectorStartedElapsedMs)
+        ),
+      },
     };
   }
 

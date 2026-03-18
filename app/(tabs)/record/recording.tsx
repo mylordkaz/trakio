@@ -18,6 +18,7 @@ import {
 } from '@/telemetry/location';
 import { createSessionRuntime } from '@/telemetry/session-runtime';
 import type { TrackDetail } from '@/db';
+import type { TelemetrySample } from '@/telemetry/types';
 
 function formatLapTime(lapTimeMs: number | null) {
   if (lapTimeMs === null) {
@@ -41,6 +42,15 @@ function formatDuration(elapsedMs: number | null) {
   const seconds = totalSeconds % 60;
 
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function formatSectorTime(elapsedMs: number | null) {
+  if (elapsedMs === null) {
+    return '--.---';
+  }
+
+  const totalSeconds = Math.max(0, elapsedMs / 1000);
+  return totalSeconds.toFixed(3).padStart(6, '0');
 }
 
 function formatSpeed(speedKph: number | null) {
@@ -71,6 +81,34 @@ function getGpsSignalLabel(accuracyM: number | null) {
   return `${getGpsSignalPercent(accuracyM)}%`;
 }
 
+function getBrakePercent(
+  previousSample: TelemetrySample | null,
+  currentSample: TelemetrySample | null
+) {
+  if (!previousSample || !currentSample) {
+    return 0;
+  }
+
+  if (previousSample.speedMps === null || currentSample.speedMps === null) {
+    return 0;
+  }
+
+  const elapsedMs = currentSample.elapsedMs - previousSample.elapsedMs;
+  if (elapsedMs <= 0) {
+    return 0;
+  }
+
+  const deltaSpeedMps = currentSample.speedMps - previousSample.speedMps;
+  if (deltaSpeedMps >= 0) {
+    return 0;
+  }
+
+  const decelerationMps2 = Math.abs(deltaSpeedMps) / (elapsedMs / 1000);
+  const percent = Math.round((decelerationMps2 / 6) * 100);
+
+  return Math.max(0, Math.min(100, percent));
+}
+
 export default function RecordingScreen() {
   const router = useRouter();
   const db = useSQLiteContext();
@@ -81,11 +119,13 @@ export default function RecordingScreen() {
   const [isLoadingTrack, setIsLoadingTrack] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [brakePercent, setBrakePercent] = useState(0);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ReturnType<ReturnType<typeof createSessionRuntime>['getSnapshot']> | null>(null);
   const runtimeRef = useRef<ReturnType<typeof createSessionRuntime> | null>(null);
   const locationSubscriptionRef = useRef<LocationSubscription | null>(null);
   const hasStoppedRef = useRef(false);
   const pulseOpacity = useRef(new Animated.Value(1)).current;
+  const previousAcceptedSampleRef = useRef<TelemetrySample | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -229,7 +269,7 @@ export default function RecordingScreen() {
 
     const intervalId = setInterval(() => {
       setNowMs(Date.now());
-    }, 1000);
+    }, 50);
 
     return () => {
       clearInterval(intervalId);
@@ -260,6 +300,19 @@ export default function RecordingScreen() {
     };
   }, [pulseOpacity]);
 
+  useEffect(() => {
+    const currentSample = runtimeSnapshot?.latestAcceptedSample ?? null;
+
+    if (!currentSample) {
+      previousAcceptedSampleRef.current = null;
+      setBrakePercent(0);
+      return;
+    }
+
+    setBrakePercent(getBrakePercent(previousAcceptedSampleRef.current, currentSample));
+    previousAcceptedSampleRef.current = currentSample;
+  }, [runtimeSnapshot?.latestAcceptedSample]);
+
   const sectorCount = track?.sectorCount ?? 0;
   const sessionDurationMs =
     runtimeSnapshot?.sessionStartedAtMs !== null && runtimeSnapshot?.sessionStartedAtMs !== undefined
@@ -268,8 +321,11 @@ export default function RecordingScreen() {
   const currentElapsedMs =
     runtimeSnapshot?.status === 'lap_in_progress' &&
     runtimeSnapshot.currentLapStartedElapsedMs !== null &&
-    runtimeSnapshot.latestAcceptedSample
-      ? runtimeSnapshot.latestAcceptedSample.elapsedMs - runtimeSnapshot.currentLapStartedElapsedMs
+    runtimeSnapshot.sessionStartedAtMs !== null
+      ? Math.max(
+          0,
+          nowMs - (runtimeSnapshot.sessionStartedAtMs + runtimeSnapshot.currentLapStartedElapsedMs)
+        )
       : null;
   const currentLapLabel =
     runtimeSnapshot?.status === 'lap_in_progress'
@@ -281,6 +337,15 @@ export default function RecordingScreen() {
     runtimeSnapshot?.latestAcceptedSample?.speedMps !== null &&
     runtimeSnapshot?.latestAcceptedSample?.speedMps !== undefined
       ? runtimeSnapshot.latestAcceptedSample.speedMps * 3.6
+      : null;
+  const currentSectorElapsedMs =
+    runtimeSnapshot?.status === 'lap_in_progress' &&
+    runtimeSnapshot.currentSectorStartedElapsedMs !== null &&
+    runtimeSnapshot.sessionStartedAtMs !== null
+      ? Math.max(
+          0,
+          nowMs - (runtimeSnapshot.sessionStartedAtMs + runtimeSnapshot.currentSectorStartedElapsedMs)
+        )
       : null;
   const recentLaps = runtimeSnapshot?.lastLapMs !== null && runtimeSnapshot?.lastLapMs !== undefined
     ? [{
@@ -398,7 +463,11 @@ export default function RecordingScreen() {
                 }`}
               >
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{`S${index + 1}`}</Text>
-                <Text className="text-lg font-medium text-zinc-900 dark:text-white">--.---</Text>
+                <Text className="text-lg font-medium text-zinc-900 dark:text-white">
+                  {isActive
+                    ? formatSectorTime(currentSectorElapsedMs)
+                    : formatSectorTime(runtimeSnapshot?.currentLapSectorSplitsMs[index] ?? null)}
+                </Text>
               </View>
               );
             })}
@@ -459,7 +528,7 @@ export default function RecordingScreen() {
               />
               <ProgressBar
                 label={i18n.t('telemetry.brake')}
-                value={`${runtimeSnapshot?.status === 'lap_in_progress' ? 0 : 100}%`}
+                value={`${brakePercent}%`}
               />
               <ProgressBar
                 label={i18n.t('telemetry.gpsSignal')}

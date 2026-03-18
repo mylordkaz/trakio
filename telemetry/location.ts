@@ -97,7 +97,7 @@ export async function startLocationSubscription(
     onSample,
     onError,
     accuracy = Location.Accuracy.BestForNavigation,
-    timeIntervalMs = 1000,
+    timeIntervalMs = 200,
     distanceIntervalM = 0,
   } = options;
 
@@ -132,4 +132,3 @@ export async function startLocationSubscription(
 export function stopLocationSubscription(subscription: LocationSubscription | null | undefined) {
   subscription?.remove();
 }
-
