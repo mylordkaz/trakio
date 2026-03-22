@@ -5,6 +5,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import type { LocationSubscription } from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useKeepAwake } from 'expo-keep-awake';
 import i18n from '@/i18n';
 import Card from '@/components/Card';
 import LapRow from '@/components/LapRow';
@@ -110,6 +111,7 @@ function getBrakePercent(
 }
 
 export default function RecordingScreen() {
+  useKeepAwake();
   const router = useRouter();
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();

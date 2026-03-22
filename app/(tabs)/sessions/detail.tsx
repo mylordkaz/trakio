@@ -269,6 +269,38 @@ function getTrendBars(sessionDetail: SessionDetail | null) {
   }));
 }
 
+function getDisplayGpsLine(sessionDetail: SessionDetail | null) {
+  const gpsPoints = (sessionDetail?.gpsPoints ?? []).filter(
+    (point) => point.accuracyM === null || point.accuracyM <= 20
+  );
+
+  if (gpsPoints.length <= 2) {
+    return gpsPoints.map((point) => ({
+      latitude: point.latitude,
+      longitude: point.longitude,
+    }));
+  }
+
+  return gpsPoints.map((point, index, points) => {
+    if (index === 0 || index === points.length - 1) {
+      return {
+        latitude: point.latitude,
+        longitude: point.longitude,
+      };
+    }
+
+    const previousPoint = points[index - 1];
+    const nextPoint = points[index + 1];
+
+    return {
+      latitude:
+        (previousPoint.latitude + point.latitude + nextPoint.latitude) / 3,
+      longitude:
+        (previousPoint.longitude + point.longitude + nextPoint.longitude) / 3,
+    };
+  });
+}
+
 function getMapRegion(sessionDetail: SessionDetail | null) {
   if (!sessionDetail) {
     return null;
@@ -421,10 +453,7 @@ export default function SessionDetailScreen() {
   const mapRegion = getMapRegion(sessionDetail);
   const startFinishLine =
     sessionDetail?.timingLines.find((timingLine) => timingLine.type === 'start_finish') ?? null;
-  const gpsLine = (sessionDetail?.gpsPoints ?? []).map((point) => ({
-    latitude: point.latitude,
-    longitude: point.longitude,
-  }));
+  const gpsLine = getDisplayGpsLine(sessionDetail);
 
   return (
     <KeyboardAvoidingView
@@ -493,7 +522,7 @@ export default function SessionDetailScreen() {
                   {gpsLine.length > 1 ? (
                     <Polyline
                       coordinates={gpsLine}
-                      strokeColor="#a78bfa"
+                      strokeColor="#f59e0b"
                       strokeWidth={3}
                     />
                   ) : null}
