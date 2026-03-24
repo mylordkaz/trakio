@@ -107,6 +107,7 @@ export default {
     driverNotes: 'ドライバーノート',
     driverNotesSubtitle: 'セッション前のクイックリファレンス',
     startFinish: 'スタート / フィニッシュ',
+    sectors: 'セクター',
     pitEntry: '最終コーナーにピットエントリー',
     distanceSplit: 'ラップ全体の距離分割',
     compare: '比較',

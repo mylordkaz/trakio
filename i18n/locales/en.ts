@@ -107,6 +107,7 @@ export default {
     driverNotes: 'Driver Notes',
     driverNotesSubtitle: 'Quick reference before the session',
     startFinish: 'Start / Finish',
+    sectors: 'Sectors',
     pitEntry: 'Pit Entry at final corner',
     distanceSplit: 'Distance split across the lap',
     compare: 'Compare',
