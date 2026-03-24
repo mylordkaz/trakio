@@ -115,6 +115,7 @@ export default {
     counterclockwise: '反時計回り',
     loadingTracks: 'トラック読み込み中...',
     loadError: 'トラックの読み込みに失敗しました',
+    searchTracks: 'トラックを検索...',
     noTracksFound: 'トラックが見つかりません',
     noTracksFoundHint: '検索条件やフィルターを変更してください',
     trackNotFound: 'トラックが見つかりません',

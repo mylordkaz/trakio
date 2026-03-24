@@ -115,6 +115,7 @@ export default {
     counterclockwise: 'Counterclockwise',
     loadingTracks: 'Loading tracks...',
     loadError: 'Unable to load tracks.',
+    searchTracks: 'Search tracks...',
     noTracksFound: 'No tracks found',
     noTracksFoundHint: 'Adjust your search or filters.',
     trackNotFound: 'Track not found.',

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useMemo, useEffect, useState } from 'react';
+import { View, Text, ScrollView, Pressable, TextInput } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -71,6 +71,7 @@ function getChecklistValueClass(status: ChecklistStatus) {
 
 export default function PreSessionScreen() {
   const router = useRouter();
+  const { trackId } = useLocalSearchParams<{ trackId?: string }>();
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
   const [circuits, setCircuits] = useState<TrackListItem[]>([]);
@@ -95,7 +96,16 @@ export default function PreSessionScreen() {
   const [customSessionTitle, setCustomSessionTitle] = useState<string | null>(null);
   const [hasManualTrackSelection, setHasManualTrackSelection] = useState(false);
   const [hasResolvedAutoSelection, setHasResolvedAutoSelection] = useState(false);
+  const [circuitSearch, setCircuitSearch] = useState('');
   const sessionTitle: string = customSessionTitle ?? (i18n.t('preSession.sessionTitle', { number: sessionNumber }) as string);
+
+  const filteredCircuits = useMemo(() => {
+    if (!circuitSearch.trim()) return circuits;
+    const query = circuitSearch.toLowerCase().trim();
+    return circuits.filter(
+      (c) => c.name.toLowerCase().includes(query) || c.country?.toLowerCase().includes(query)
+    );
+  }, [circuits, circuitSearch]);
 
   useEffect(() => {
     let isMounted = true;
@@ -137,6 +147,19 @@ export default function PreSessionScreen() {
       isMounted = false;
     };
   }, [db]);
+
+  useEffect(() => {
+    if (!trackId || circuits.length === 0) {
+      return;
+    }
+
+    const match = circuits.find((c) => c.id === trackId);
+    if (match) {
+      setSelectedCircuit(match);
+      setHasManualTrackSelection(true);
+    }
+    router.setParams({ trackId: undefined });
+  }, [router, trackId, circuits]);
 
   useEffect(() => {
     let isMounted = true;
@@ -523,7 +546,7 @@ export default function PreSessionScreen() {
           <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
             <View className="flex-row items-center justify-between mb-3">
               <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.selectedCircuit')}</Text>
-              <Pressable onPress={() => setShowCircuitPicker(!showCircuitPicker)}>
+              <Pressable onPress={() => { setShowCircuitPicker(!showCircuitPicker); setCircuitSearch(''); }}>
                 <Text className="text-sm font-medium text-emerald-400">
                   {showCircuitPicker ? i18n.t('common.done') : i18n.t('common.change')}
                 </Text>
@@ -571,31 +594,61 @@ export default function PreSessionScreen() {
               </Pressable>
             ) : (
               <View className="gap-2">
-                {circuits.map((circuit) => (
-                  <Pressable
-                    key={circuit.id}
-                    onPress={() => {
-                      setSelectedCircuit(circuit);
-                      setHasManualTrackSelection(true);
-                      setShowCircuitPicker(false);
-                    }}
-                    className={`flex-row items-center justify-between rounded-2xl px-3 py-2.5 border ${
-                      selectedCircuit.id === circuit.id
-                        ? 'bg-emerald-500/10 border-emerald-400/30'
-                        : 'bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10'
-                    }`}
-                  >
-                    <View>
-                      <Text className="text-sm font-medium text-zinc-900 dark:text-white">{circuit.name}</Text>
-                      <Text className="text-xs text-zinc-400 dark:text-zinc-500">
-                        {formatTrackLength(circuit.lengthMeters)} · {i18n.t('preSession.cornersCount', { count: circuit.corners ?? 0 })}
-                      </Text>
+                <View className="flex-row items-center rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-2">
+                  <Ionicons name="search" size={16} color={isDark ? '#a1a1aa' : '#71717a'} />
+                  <TextInput
+                    className="flex-1 ml-2 text-sm text-zinc-900 dark:text-white p-0"
+                    placeholder={i18n.t('circuits.searchTracks')}
+                    placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
+                    value={circuitSearch}
+                    onChangeText={setCircuitSearch}
+                    autoCorrect={false}
+                  />
+                  {circuitSearch.length > 0 && (
+                    <Pressable onPress={() => setCircuitSearch('')} hitSlop={8}>
+                      <Ionicons name="close-circle" size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
+                    </Pressable>
+                  )}
+                </View>
+                <ScrollView
+                  style={{ maxHeight: 250 }}
+                  nestedScrollEnabled
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
+                  {filteredCircuits.length > 0 ? (
+                    filteredCircuits.map((circuit) => (
+                      <Pressable
+                        key={circuit.id}
+                        onPress={() => {
+                          setSelectedCircuit(circuit);
+                          setHasManualTrackSelection(true);
+                          setShowCircuitPicker(false);
+                          setCircuitSearch('');
+                        }}
+                        className={`flex-row items-center justify-between rounded-2xl px-3 py-2.5 mb-2 border ${
+                          selectedCircuit.id === circuit.id
+                            ? 'bg-emerald-500/10 border-emerald-400/30'
+                            : 'bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10'
+                        }`}
+                      >
+                        <View>
+                          <Text className="text-sm font-medium text-zinc-900 dark:text-white">{circuit.name}</Text>
+                          <Text className="text-xs text-zinc-400 dark:text-zinc-500">
+                            {formatTrackLength(circuit.lengthMeters)} · {i18n.t('preSession.cornersCount', { count: circuit.corners ?? 0 })}
+                          </Text>
+                        </View>
+                        {selectedCircuit.id === circuit.id && (
+                          <Ionicons name="checkmark" size={16} color="#34d399" />
+                        )}
+                      </Pressable>
+                    ))
+                  ) : (
+                    <View className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-3">
+                      <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.noTracksFound')}</Text>
                     </View>
-                    {selectedCircuit.id === circuit.id && (
-                      <Ionicons name="checkmark" size={16} color="#34d399" />
-                    )}
-                  </Pressable>
-                ))}
+                  )}
+                </ScrollView>
               </View>
             )}
           </View>

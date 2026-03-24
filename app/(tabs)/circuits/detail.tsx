@@ -625,7 +625,7 @@ export default function CircuitDetailScreen() {
               </Text>
             </Pressable>
             <Pressable
-              onPress={() => router.push("/(tabs)/record")}
+              onPress={() => router.push({ pathname: "/(tabs)/record", params: { trackId: circuit?.id } })}
               className="flex-1 rounded-2xl bg-sky-500 py-3.5 items-center"
             >
               <Text className="text-sm font-semibold text-black">
