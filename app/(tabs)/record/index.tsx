@@ -30,6 +30,34 @@ type ChecklistItem = {
   status: ChecklistStatus;
 };
 
+const AUTO_SELECT_MAX_DISTANCE_M = 2000;
+
+function toRadians(value: number) {
+  return (value * Math.PI) / 180;
+}
+
+function getDistanceMeters(
+  aLatitude: number,
+  aLongitude: number,
+  bLatitude: number,
+  bLongitude: number
+) {
+  const earthRadiusM = 6371000;
+  const dLatitude = toRadians(bLatitude - aLatitude);
+  const dLongitude = toRadians(bLongitude - aLongitude);
+  const latitude1 = toRadians(aLatitude);
+  const latitude2 = toRadians(bLatitude);
+
+  const haversine =
+    Math.sin(dLatitude / 2) * Math.sin(dLatitude / 2) +
+    Math.cos(latitude1) *
+      Math.cos(latitude2) *
+      Math.sin(dLongitude / 2) *
+      Math.sin(dLongitude / 2);
+
+  return 2 * earthRadiusM * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
 function getChecklistValueClass(status: ChecklistStatus) {
   switch (status) {
     case 'ready':
@@ -65,6 +93,8 @@ export default function PreSessionScreen() {
   const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('emerald');
   const [customSessionTitle, setCustomSessionTitle] = useState<string | null>(null);
+  const [hasManualTrackSelection, setHasManualTrackSelection] = useState(false);
+  const [hasResolvedAutoSelection, setHasResolvedAutoSelection] = useState(false);
   const sessionTitle: string = customSessionTitle ?? (i18n.t('preSession.sessionTitle', { number: sessionNumber }) as string);
 
   useEffect(() => {
@@ -107,6 +137,81 @@ export default function PreSessionScreen() {
       isMounted = false;
     };
   }, [db]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function autoSelectNearestTrack() {
+      if (hasManualTrackSelection || hasResolvedAutoSelection || circuits.length === 0) {
+        return;
+      }
+
+      try {
+        let permissionState = await getForegroundLocationPermissionState();
+
+        if (permissionState === 'undetermined') {
+          permissionState = await requestForegroundLocationPermission();
+        }
+
+        if (permissionState !== 'granted') {
+          if (isMounted) {
+            setHasResolvedAutoSelection(true);
+          }
+          return;
+        }
+
+        const locationSample = await getCurrentLocationSample();
+
+        if (!locationSample) {
+          if (isMounted) {
+            setHasResolvedAutoSelection(true);
+          }
+          return;
+        }
+
+        let nearestCircuit: TrackListItem | null = null;
+        let nearestDistanceM = Number.POSITIVE_INFINITY;
+
+        for (const circuit of circuits) {
+          if (circuit.centerLatitude === null || circuit.centerLongitude === null) {
+            continue;
+          }
+
+          const distanceM = getDistanceMeters(
+            locationSample.lat,
+            locationSample.lng,
+            circuit.centerLatitude,
+            circuit.centerLongitude
+          );
+
+          if (distanceM < nearestDistanceM) {
+            nearestDistanceM = distanceM;
+            nearestCircuit = circuit;
+          }
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (nearestCircuit && nearestDistanceM <= AUTO_SELECT_MAX_DISTANCE_M) {
+          setSelectedCircuit(nearestCircuit);
+        }
+
+        setHasResolvedAutoSelection(true);
+      } catch {
+        if (isMounted) {
+          setHasResolvedAutoSelection(true);
+        }
+      }
+    }
+
+    void autoSelectNearestTrack();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [circuits, hasManualTrackSelection, hasResolvedAutoSelection]);
 
   useEffect(() => {
     let isMounted = true;
@@ -469,7 +574,11 @@ export default function PreSessionScreen() {
                 {circuits.map((circuit) => (
                   <Pressable
                     key={circuit.id}
-                    onPress={() => { setSelectedCircuit(circuit); setShowCircuitPicker(false); }}
+                    onPress={() => {
+                      setSelectedCircuit(circuit);
+                      setHasManualTrackSelection(true);
+                      setShowCircuitPicker(false);
+                    }}
                     className={`flex-row items-center justify-between rounded-2xl px-3 py-2.5 border ${
                       selectedCircuit.id === circuit.id
                         ? 'bg-emerald-500/10 border-emerald-400/30'
