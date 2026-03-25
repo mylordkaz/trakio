@@ -1,6 +1,7 @@
-import { useMemo, useEffect, useState } from 'react';
+import { useMemo, useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -427,40 +428,23 @@ export default function PreSessionScreen() {
     };
   }, [db, selectedCircuit]);
 
-  useEffect(() => {
-    let isMounted = true;
+  useFocusEffect(
+    useCallback(() => {
+      setCustomSessionTitle(null);
 
-    async function loadSessionNumber() {
-      if (!selectedCircuit) {
-        if (isMounted) {
-          setSessionNumber(1);
+      let isMounted = true;
+      async function refreshSessionNumber() {
+        try {
+          const next = await getNextSessionNumber(db);
+          if (isMounted) setSessionNumber(next);
+        } catch {
+          if (isMounted) setSessionNumber(1);
         }
-        return;
       }
-
-      try {
-        const nextSessionNumber = await getNextSessionNumber(db);
-
-        if (!isMounted) {
-          return;
-        }
-
-        setSessionNumber(nextSessionNumber);
-      } catch {
-        if (!isMounted) {
-          return;
-        }
-
-        setSessionNumber(1);
-      }
-    }
-
-    void loadSessionNumber();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [db, selectedCircuit]);
+      void refreshSessionNumber();
+      return () => { isMounted = false; };
+    }, [db])
+  );
 
   function formatTrackLength(lengthMeters: number | null) {
     if (lengthMeters === null) {
