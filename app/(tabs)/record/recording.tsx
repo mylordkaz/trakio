@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, View, Text, ScrollView, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useNavigation } from '@react-navigation/native';
 import { useSQLiteContext } from 'expo-sqlite';
 import type { LocationSubscription } from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useKeepAwake } from 'expo-keep-awake';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import i18n from '@/i18n';
 import Card from '@/components/Card';
 import LapRow from '@/components/LapRow';
 import ProgressBar from '@/components/ProgressBar';
 import { createSessionRecorder, getTrackById } from '@/db';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import {
   requestForegroundLocationPermission,
@@ -115,6 +118,8 @@ export default function RecordingScreen() {
   const router = useRouter();
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const params = useLocalSearchParams<{ trackId?: string; sessionName?: string }>();
   const gradientColors = useHeaderGradient('red');
   const [track, setTrack] = useState<TrackDetail | null>(null);
@@ -128,6 +133,51 @@ export default function RecordingScreen() {
   const hasStoppedRef = useRef(false);
   const pulseOpacity = useRef(new Animated.Value(1)).current;
   const previousAcceptedSampleRef = useRef<TelemetrySample | null>(null);
+  const [isLandscape, setIsLandscape] = useState(false);
+  const [isEndingSession, setIsEndingSession] = useState(false);
+  const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
+  const tabNavigator = useNavigation().getParent();
+
+  useEffect(() => {
+    void ScreenOrientation.unlockAsync();
+
+    const subscription = ScreenOrientation.addOrientationChangeListener((event) => {
+      const orientation = event.orientationInfo.orientation;
+      setIsLandscape(
+        orientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
+        orientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT
+      );
+    });
+
+    return () => {
+      ScreenOrientation.removeOrientationChangeListener(subscription);
+      void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (pendingSessionId !== null && !isLandscape) {
+      router.replace({
+        pathname: '/(tabs)/record/post-session',
+        params: { id: pendingSessionId },
+      });
+    }
+  }, [pendingSessionId, isLandscape, router]);
+
+  useEffect(() => {
+    const defaultTabBarStyle = {
+      backgroundColor: isDark ? '#18181b' : '#ffffff',
+      borderTopColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
+    };
+
+    tabNavigator?.setOptions({
+      tabBarStyle: isLandscape ? { display: 'none' as const } : defaultTabBarStyle,
+    });
+
+    return () => {
+      tabNavigator?.setOptions({ tabBarStyle: defaultTabBarStyle });
+    };
+  }, [isLandscape, isDark, tabNavigator]);
 
   useEffect(() => {
     let isMounted = true;
@@ -359,23 +409,96 @@ export default function RecordingScreen() {
   }));
 
   async function handleEndSession() {
-    const activeRuntime = runtimeRef.current;
+    if (isEndingSession) return;
+    setIsEndingSession(true);
 
+    // Stop telemetry
+    const activeRuntime = runtimeRef.current;
     stopLocationSubscription(locationSubscriptionRef.current);
     locationSubscriptionRef.current = null;
 
+    let sessionId = '';
     if (activeRuntime && !hasStoppedRef.current) {
       hasStoppedRef.current = true;
-      const stoppedSnapshot = await activeRuntime.stop();
-      setRuntimeSnapshot(stoppedSnapshot);
-      router.replace({
-        pathname: '/(tabs)/record/post-session',
-        params: { id: stoppedSnapshot.sessionId ?? '' },
-      });
-      return;
+      const snapshot = await activeRuntime.stop();
+      setRuntimeSnapshot(snapshot);
+      sessionId = snapshot.sessionId ?? '';
     }
 
-    router.replace('/(tabs)/record/post-session');
+    // Lock portrait — navigation fires reactively via useEffect when portrait is confirmed
+    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    setPendingSessionId(sessionId);
+  }
+
+  const lastLap = recentLaps.length > 0 ? recentLaps[recentLaps.length - 1] : null;
+
+  if (isEndingSession) {
+    return <View className="flex-1 bg-zinc-950" />;
+  }
+
+  if (isLandscape) {
+    return (
+      <View
+        className="flex-1 bg-zinc-950"
+        style={{ paddingLeft: insets.left + 16, paddingRight: insets.right + 16, paddingTop: insets.top + 8, paddingBottom: insets.bottom + 8 }}
+      >
+        {/* REC badge */}
+        <Animated.View style={{ opacity: pulseOpacity }} className="absolute top-2 right-4 z-10" >
+          <View className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-4 py-1.5 border border-red-400/20"
+            style={{ right: insets.right + 8, top: insets.top }}
+          >
+            <View className="h-3 w-3 rounded-full bg-red-400" />
+            <Text className="text-sm text-red-400">{i18n.t('session.recording')}</Text>
+          </View>
+        </Animated.View>
+
+        {/* Upper section: Last Lap / Best Lap */}
+        <View className="flex-row flex-1">
+          <View className="flex-1 items-center justify-center">
+            <Text className="text-sm text-zinc-500 mb-1">{i18n.t('session.lastLap')}</Text>
+            <Text className="text-4xl font-bold text-white">
+              {lastLap ? lastLap.time : '--:--.---'}
+            </Text>
+          </View>
+          <View style={{ width: 1 }} className="bg-white/10 my-3" />
+          <View className="flex-1 items-center justify-center">
+            <Text className="text-sm text-zinc-500 mb-1">{i18n.t('session.bestLap')}</Text>
+            <Text className="text-4xl font-bold text-emerald-400">
+              {formatLapTime(runtimeSnapshot?.bestLapMs ?? null)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Middle section: Current Lap Time */}
+        <View className="flex-[2] items-center justify-center">
+          <Text className="text-sm text-zinc-500 mb-2">{i18n.t('recording.currentLap')}</Text>
+          {runtimeSnapshot?.status === 'lap_in_progress' ? (
+            <Text style={{ fontSize: 120, lineHeight: 128 }} className="font-bold text-white tabular-nums tracking-tight">
+              {formatLapTime(currentElapsedMs)}
+            </Text>
+          ) : (
+            <Animated.Text style={{ fontSize: 32, lineHeight: 40, opacity: pulseOpacity }} className="font-medium text-zinc-500">
+              {i18n.t('recording.waitingForStartLine')}
+            </Animated.Text>
+          )}
+        </View>
+
+        {/* Lower section: Lap count / End button */}
+        <View className="flex-row items-end justify-between flex-1">
+          <View className="rounded-2xl bg-white/5 border border-white/10 items-center justify-center px-6 py-4">
+            <Text className="text-sm text-zinc-500 mb-1">{i18n.t('sessions.laps')}</Text>
+            <Text className="text-4xl font-bold text-white">{currentLapLabel}</Text>
+          </View>
+          <Pressable
+            onPress={() => { void handleEndSession(); }}
+            className="rounded-full bg-red-500 items-center justify-center"
+            style={{ width: 72, height: 72 }}
+          >
+            <Text className="text-sm font-semibold text-white">{i18n.t('session.stop')}</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
   }
 
   return (

@@ -21,6 +21,7 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenLayout={({ children }) => <UnmountOnBlur>{children}</UnmountOnBlur>}
+      sceneContainerStyle={{ backgroundColor: isDark ? '#18181b' : '#fafafa' }}
       screenOptions={{
         headerShown: false,
         tabBarStyle: {

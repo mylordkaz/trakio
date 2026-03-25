@@ -3,10 +3,11 @@
     "name": "Trakio",
     "slug": "trakio",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "trakio",
     "userInterfaceStyle": "automatic",
+    "backgroundColor": "#18181b",
     "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "com.trakio.mobile",
@@ -42,8 +43,10 @@
           }
         }
       ],
+      "expo-system-ui",
       "expo-localization",
-      "expo-sqlite"
+      "expo-sqlite",
+      ["expo-screen-orientation", { "initialOrientation": "PORTRAIT" }]
     ],
     "experiments": {
       "typedRoutes": true,

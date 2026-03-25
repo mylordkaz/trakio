@@ -26,6 +26,7 @@ export default {
     start: 'Start Session',
     startAt: 'Start Session at %{track}',
     end: 'End Session',
+    stop: 'Stop',
     recording: 'REC',
     saved: 'SAVED',
     ready: 'READY',
@@ -192,6 +193,7 @@ export default {
     lapTimes: 'Lap Times',
     recentLaps: 'Recent Laps',
     waitingForStartLine: 'Waiting for start line...',
+    currentLap: 'Current Lap',
   },
   telemetry: {
     title: 'Live Telemetry',

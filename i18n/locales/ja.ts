@@ -26,6 +26,7 @@ export default {
     start: 'セッション開始',
     startAt: '%{track}でセッション開始',
     end: 'セッション終了',
+    stop: '停止',
     recording: '録画中',
     saved: '保存済み',
     ready: '準備完了',
@@ -192,6 +193,7 @@ export default {
     lapTimes: 'ラップタイム',
     recentLaps: '最近のラップ',
     waitingForStartLine: 'スタートライン待機中...',
+    currentLap: '現在のラップ',
   },
   telemetry: {
     title: 'ライブテレメトリー',
