@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "trakio",
+    "name": "Trakio",
     "slug": "trakio",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -13,7 +13,7 @@
       "buildNumber": "1",
       "supportsTablet": false,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "trakio uses your location to record lap times and GPS traces on track.",
+        "NSLocationWhenInUseUsageDescription": "Trakio uses your location to record lap times and GPS traces on track.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -25,7 +25,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.trakio.mobile"
     },
     "plugins": [
       "expo-router",
