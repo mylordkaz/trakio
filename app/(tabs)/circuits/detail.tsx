@@ -218,7 +218,7 @@ export default function CircuitDetailScreen() {
             {/* Header */}
             <View className="flex-row items-center justify-between mb-4">
               <Pressable onPress={() => router.back()}>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+                <Text className="text-sm font-medium text-sky-400">
                   {i18n.t("common.back")}
                 </Text>
               </Pressable>

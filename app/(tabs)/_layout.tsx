@@ -27,7 +27,6 @@ export default function TabsLayout() {
           backgroundColor: isDark ? '#18181b' : '#ffffff',
           borderTopColor: isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)',
         },
-        tabBarActiveTintColor: '#0ea5e9',
         tabBarInactiveTintColor: isDark ? '#a1a1aa' : '#71717a',
       }}
     >
@@ -35,6 +34,7 @@ export default function TabsLayout() {
         name="circuits"
         options={{
           tabBarLabel: i18n.t('circuits.header'),
+          tabBarActiveTintColor: '#0ea5e9',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="map-outline" size={size} color={color} />
           ),
@@ -44,6 +44,7 @@ export default function TabsLayout() {
         name="record"
         options={{
           tabBarLabel: i18n.t('tabs.record'),
+          tabBarActiveTintColor: '#10b981',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="radio-button-on" size={size} color={color} />
           ),
@@ -53,6 +54,7 @@ export default function TabsLayout() {
         name="sessions"
         options={{
           tabBarLabel: i18n.t('sessions.header'),
+          tabBarActiveTintColor: '#8b5cf6',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="timer-outline" size={size} color={color} />
           ),

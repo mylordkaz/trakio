@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -16,6 +16,7 @@ import ProgressBar from '@/components/ProgressBar';
 import type { SessionDetail, SessionNoteRow } from '@/db';
 import {
   addSessionNote,
+  deleteSession,
   deleteSessionNote,
   getSessionById,
   updateSessionName,
@@ -435,6 +436,25 @@ export default function SessionDetailScreen() {
     });
   }
 
+  function handleDeleteSession() {
+    if (!sessionDetail) return;
+    Alert.alert(
+      i18n.t('sessions.deleteTitle'),
+      i18n.t('sessions.deleteMessage', { name: sessionDetail.session.name }),
+      [
+        { text: i18n.t('common.cancel'), style: 'cancel' },
+        {
+          text: i18n.t('common.delete'),
+          style: 'destructive',
+          onPress: async () => {
+            await deleteSession(db, sessionDetail.session.id);
+            router.back();
+          },
+        },
+      ]
+    );
+  }
+
   function startEditingNote(note: SessionNoteRow) {
     setEditingNoteId(note.id);
     setEditingNoteText(note.note);
@@ -480,7 +500,7 @@ export default function SessionDetailScreen() {
         >
           <View className="flex-row items-center justify-between mb-4">
             <Pressable onPress={() => router.back()}>
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('common.back')}</Text>
+              <Text className="text-sm font-medium text-violet-400">{i18n.t('common.back')}</Text>
             </Pressable>
             <Text className="text-xs text-zinc-500 dark:text-zinc-400">
               {sessionDetail?.track.name ?? i18n.t('common.track')}
@@ -792,6 +812,12 @@ export default function SessionDetailScreen() {
           */}
           <Pressable className="flex-1 rounded-2xl bg-violet-500 py-3.5 items-center">
             <Text className="text-sm font-semibold text-white">{i18n.t('sessions.share')}</Text>
+          </Pressable>
+          <Pressable
+            onPress={handleDeleteSession}
+            className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 px-3.5 items-center justify-center"
+          >
+            <Ionicons name="trash-outline" size={18} color="#ef4444" />
           </Pressable>
         </View>
       </ScrollView>

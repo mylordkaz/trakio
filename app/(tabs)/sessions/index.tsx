@@ -60,40 +60,6 @@ export default function SessionListScreen() {
   const gradientColors = useHeaderGradient('violet');
 
   useEffect(() => {
-    let isMounted = true;
-
-    async function loadSessions() {
-      try {
-        setIsLoading(true);
-        const nextSessions = await listSessions(db);
-
-        if (!isMounted) {
-          return;
-        }
-
-        setSessions(nextSessions);
-        setLoadError(null);
-      } catch {
-        if (!isMounted) {
-          return;
-        }
-
-        setLoadError(i18n.t('sessions.unableToLoadSession'));
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    void loadSessions();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [db]);
-
-  useEffect(() => {
     if (!trackId) {
       return;
     }
@@ -104,10 +70,39 @@ export default function SessionListScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      let isMounted = true;
+
+      async function loadSessions() {
+        try {
+          setIsLoading(true);
+          const nextSessions = await listSessions(db);
+
+          if (!isMounted) {
+            return;
+          }
+
+          setSessions(nextSessions);
+          setLoadError(null);
+        } catch {
+          if (!isMounted) {
+            return;
+          }
+
+          setLoadError(i18n.t('sessions.unableToLoadSession'));
+        } finally {
+          if (isMounted) {
+            setIsLoading(false);
+          }
+        }
+      }
+
+      void loadSessions();
+
       return () => {
+        isMounted = false;
         setActiveTrackFilter(null);
       };
-    }, [])
+    }, [db])
   );
 
   const filteredSessions = sessions.filter((session) => {
@@ -164,7 +159,7 @@ export default function SessionListScreen() {
           <View className="flex-row items-center justify-between mb-4">
             <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.header')}</Text>
             <Pressable onPress={() => setEditMode((prev) => !prev)}>
-              <Text className="text-sm font-medium text-violet-400">
+              <Text className="text-base font-medium text-violet-400">
                 {editMode ? i18n.t('common.done') : i18n.t('common.edit')}
               </Text>
             </Pressable>
@@ -239,11 +234,6 @@ export default function SessionListScreen() {
 
           {filteredSessions.map((session) => (
             <View key={session.id} className="flex-row items-center gap-3">
-              {editMode ? (
-                <Pressable onPress={() => handleDeleteSession(session)}>
-                  <Ionicons name="remove-circle" size={24} color="#ef4444" />
-                </Pressable>
-              ) : null}
               <Pressable
                 onPress={() => {
                   if (!editMode) {
@@ -280,6 +270,11 @@ export default function SessionListScreen() {
                   </View>
                 </View>
               </Pressable>
+              {editMode ? (
+                <Pressable onPress={() => handleDeleteSession(session)}>
+                  <Ionicons name="remove-circle" size={24} color="#ef4444" />
+                </Pressable>
+              ) : null}
             </View>
           ))}
         </View>
