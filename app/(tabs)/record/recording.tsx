@@ -412,22 +412,27 @@ export default function RecordingScreen() {
     if (isEndingSession) return;
     setIsEndingSession(true);
 
-    // Stop telemetry
-    const activeRuntime = runtimeRef.current;
-    stopLocationSubscription(locationSubscriptionRef.current);
-    locationSubscriptionRef.current = null;
+    try {
+      // Stop telemetry
+      const activeRuntime = runtimeRef.current;
+      stopLocationSubscription(locationSubscriptionRef.current);
+      locationSubscriptionRef.current = null;
 
-    let sessionId = '';
-    if (activeRuntime && !hasStoppedRef.current) {
-      hasStoppedRef.current = true;
-      const snapshot = await activeRuntime.stop();
-      setRuntimeSnapshot(snapshot);
-      sessionId = snapshot.sessionId ?? '';
+      let sessionId = '';
+      if (activeRuntime && !hasStoppedRef.current) {
+        hasStoppedRef.current = true;
+        const snapshot = await activeRuntime.stop();
+        setRuntimeSnapshot(snapshot);
+        sessionId = snapshot.sessionId ?? '';
+      }
+
+      // Lock portrait — navigation fires reactively via useEffect when portrait is confirmed
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+      setPendingSessionId(sessionId);
+    } catch {
+      // Avoid stranding on dark curtain — navigate directly as fallback
+      router.replace('/(tabs)/record/post-session');
     }
-
-    // Lock portrait — navigation fires reactively via useEffect when portrait is confirmed
-    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-    setPendingSessionId(sessionId);
   }
 
   const lastLap = recentLaps.length > 0 ? recentLaps[recentLaps.length - 1] : null;
@@ -436,10 +441,11 @@ export default function RecordingScreen() {
     return <View className="flex-1 bg-zinc-950" />;
   }
 
-  if (isLandscape) {
-    return (
+  return (
+    <View className="flex-1 bg-zinc-950">
+    {isLandscape ? (
       <View
-        className="flex-1 bg-zinc-950"
+        className="flex-1"
         style={{ paddingLeft: insets.left + 16, paddingRight: insets.right + 16, paddingTop: insets.top + 8, paddingBottom: insets.bottom + 8 }}
       >
         {/* REC badge */}
@@ -498,11 +504,8 @@ export default function RecordingScreen() {
           </Pressable>
         </View>
       </View>
-    );
-  }
-
-  return (
-    <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
+    ) : (
+      <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
       {/* Fixed top: header + current lap + buttons */}
       <LinearGradient
         colors={gradientColors}
@@ -676,6 +679,8 @@ export default function RecordingScreen() {
           </Card>
         </View>
       </ScrollView>
+    </View>
+    )}
     </View>
   );
 }
