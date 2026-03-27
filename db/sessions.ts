@@ -243,33 +243,49 @@ function mapSessionNoteRow(row: DbSessionNoteRow): SessionNoteRow {
   };
 }
 
-async function getBestSessionId(db: SQLiteDatabase): Promise<string | null> {
-  const bestSession = await db.getFirstAsync<{ id: string }>(
-    `SELECT
-      s.id,
-      COALESCE(
-        s.best_lap_ms,
+async function getBestSessionIdPerTrack(db: SQLiteDatabase): Promise<Set<string>> {
+  const rows = await db.getAllAsync<{ id: string }>(
+    `SELECT best.id
+    FROM (
+      SELECT
+        s.id,
+        s.track_id,
+        COALESCE(
+          s.best_lap_ms,
+          MIN(
+            CASE
+              WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0
+                THEN l.lap_time_ms
+            END
+          )
+        ) AS computed_best_lap_ms
+      FROM sessions s
+      LEFT JOIN laps l
+        ON l.session_id = s.id
+      GROUP BY s.id
+      HAVING computed_best_lap_ms IS NOT NULL
+    ) best
+    INNER JOIN (
+      SELECT
+        s.track_id,
         MIN(
-          CASE
-            WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0
-              THEN l.lap_time_ms
-          END
-        )
-      ) AS computed_best_lap_ms
-    FROM sessions s
-    LEFT JOIN laps l
-      ON l.session_id = s.id
-    GROUP BY s.id
-    HAVING computed_best_lap_ms IS NOT NULL
-    ORDER BY computed_best_lap_ms ASC
-    LIMIT 1;`
+          COALESCE(
+            s.best_lap_ms,
+            (SELECT MIN(l2.lap_time_ms) FROM laps l2 WHERE l2.session_id = s.id AND l2.is_invalid = 0 AND l2.is_out_lap = 0 AND l2.lap_time_ms IS NOT NULL)
+          )
+        ) AS track_best_ms
+      FROM sessions s
+      GROUP BY s.track_id
+      HAVING track_best_ms IS NOT NULL
+    ) tb
+      ON best.track_id = tb.track_id AND best.computed_best_lap_ms = tb.track_best_ms;`
   );
 
-  return bestSession?.id ?? null;
+  return new Set(rows.map((r) => r.id));
 }
 
-function toDisplayStatus(sessionId: string, bestSessionId: string | null): SessionDisplayStatus {
-  return sessionId === bestSessionId ? 'Best' : 'Recent';
+function toDisplayStatus(sessionId: string, bestSessionIds: Set<string>): SessionDisplayStatus {
+  return bestSessionIds.has(sessionId) ? 'Best' : 'Recent';
 }
 
 export async function syncSessionTestSeeds(db: SQLiteDatabase) {
@@ -506,7 +522,7 @@ export async function listSessions(db: SQLiteDatabase): Promise<SessionListItem[
     GROUP BY s.id
     ORDER BY s.started_at DESC;`
   );
-  const bestSessionId = await getBestSessionId(db);
+  const bestSessionIds = await getBestSessionIdPerTrack(db);
 
   return rows.map((row) => {
     const session = mapSessionRow(row);
@@ -519,7 +535,7 @@ export async function listSessions(db: SQLiteDatabase): Promise<SessionListItem[
       startedAt: session.startedAt,
       bestLapMs: session.bestLapMs,
       totalLaps: session.totalLaps,
-      displayStatus: toDisplayStatus(session.id, bestSessionId),
+      displayStatus: toDisplayStatus(session.id, bestSessionIds),
     };
   });
 }
@@ -620,7 +636,7 @@ export async function getSessionById(
     return null;
   }
 
-  const [timingLineRows, gpsPointRows, lapRows, lapSectorRows, noteRows, bestSessionId] =
+  const [timingLineRows, gpsPointRows, lapRows, lapSectorRows, noteRows, bestSessionIds] =
     await Promise.all([
       db.getAllAsync<DbTimingLineRow>(
         `SELECT *
@@ -659,7 +675,7 @@ export async function getSessionById(
          ORDER BY seq ASC;`,
         sessionId
       ),
-      getBestSessionId(db),
+      getBestSessionIdPerTrack(db),
     ]);
 
   const lapSectorsByLapId = new Map<string, LapSectorRow[]>();
@@ -680,7 +696,7 @@ export async function getSessionById(
       sectors: lapSectorsByLapId.get(row.id) ?? [],
     })),
     notes: noteRows.map(mapSessionNoteRow),
-    displayStatus: toDisplayStatus(sessionId, bestSessionId),
+    displayStatus: toDisplayStatus(sessionId, bestSessionIds),
   };
 }
 
