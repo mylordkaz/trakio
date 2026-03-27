@@ -153,6 +153,7 @@ export default {
     all: 'All',
     recent: 'Recent',
     best: 'Best',
+    trackFilterLabel: 'Track: %{name}',
     saved: 'Saved',
     date: 'Date',
     startTime: 'Start Time',

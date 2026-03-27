@@ -46,10 +46,11 @@ function formatLapTime(lapTimeMs: number | null) {
 export default function SessionListScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { trackId } = useLocalSearchParams<{ trackId?: string }>();
+  const { trackId, trackName: trackNameParam } = useLocalSearchParams<{ trackId?: string; trackName?: string }>();
   const db = useSQLiteContext();
   const [activeFilter, setActiveFilter] = useState(0);
   const [activeTrackFilter, setActiveTrackFilter] = useState<string | null>(null);
+  const [activeTrackFilterName, setActiveTrackFilterName] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -65,6 +66,7 @@ export default function SessionListScreen() {
     }
 
     setActiveTrackFilter(trackId);
+    setActiveTrackFilterName(trackNameParam ?? null);
     router.replace('/(tabs)/sessions');
   }, [router, trackId]);
 
@@ -101,6 +103,7 @@ export default function SessionListScreen() {
       return () => {
         isMounted = false;
         setActiveTrackFilter(null);
+        setActiveTrackFilterName(null);
       };
     }, [db])
   );
@@ -119,6 +122,10 @@ export default function SessionListScreen() {
 
     return matchesTrack && matchesSearch && matchesFilter;
   });
+
+  const activeTrackName = activeTrackFilter
+    ? activeTrackFilterName ?? sessions.find((s) => s.trackId === activeTrackFilter)?.trackName ?? null
+    : null;
 
   const handleDeleteSession = useCallback(
     (session: SessionListItem) => {
@@ -209,6 +216,21 @@ export default function SessionListScreen() {
             </ScrollView>
           </View>
         </LinearGradient>
+
+        {activeTrackFilter && activeTrackName ? (
+          <View className="px-5 pt-3">
+            <Pressable
+              onPress={() => { setActiveTrackFilter(null); setActiveTrackFilterName(null); }}
+              className="self-start flex-row items-center gap-1 rounded-full px-2.5 py-1 bg-zinc-200 dark:bg-white/10 border border-zinc-300 dark:border-white/10"
+              accessibilityRole="button"
+            >
+              <Text className="text-xs text-zinc-600 dark:text-zinc-300">
+                {i18n.t('sessions.trackFilterLabel', { name: activeTrackName })}
+              </Text>
+              <Ionicons name="close-circle" size={12} color={isDark ? '#a1a1aa' : '#71717a'} />
+            </Pressable>
+          </View>
+        ) : null}
 
         <View className="px-5 py-4 gap-3">
           {isLoading ? (

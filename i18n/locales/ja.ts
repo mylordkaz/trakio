@@ -153,6 +153,7 @@ export default {
     all: 'すべて',
     recent: '最近',
     best: 'ベスト',
+    trackFilterLabel: 'トラック: %{name}',
     saved: '保存済み',
     date: '日付',
     startTime: '開始時刻',

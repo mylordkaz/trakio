@@ -377,7 +377,7 @@ export default function CircuitDetailScreen() {
                   onPress={() =>
                     router.push({
                       pathname: "/(tabs)/sessions",
-                      params: { trackId: circuit?.id ?? "" },
+                      params: { trackId: circuit?.id ?? "", trackName: circuit?.name ?? "" },
                     })
                   }
                 >
@@ -615,7 +615,7 @@ export default function CircuitDetailScreen() {
               onPress={() =>
                 router.push({
                   pathname: "/(tabs)/sessions",
-                  params: { trackId: circuit?.id ?? "" },
+                  params: { trackId: circuit?.id ?? "", trackName: circuit?.name ?? "" },
                 })
               }
               className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center"
