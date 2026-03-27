@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { View, Text, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, Alert, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import MapView, { Polyline } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
+import { captureRef } from 'react-native-view-shot';
 import i18n from '@/i18n';
 import StatusPill from '@/components/StatusPill';
 import Card from '@/components/Card';
@@ -13,6 +14,7 @@ import EditableSessionTitle from '@/components/EditableSessionTitle';
 import LapBreakdown from '@/components/LapBreakdown';
 import type { LapBreakdownItem } from '@/components/LapBreakdown';
 import ProgressBar from '@/components/ProgressBar';
+import SessionStoryCard from '@/components/share/SessionStoryCard';
 import type { SessionDetail, SessionNoteRow } from '@/db';
 import {
   addSessionNote,
@@ -24,6 +26,7 @@ import {
 } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
+import { shareSessionToInstagramStory } from '@/services/share';
 
 function formatLapTime(lapTimeMs: number | null) {
   if (lapTimeMs === null) {
@@ -349,6 +352,7 @@ export default function SessionDetailScreen() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const scrollRef = useRef<ScrollView>(null);
+  const storyCardRef = useRef<View>(null);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -356,6 +360,9 @@ export default function SessionDetailScreen() {
   const [newNote, setNewNote] = useState('');
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingNoteText, setEditingNoteText] = useState('');
+  const [isSharing, setIsSharing] = useState(false);
+  const [isShareSheetVisible, setIsShareSheetVisible] = useState(false);
+  const [isStoryPreviewVisible, setIsStoryPreviewVisible] = useState(false);
 
   const loadSession = useCallback(async () => {
     if (!id) {
@@ -453,6 +460,60 @@ export default function SessionDetailScreen() {
         },
       ]
     );
+  }
+
+  async function handleShareSession() {
+    if (!sessionDetail || !storyCardRef.current || isSharing) {
+      return;
+    }
+
+    try {
+      setIsSharing(true);
+      const storyUri = await captureRef(storyCardRef, {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+      });
+      console.log('[share] captured story uri', storyUri);
+
+      const result = await shareSessionToInstagramStory(storyUri);
+      console.log('[share] instagram story result', result);
+
+      if (result.ok) {
+        setIsStoryPreviewVisible(false);
+        return;
+      }
+
+      const baseMessage =
+        result.reason === 'missing_app_id'
+          ? i18n.t('sessions.shareConfigurationMissing')
+          : result.reason === 'instagram_unavailable'
+            ? i18n.t('sessions.instagramUnavailable')
+            : i18n.t('sessions.shareFailed');
+
+      const message = result.message ? `${baseMessage}\n\n${result.message}` : baseMessage;
+
+      Alert.alert(i18n.t('sessions.share'), message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log('[share] capture/share exception', message);
+      Alert.alert(i18n.t('sessions.share'), `${i18n.t('sessions.shareFailed')}\n\n${message}`);
+    } finally {
+      setIsSharing(false);
+    }
+  }
+
+  function openShareSheet() {
+    if (!sessionDetail || isSharing) {
+      return;
+    }
+
+    setIsShareSheetVisible(true);
+  }
+
+  function openInstagramStoryPreview() {
+    setIsShareSheetVisible(false);
+    setIsStoryPreviewVisible(true);
   }
 
   function startEditingNote(note: SessionNoteRow) {
@@ -812,8 +873,14 @@ export default function SessionDetailScreen() {
             <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('sessions.exportData')}</Text>
           </Pressable>
           */}
-          <Pressable className="flex-1 rounded-2xl bg-violet-500 py-3.5 items-center">
-            <Text className="text-sm font-semibold text-white">{i18n.t('sessions.share')}</Text>
+          <Pressable
+            onPress={openShareSheet}
+            disabled={isSharing || !sessionDetail}
+            className={`flex-1 rounded-2xl py-3.5 items-center ${isSharing || !sessionDetail ? 'bg-violet-500/60' : 'bg-violet-500'}`}
+          >
+            <Text className="text-sm font-semibold text-white">
+              {isSharing ? i18n.t('sessions.preparingShare') : i18n.t('sessions.share')}
+            </Text>
           </Pressable>
           <Pressable
             onPress={handleDeleteSession}
@@ -822,7 +889,121 @@ export default function SessionDetailScreen() {
             <Ionicons name="trash-outline" size={18} color="#ef4444" />
           </Pressable>
         </View>
+
+        {sessionDetail ? (
+          <View
+            ref={storyCardRef}
+            collapsable={false}
+            pointerEvents="none"
+            style={{ position: 'absolute', left: -10000, top: 0 }}
+          >
+            <SessionStoryCard
+              sessionName={sessionDetail.session.name ?? i18n.t('sessions.recordedSession')}
+              circuitName={sessionDetail.track.name}
+              location={[sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', ')}
+              bestLap={formatLapTime(bestLapMs)}
+              totalLaps={`${sessionDetail.session.totalLaps}`}
+              topSpeed={formatSpeed(topSpeedKph)}
+              bestLapLabel={i18n.t('sessions.storyBestLap')}
+              totalLapsLabel={i18n.t('sessions.storyTotalLaps')}
+              topSpeedLabel={i18n.t('sessions.storyTopSpeed')}
+            />
+          </View>
+        ) : null}
       </ScrollView>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={isShareSheetVisible}
+        onRequestClose={() => setIsShareSheetVisible(false)}
+      >
+        <Pressable
+          onPress={() => setIsShareSheetVisible(false)}
+          className="flex-1 bg-black/60 justify-end"
+        >
+          <Pressable
+            onPress={(e) => e.stopPropagation()}
+            className="rounded-t-3xl bg-zinc-100 dark:bg-zinc-900 px-5 pt-6 pb-10"
+          >
+            <View className="mb-5 items-center">
+              <View className="h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+            </View>
+            <Text className="text-base font-semibold text-zinc-900 dark:text-white mb-4">
+              {i18n.t('sessions.shareTo')}
+            </Text>
+
+            {/* Share destinations */}
+            <Pressable
+              onPress={openInstagramStoryPreview}
+              className="flex-row items-center gap-4 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3.5"
+            >
+              <View className="h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: '#E1306C15' }}>
+                <Ionicons name="logo-instagram" size={22} color="#E1306C" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-sm font-semibold text-zinc-900 dark:text-white">
+                  {i18n.t('sessions.instagramStory')}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={isDark ? '#52525b' : '#a1a1aa'} />
+            </Pressable>
+
+            <Pressable
+              onPress={() => setIsShareSheetVisible(false)}
+              className="mt-4 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-200/70 dark:bg-white/5 py-3.5 items-center"
+            >
+              <Text className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                {i18n.t('common.cancel')}
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        visible={isStoryPreviewVisible}
+        presentationStyle="fullScreen"
+        onRequestClose={() => setIsStoryPreviewVisible(false)}
+      >
+        <View className="flex-1 bg-zinc-950" style={{ paddingTop: insets.top }}>
+          <View className="flex-row items-center justify-between px-5 py-3 border-b border-white/10">
+            <Pressable onPress={() => setIsStoryPreviewVisible(false)} className="w-16 py-1">
+              <Text className="text-[15px] text-zinc-400">{i18n.t('common.cancel')}</Text>
+            </Pressable>
+            <Text className="text-[15px] font-semibold text-white">{i18n.t('sessions.previewStory')}</Text>
+            <Pressable onPress={handleShareSession} disabled={isSharing} className="w-16 items-end py-1">
+              <Text className={`text-[15px] font-semibold ${isSharing ? 'text-violet-400/50' : 'text-violet-400'}`}>
+                {isSharing ? i18n.t('sessions.preparingShare') : i18n.t('sessions.share')}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View className="flex-1 items-center justify-center px-6 pb-10">
+            <View
+              className="overflow-hidden rounded-3xl border border-white/10"
+              style={{ width: 306, height: 544 }}
+            >
+              {sessionDetail ? (
+                <View style={{ width: 720, height: 1280, transform: [{ scale: 0.425 }], transformOrigin: 'top left' }}>
+                  <SessionStoryCard
+                    sessionName={sessionDetail.session.name ?? i18n.t('sessions.recordedSession')}
+                    circuitName={sessionDetail.track.name}
+                    location={[sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', ')}
+                    bestLap={formatLapTime(bestLapMs)}
+                    totalLaps={`${sessionDetail.session.totalLaps}`}
+                    topSpeed={formatSpeed(topSpeedKph)}
+                    bestLapLabel={i18n.t('sessions.storyBestLap')}
+                    totalLapsLabel={i18n.t('sessions.storyTotalLaps')}
+                    topSpeedLabel={i18n.t('sessions.storyTopSpeed')}
+                  />
+                </View>
+              ) : null}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
     </KeyboardAvoidingView>
   );

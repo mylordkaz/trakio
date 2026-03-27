@@ -15,7 +15,9 @@
       "supportsTablet": false,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Trakio uses your location to record lap times and GPS traces on track.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "LSApplicationQueriesSchemes": ["instagram", "instagram-stories"],
+        "NSPhotoLibraryUsageDescription": "Trakio may need access to your photo library to save or share session content."
       }
     },
     "android": {
@@ -46,13 +48,21 @@
       "expo-system-ui",
       "expo-localization",
       "expo-sqlite",
-      ["expo-screen-orientation", { "initialOrientation": "PORTRAIT" }]
+      ["expo-screen-orientation", { "initialOrientation": "PORTRAIT" }],
+      [
+        "react-native-share",
+        {
+          "ios": ["instagram", "instagram-stories"],
+          "android": ["com.instagram.android"]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
     "extra": {
+      "instagramAppId": "3072500352933301",
       "router": {},
       "eas": {
         "projectId": "55cde39e-cdc2-4804-8e1b-e4a05f1cd5eb"
