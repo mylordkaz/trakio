@@ -14,7 +14,7 @@ import type {
   TrackRow,
 } from '@/db/types';
 
-type SessionDisplayStatus = 'Best' | 'Recent';
+type SessionDisplayStatus = 'Best' | 'Recent' | null;
 
 type DbSessionListRow = {
   id: string;
@@ -284,8 +284,13 @@ async function getBestSessionIdPerTrack(db: SQLiteDatabase): Promise<Set<string>
   return new Set(rows.map((r) => r.id));
 }
 
-function toDisplayStatus(sessionId: string, bestSessionIds: Set<string>): SessionDisplayStatus {
-  return bestSessionIds.has(sessionId) ? 'Best' : 'Recent';
+const RECENT_DAYS = 7;
+
+function toDisplayStatus(sessionId: string, startedAt: string, bestSessionIds: Set<string>): SessionDisplayStatus {
+  if (bestSessionIds.has(sessionId)) return 'Best';
+  const ageMs = Date.now() - new Date(startedAt).getTime();
+  if (ageMs <= RECENT_DAYS * 24 * 60 * 60 * 1000) return 'Recent';
+  return null;
 }
 
 export async function syncSessionTestSeeds(db: SQLiteDatabase) {
@@ -535,7 +540,7 @@ export async function listSessions(db: SQLiteDatabase): Promise<SessionListItem[
       startedAt: session.startedAt,
       bestLapMs: session.bestLapMs,
       totalLaps: session.totalLaps,
-      displayStatus: toDisplayStatus(session.id, bestSessionIds),
+      displayStatus: toDisplayStatus(session.id, session.startedAt, bestSessionIds),
     };
   });
 }
@@ -696,7 +701,7 @@ export async function getSessionById(
       sectors: lapSectorsByLapId.get(row.id) ?? [],
     })),
     notes: noteRows.map(mapSessionNoteRow),
-    displayStatus: toDisplayStatus(sessionId, bestSessionIds),
+    displayStatus: toDisplayStatus(sessionId, mapSessionRow(sessionRow).startedAt, bestSessionIds),
   };
 }
 

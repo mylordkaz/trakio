@@ -119,7 +119,8 @@ export default function SessionListScreen() {
       dateLabel.toLowerCase().includes(search.toLowerCase());
     const matchesFilter =
       activeFilter === 0 ||
-      session.displayStatus === FILTER_VALUES[activeFilter];
+      (activeFilter === 1 && (Date.now() - new Date(session.startedAt).getTime()) <= 7 * 24 * 60 * 60 * 1000) ||
+      (activeFilter === 2 && session.displayStatus === 'Best');
 
     return matchesTrack && matchesSearch && matchesFilter;
   });
@@ -290,7 +291,7 @@ export default function SessionListScreen() {
                     <Text className="text-base font-semibold leading-tight text-zinc-900 dark:text-white">{session.name}</Text>
                     <Text className="text-sm text-zinc-500 dark:text-zinc-400">{session.trackName}</Text>
                   </View>
-                  <StatusPill text={session.displayStatus} color="violet" />
+                  {session.displayStatus ? <StatusPill text={session.displayStatus} color="violet" /> : null}
                 </View>
                 <View className="flex-row gap-3 mb-3">
                   <View className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 px-3 py-2.5">

@@ -518,14 +518,16 @@ export default function SessionDetailScreen() {
                 {sessionDetail ? formatDateTime(sessionDetail.session.startedAt) : i18n.t('common.loading')}
               </Text>
             </View>
-            <StatusPill
-              text={
-                sessionDetail?.displayStatus === 'Best'
-                  ? i18n.t('sessions.bestRun')
-                  : i18n.t('sessions.recent')
-              }
-              color="violet"
-            />
+            {sessionDetail?.displayStatus ? (
+              <StatusPill
+                text={
+                  sessionDetail.displayStatus === 'Best'
+                    ? i18n.t('sessions.bestRun')
+                    : i18n.t('sessions.recent')
+                }
+                color="violet"
+              />
+            ) : null}
           </View>
 
           <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
