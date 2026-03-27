@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, View, Text, ScrollView, TextInput, Pressable } from 'react-native';
+import { Alert, View, Text, ScrollView, TextInput, Pressable, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -56,6 +56,7 @@ export default function SessionListScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('violet');
@@ -148,11 +149,31 @@ export default function SessionListScreen() {
     [db]
   );
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    setActiveTrackFilter(null);
+    setActiveTrackFilterName(null);
+    setSearch('');
+    setActiveFilter(0);
+    try {
+      const nextSessions = await listSessions(db);
+      setSessions(nextSessions);
+      setLoadError(null);
+    } catch {
+      setLoadError(i18n.t('sessions.unableToLoadSession'));
+    } finally {
+      setRefreshing(false);
+    }
+  }, [db]);
+
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
       <ScrollView
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#8b5cf6" />
+        }
       >
         <LinearGradient
           colors={gradientColors}
