@@ -180,6 +180,8 @@ export default {
     savedToGallery: 'Saved to Photos.',
     saveToGalleryFailed: 'Unable to save to Photos.',
     galleryPermissionDenied: 'Photo library access is required to save images.',
+    tapToChoosePhoto: 'Tap to choose a photo',
+    choosePhotoFirst: 'Choose a background photo first.',
     storyBestLap: 'Best Lap',
     storyTotalLaps: 'Laps',
     storyTopSpeed: 'Top Speed',

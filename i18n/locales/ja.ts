@@ -180,6 +180,8 @@ export default {
     savedToGallery: '写真に保存しました。',
     saveToGalleryFailed: '写真に保存できませんでした。',
     galleryPermissionDenied: '画像を保存するにはフォトライブラリへのアクセスが必要です。',
+    tapToChoosePhoto: 'タップして写真を選択',
+    choosePhotoFirst: '先に背景写真を選択してください。',
     storyBestLap: 'ベストラップ',
     storyTotalLaps: 'ラップ',
     storyTopSpeed: '最高速度',

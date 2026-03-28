@@ -8,6 +8,7 @@ import MapView, { Polyline } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { captureRef } from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
+import * as ImagePicker from 'expo-image-picker';
 import i18n from '@/i18n';
 import StatusPill from '@/components/StatusPill';
 import Card from '@/components/Card';
@@ -345,7 +346,7 @@ function getMapRegion(sessionDetail: SessionDetail | null) {
   };
 }
 
-const STORY_TEMPLATES = ['dark', 'transparent'] as const;
+const STORY_TEMPLATES = ['dark', 'transparent', 'photo'] as const;
 const previewPageWidth = Dimensions.get('window').width;
 const viewabilityConfig = { itemVisiblePercentThreshold: 50 };
 
@@ -369,12 +370,13 @@ export default function SessionDetailScreen() {
   const [isSharing, setIsSharing] = useState(false);
   const [isShareSheetVisible, setIsShareSheetVisible] = useState(false);
   const [isStoryPreviewVisible, setIsStoryPreviewVisible] = useState(false);
-  const [storyTemplate, setStoryTemplate] = useState<'dark' | 'transparent'>('dark');
+  const [storyTemplate, setStoryTemplate] = useState<'dark' | 'transparent' | 'photo'>('dark');
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
 
   const onTemplateChange = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems[0];
     if (first?.item) {
-      setStoryTemplate(first.item as 'dark' | 'transparent');
+      setStoryTemplate(first.item as 'dark' | 'transparent' | 'photo');
     }
   }).current;
 
@@ -476,8 +478,24 @@ export default function SessionDetailScreen() {
     );
   }
 
+  async function handlePickPhoto() {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 1,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setPhotoUri(result.assets[0].uri);
+    }
+  }
+
   async function handleShareSession() {
     if (!sessionDetail || !storyCardRef.current || isSharing) {
+      return;
+    }
+
+    if (storyTemplate === 'photo' && !photoUri) {
+      Alert.alert(i18n.t('sessions.share'), i18n.t('sessions.choosePhotoFirst'));
       return;
     }
 
@@ -519,6 +537,11 @@ export default function SessionDetailScreen() {
 
   async function handleSaveToGallery() {
     if (!sessionDetail || !storyCardRef.current || isSharing) {
+      return;
+    }
+
+    if (storyTemplate === 'photo' && !photoUri) {
+      Alert.alert(i18n.t('sessions.share'), i18n.t('sessions.choosePhotoFirst'));
       return;
     }
 
@@ -951,6 +974,7 @@ export default function SessionDetailScreen() {
               totalLapsLabel={i18n.t('sessions.storyTotalLaps')}
               topSpeedLabel={i18n.t('sessions.storyTopSpeed')}
               variant={storyTemplate}
+              backgroundImageUri={photoUri ?? undefined}
             />
           </View>
         ) : null}
@@ -1036,14 +1060,24 @@ export default function SessionDetailScreen() {
               style={{ flexGrow: 0 }}
               renderItem={({ item: variant }) => (
                 <View style={{ width: previewPageWidth, alignItems: 'center' }}>
-                  <View
+                  <Pressable
+                    onPress={variant === 'photo' ? handlePickPhoto : undefined}
+                    disabled={variant !== 'photo'}
                     className="overflow-hidden rounded-3xl border border-zinc-200 dark:border-white/10"
                     style={{ width: 306, height: 544 }}
                   >
                     {variant === 'transparent' ? (
                       <Checkerboard width={306} height={544} squareSize={16} />
                     ) : null}
-                    {sessionDetail ? (
+                    {variant === 'photo' && !photoUri ? (
+                      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#1a1a1a', alignItems: 'center', justifyContent: 'center' }}>
+                        <Ionicons name="image-outline" size={48} color="rgba(255,255,255,0.3)" />
+                        <Text style={{ color: 'rgba(255,255,255,0.5)', marginTop: 12, fontSize: 14 }}>
+                          {i18n.t('sessions.tapToChoosePhoto')}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {sessionDetail && !(variant === 'photo' && !photoUri) ? (
                       <View style={{ width: 720, height: 1280, transform: [{ scale: 0.425 }], transformOrigin: 'top left' }}>
                         <SessionStoryCard
                           sessionName={sessionDetail.session.name ?? i18n.t('sessions.recordedSession')}
@@ -1056,10 +1090,11 @@ export default function SessionDetailScreen() {
                           totalLapsLabel={i18n.t('sessions.storyTotalLaps')}
                           topSpeedLabel={i18n.t('sessions.storyTopSpeed')}
                           variant={variant}
+                          backgroundImageUri={photoUri ?? undefined}
                         />
                       </View>
                     ) : null}
-                  </View>
+                  </Pressable>
                 </View>
               )}
             />

@@ -49,6 +49,7 @@
       "expo-system-ui",
       "expo-localization",
       "expo-media-library",
+      "expo-image-picker",
       "expo-sqlite",
       ["expo-screen-orientation", { "initialOrientation": "PORTRAIT" }],
       [
