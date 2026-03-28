@@ -17,7 +17,8 @@
         "NSLocationWhenInUseUsageDescription": "Trakio uses your location to record lap times and GPS traces on track.",
         "ITSAppUsesNonExemptEncryption": false,
         "LSApplicationQueriesSchemes": ["instagram", "instagram-stories"],
-        "NSPhotoLibraryUsageDescription": "Trakio may need access to your photo library to save or share session content."
+        "NSPhotoLibraryUsageDescription": "Trakio may need access to your photo library to save or share session content.",
+        "NSPhotoLibraryAddUsageDescription": "Trakio needs permission to save story images to your photo library."
       }
     },
     "android": {
@@ -47,6 +48,7 @@
       ],
       "expo-system-ui",
       "expo-localization",
+      "expo-media-library",
       "expo-sqlite",
       ["expo-screen-orientation", { "initialOrientation": "PORTRAIT" }],
       [

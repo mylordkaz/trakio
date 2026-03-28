@@ -11,6 +11,7 @@ type SessionStoryCardProps = {
   bestLapLabel: string;
   totalLapsLabel: string;
   topSpeedLabel: string;
+  variant?: 'dark' | 'transparent';
 };
 
 
@@ -24,19 +25,14 @@ export default function SessionStoryCard({
   bestLapLabel,
   totalLapsLabel,
   topSpeedLabel,
+  variant = 'dark',
 }: SessionStoryCardProps) {
-  return (
-    <LinearGradient
-      colors={['#0d2233', '#0b1f30', '#0a1a28']}
-      locations={[0, 0.5, 1]}
-      start={{ x: 0.15, y: 0 }}
-      end={{ x: 0.85, y: 1 }}
-      style={{ width: 720, height: 1280 }}
-    >
+  const content = (
+    <>
       {/* Decorative track silhouette */}
       <View
         pointerEvents="none"
-        style={{ position: 'absolute', top: 200, left: 0, right: 0, bottom: 140, alignItems: 'center', justifyContent: 'center', opacity: 0.08 }}
+        style={{ position: 'absolute', top: 200, left: 0, right: 0, bottom: 140, alignItems: 'center', justifyContent: 'center', opacity: variant === 'dark' ? 0.08 : 0.15 }}
       >
         <Image
           source={require('../../assets/lemans.png')}
@@ -135,6 +131,26 @@ export default function SessionStoryCard({
           </Text>
         </View>
       </View>
+    </>
+  );
+
+  if (variant === 'transparent') {
+    return (
+      <View style={{ width: 720, height: 1280, backgroundColor: 'transparent' }}>
+        {content}
+      </View>
+    );
+  }
+
+  return (
+    <LinearGradient
+      colors={['#0d2233', '#0b1f30', '#0a1a28']}
+      locations={[0, 0.5, 1]}
+      start={{ x: 0.15, y: 0 }}
+      end={{ x: 0.85, y: 1 }}
+      style={{ width: 720, height: 1280 }}
+    >
+      {content}
     </LinearGradient>
   );
 }
