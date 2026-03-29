@@ -501,18 +501,20 @@ export default function SessionDetailScreen() {
 
     try {
       setIsSharing(true);
+      const isSticker = storyTemplate === 'transparent';
       const storyUri = await captureRef(storyCardRef, {
         format: 'png',
         quality: 1,
         result: 'tmpfile',
+        ...(isSticker ? { backgroundColor: 'transparent' } : {}),
       });
       console.log('[share] captured story uri', storyUri);
 
-      const result = await shareSessionToInstagramStory(storyUri);
+      const result = await shareSessionToInstagramStory(storyUri, isSticker ? 'sticker' : 'background');
       console.log('[share] instagram story result', result);
 
       if (result.ok) {
-        setIsStoryPreviewVisible(false);
+        closeStoryPreview();
         return;
       }
 
@@ -575,6 +577,12 @@ export default function SessionDetailScreen() {
     }
 
     setIsShareSheetVisible(true);
+  }
+
+  function closeStoryPreview() {
+    setIsStoryPreviewVisible(false);
+    setPhotoUri(null);
+    setStoryTemplate('dark');
   }
 
   function openInstagramStoryPreview() {
@@ -1033,11 +1041,11 @@ export default function SessionDetailScreen() {
         animationType="slide"
         visible={isStoryPreviewVisible}
         presentationStyle="fullScreen"
-        onRequestClose={() => setIsStoryPreviewVisible(false)}
+        onRequestClose={closeStoryPreview}
       >
         <View className="flex-1 bg-zinc-50 dark:bg-zinc-950" style={{ paddingTop: insets.top }}>
           <View className="flex-row items-center justify-between px-5 py-3 border-b border-zinc-200 dark:border-white/10">
-            <Pressable onPress={() => setIsStoryPreviewVisible(false)} className="w-16 py-1">
+            <Pressable onPress={closeStoryPreview} className="w-16 py-1">
               <Text className="text-[15px] text-zinc-500 dark:text-zinc-400">{i18n.t('common.cancel')}</Text>
             </Pressable>
             <Text className="text-[15px] font-semibold text-zinc-900 dark:text-white">{i18n.t('sessions.previewStory')}</Text>

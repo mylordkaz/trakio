@@ -8,6 +8,8 @@ type ShareResult =
   | { ok: true }
   | { ok: false; reason: ShareFailureReason; message?: string };
 
+type ShareMode = 'background' | 'sticker';
+
 const INSTAGRAM_PACKAGE = 'com.instagram.android';
 const INSTAGRAM_STORIES_URL = 'instagram-stories://share';
 
@@ -27,7 +29,10 @@ async function isInstagramStoriesAvailable() {
   return Linking.canOpenURL(INSTAGRAM_STORIES_URL);
 }
 
-export async function shareSessionToInstagramStory(backgroundImage: string): Promise<ShareResult> {
+export async function shareSessionToInstagramStory(
+  imageUri: string,
+  mode: ShareMode = 'background',
+): Promise<ShareResult> {
   const appId = getInstagramAppId();
 
   if (!appId) {
@@ -40,11 +45,19 @@ export async function shareSessionToInstagramStory(backgroundImage: string): Pro
   }
 
   try {
-    await Share.shareSingle({
-      social: Social.InstagramStories,
-      appId,
-      backgroundImage,
-    });
+    if (mode === 'sticker') {
+      await Share.shareSingle({
+        social: Social.InstagramStories,
+        appId,
+        stickerImage: imageUri,
+      });
+    } else {
+      await Share.shareSingle({
+        social: Social.InstagramStories,
+        appId,
+        backgroundImage: imageUri,
+      });
+    }
 
     return { ok: true };
   } catch (error) {
