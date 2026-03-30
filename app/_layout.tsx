@@ -1,5 +1,5 @@
 import '../global.css';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
@@ -23,8 +23,14 @@ if (storedLocale) {
 export default function RootLayout() {
   const { colorScheme, setColorScheme } = useColorScheme();
   const screenBackground = colorScheme === 'dark' ? '#18181b' : '#fafafa';
+  const hasAppliedInitialAppearance = useRef(false);
 
   useEffect(() => {
+    if (hasAppliedInitialAppearance.current) {
+      return;
+    }
+
+    hasAppliedInitialAppearance.current = true;
     setColorScheme(initialAppearance);
   }, [setColorScheme]);
 
