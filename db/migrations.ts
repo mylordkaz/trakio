@@ -44,9 +44,20 @@ async function createBaseSchema(db: SQLiteDatabase) {
         UNIQUE(track_id, seq)
       );
 
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY NOT NULL,
+        username TEXT NOT NULL,
+        car TEXT,
+        country_code TEXT,
+        avatar_uri TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY NOT NULL,
         name TEXT,
+        user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
         track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE RESTRICT,
         started_at TEXT NOT NULL,
         ended_at TEXT,
@@ -127,6 +138,9 @@ async function createBaseSchema(db: SQLiteDatabase) {
       CREATE INDEX IF NOT EXISTS idx_sessions_track_started_at
         ON sessions(track_id, started_at DESC);
 
+      CREATE INDEX IF NOT EXISTS idx_sessions_user_started_at
+        ON sessions(user_id, started_at DESC);
+
       CREATE INDEX IF NOT EXISTS idx_laps_session_lap_number
         ON laps(session_id, lap_number);
 
@@ -144,6 +158,9 @@ async function createBaseSchema(db: SQLiteDatabase) {
 
       CREATE INDEX IF NOT EXISTS idx_session_notes_session_seq
         ON session_notes(session_id, seq);
+
+      CREATE INDEX IF NOT EXISTS idx_users_username
+        ON users(username);
   `);
 }
 
@@ -392,6 +409,36 @@ const MIGRATIONS: Migration[] = [
       if (!gpsPointColumns.includes('elapsed_ms')) {
         await db.execAsync('ALTER TABLE gps_points ADD COLUMN elapsed_ms INTEGER;');
       }
+    },
+  },
+  {
+    version: 6,
+    up: async (db) => {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS users (
+          id TEXT PRIMARY KEY NOT NULL,
+          username TEXT NOT NULL,
+          car TEXT,
+          country_code TEXT,
+          avatar_uri TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_users_username
+          ON users(username);
+      `);
+
+      const sessionColumns = await getColumnNames(db, 'sessions');
+
+      if (!sessionColumns.includes('user_id')) {
+        await db.execAsync('ALTER TABLE sessions ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE SET NULL;');
+      }
+
+      await db.execAsync(`
+        CREATE INDEX IF NOT EXISTS idx_sessions_user_started_at
+          ON sessions(user_id, started_at DESC);
+      `);
     },
   },
 ];

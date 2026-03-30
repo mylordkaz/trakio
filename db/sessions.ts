@@ -19,6 +19,7 @@ type SessionDisplayStatus = 'Best' | 'Recent' | null;
 type DbSessionListRow = {
   id: string;
   name: string | null;
+  user_id: string | null;
   track_id: string;
   track_name: string;
   started_at: ISODateString;
@@ -144,6 +145,7 @@ function mapSessionRow(row: DbSessionListRow | DbSessionDetailRow): SessionRow {
   return {
     id: row.id,
     name: row.name,
+    userId: row.user_id,
     trackId: row.track_id,
     startedAt: row.started_at,
     endedAt: row.ended_at,
@@ -306,6 +308,7 @@ export async function syncSessionTestSeeds(db: SQLiteDatabase) {
         `INSERT INTO sessions (
           id,
           name,
+          user_id,
           track_id,
           started_at,
           ended_at,
@@ -313,9 +316,10 @@ export async function syncSessionTestSeeds(db: SQLiteDatabase) {
           best_lap_ms,
           total_laps,
           max_speed_kph
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
+          user_id = excluded.user_id,
           track_id = excluded.track_id,
           started_at = excluded.started_at,
           ended_at = excluded.ended_at,
@@ -326,6 +330,7 @@ export async function syncSessionTestSeeds(db: SQLiteDatabase) {
           updated_at = CURRENT_TIMESTAMP;`,
         session.id,
         session.name,
+        session.userId ?? null,
         session.trackId,
         session.startedAt,
         session.endedAt,
@@ -496,6 +501,7 @@ export async function listSessions(db: SQLiteDatabase): Promise<SessionListItem[
     `SELECT
       s.id,
       s.name,
+      s.user_id,
       s.track_id,
       t.name AS track_name,
       s.started_at,
@@ -593,6 +599,7 @@ export async function getSessionById(
     `SELECT
       s.id,
       s.name,
+      s.user_id,
       s.track_id,
       s.started_at,
       s.ended_at,

@@ -57,9 +57,20 @@ export type TrackNoteRow = {
   updatedAt: ISODateString;
 };
 
+export type UserRow = {
+  id: string;
+  username: string;
+  car: string | null;
+  countryCode: string | null;
+  avatarUri: string | null;
+  createdAt: ISODateString;
+  updatedAt: ISODateString;
+};
+
 export type SessionRow = {
   id: string;
   name: string | null;
+  userId: string | null;
   trackId: string;
   startedAt: ISODateString;
   endedAt: ISODateString | null;

@@ -4,6 +4,7 @@ export type SessionTestSeed = {
   session: {
     id: string;
     name: string;
+    userId?: string | null;
     trackId: string;
     startedAt: string;
     endedAt: string;
