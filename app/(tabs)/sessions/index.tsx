@@ -12,6 +12,7 @@ import type { SessionListItem } from '@/db';
 import { listSessions, deleteSession } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
+import { formatLapTime } from '@/utils/format';
 
 const FILTER_KEYS = ['sessions.all', 'sessions.recent', 'sessions.best'] as const;
 const FILTER_VALUES = ['All', 'Recent', 'Best'] as const;
@@ -29,18 +30,6 @@ function formatSessionTime(value: string) {
     hour: 'numeric',
     minute: '2-digit',
   });
-}
-
-function formatLapTime(lapTimeMs: number | null) {
-  if (lapTimeMs === null) {
-    return '--:--.---';
-  }
-
-  const totalSeconds = lapTimeMs / 1000;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds - minutes * 60;
-
-  return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
 }
 
 export default function SessionListScreen() {

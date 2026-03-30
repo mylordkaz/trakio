@@ -23,30 +23,7 @@ import {
 import { createSessionRuntime } from '@/telemetry/session-runtime';
 import type { TrackDetail } from '@/db';
 import type { TelemetrySample } from '@/telemetry/types';
-
-function formatLapTime(lapTimeMs: number | null) {
-  if (lapTimeMs === null) {
-    return '--:--.---';
-  }
-
-  const totalSeconds = lapTimeMs / 1000;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds - minutes * 60;
-
-  return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
-}
-
-function formatDuration(elapsedMs: number | null) {
-  if (elapsedMs === null) {
-    return '0:00';
-  }
-
-  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
+import { formatLapTime, formatDurationMs as formatDuration, formatSpeed } from '@/utils/format';
 
 function formatSectorTime(elapsedMs: number | null) {
   if (elapsedMs === null) {
@@ -55,14 +32,6 @@ function formatSectorTime(elapsedMs: number | null) {
 
   const totalSeconds = Math.max(0, elapsedMs / 1000);
   return totalSeconds.toFixed(3).padStart(6, '0');
-}
-
-function formatSpeed(speedKph: number | null) {
-  if (speedKph === null) {
-    return i18n.t('common.tbd');
-  }
-
-  return `${Math.round(speedKph)} km/h`;
 }
 
 function getGpsSignalPercent(accuracyM: number | null) {

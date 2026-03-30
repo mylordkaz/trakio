@@ -1,23 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, FlatList, Dimensions, Pressable, TextInput, KeyboardAvoidingView, Platform, Alert, Modal, type ViewToken } from 'react-native';
+import { View, Text, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import MapView, { Polyline } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
-import { captureRef } from 'react-native-view-shot';
-import * as MediaLibrary from 'expo-media-library';
-import * as ImagePicker from 'expo-image-picker';
 import i18n from '@/i18n';
 import StatusPill from '@/components/StatusPill';
 import Card from '@/components/Card';
 import EditableSessionTitle from '@/components/EditableSessionTitle';
 import LapBreakdown from '@/components/LapBreakdown';
-import type { LapBreakdownItem } from '@/components/LapBreakdown';
 import ProgressBar from '@/components/ProgressBar';
-import Checkerboard from '@/components/share/Checkerboard';
 import SessionStoryCard from '@/components/share/SessionStoryCard';
+import ShareSheetModal from '@/components/share/ShareSheetModal';
+import StoryPreviewModal from '@/components/share/StoryPreviewModal';
 import type { SessionDetail, SessionNoteRow } from '@/db';
 import {
   addSessionNote,
@@ -29,83 +26,17 @@ import {
 } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
-import { shareSessionToInstagramStory } from '@/services/share';
-
-function formatLapTime(lapTimeMs: number | null) {
-  if (lapTimeMs === null) {
-    return '--:--.---';
-  }
-
-  const totalSeconds = lapTimeMs / 1000;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds - minutes * 60;
-
-  return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
-}
-
-function formatSectorTime(splitTimeMs: number | null) {
-  if (splitTimeMs === null) {
-    return '---.---';
-  }
-
-  return (splitTimeMs / 1000).toFixed(3);
-}
-
-function formatDeltaMs(deltaMs: number | null) {
-  if (deltaMs === null) {
-    return null;
-  }
-
-  const sign = deltaMs >= 0 ? '+' : '−';
-  return `${sign}${(Math.abs(deltaMs) / 1000).toFixed(3)}`;
-}
-
-function formatGapSeconds(deltaMs: number | null) {
-  if (deltaMs === null) {
-    return i18n.t('common.tbd');
-  }
-
-  return (Math.abs(deltaMs) / 1000).toFixed(3);
-}
-
-function formatDateTime(value: string | null) {
-  if (!value) {
-    return i18n.t('common.tbd');
-  }
-
-  return new Date(value).toLocaleString(i18n.locale === 'ja' ? 'ja-JP' : 'en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-function formatDuration(startedAt: string, endedAt: string | null) {
-  if (!endedAt) {
-    return i18n.t('common.tbd');
-  }
-
-  const diffMs = new Date(endedAt).getTime() - new Date(startedAt).getTime();
-  if (!Number.isFinite(diffMs) || diffMs <= 0) {
-    return i18n.t('common.tbd');
-  }
-
-  const totalSeconds = Math.floor(diffMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
-
-function formatSpeed(maxSpeedKph: number | null) {
-  if (maxSpeedKph === null) {
-    return i18n.t('common.tbd');
-  }
-
-  return `${Math.round(maxSpeedKph)} km/h`;
-}
+import { useShareSession } from '@/hooks/useShareSession';
+import { formatLapTime, formatGapSeconds, formatDateTime, formatDuration, formatSpeed } from '@/utils/format';
+import {
+  getBestLapMs,
+  getTopSpeedKph,
+  getTheoreticalBestMs,
+  getConsistencyValue,
+  getLapBreakdownItems,
+  getAverageLapDeltaLabel,
+  getTrendBars,
+} from '@/utils/session-analytics';
 
 function getMapLatitudeDelta(lengthMeters: number | null) {
   if (!lengthMeters) {
@@ -113,167 +44,6 @@ function getMapLatitudeDelta(lengthMeters: number | null) {
   }
 
   return Math.min(Math.max(lengthMeters / 450000, 0.0015), 0.0055);
-}
-
-function getSectorCount(sessionDetail: SessionDetail | null) {
-  if (!sessionDetail) {
-    return 0;
-  }
-
-  const sectorLineCount = sessionDetail.timingLines.filter((timingLine) => timingLine.type === 'sector').length;
-  const hasStartFinish = sessionDetail.timingLines.some((timingLine) => timingLine.type === 'start_finish');
-
-  if (sectorLineCount === 0) {
-    return 0;
-  }
-
-  return sectorLineCount + (hasStartFinish ? 1 : 0);
-}
-
-function getValidTimedLaps(sessionDetail: SessionDetail | null) {
-  return (sessionDetail?.laps ?? []).filter(
-    (lap) => lap.lapTimeMs !== null && lap.isInvalid === 0 && lap.isOutLap === 0
-  );
-}
-
-function getBestLapMs(sessionDetail: SessionDetail | null) {
-  if (!sessionDetail) {
-    return null;
-  }
-
-  if (sessionDetail.session.bestLapMs !== null) {
-    return sessionDetail.session.bestLapMs;
-  }
-
-  const validTimedLaps = getValidTimedLaps(sessionDetail);
-  if (validTimedLaps.length === 0) {
-    return null;
-  }
-
-  return Math.min(...validTimedLaps.map((lap) => lap.lapTimeMs ?? Number.MAX_SAFE_INTEGER));
-}
-
-function getTopSpeedKph(sessionDetail: SessionDetail | null) {
-  if (!sessionDetail) {
-    return null;
-  }
-
-  const speedCandidates = [
-    sessionDetail.session.maxSpeedKph,
-    ...sessionDetail.laps.map((lap) => lap.maxSpeedKph),
-    ...sessionDetail.gpsPoints.map((point) => (point.speedMps !== null ? point.speedMps * 3.6 : null)),
-  ].filter((value): value is number => value !== null);
-
-  if (speedCandidates.length === 0) {
-    return null;
-  }
-
-  return Math.max(...speedCandidates);
-}
-
-function getTheoreticalBestMs(sessionDetail: SessionDetail | null) {
-  const validTimedLaps = getValidTimedLaps(sessionDetail);
-  const sectorCount = getSectorCount(sessionDetail);
-
-  if (validTimedLaps.length === 0 || sectorCount === 0) {
-    return null;
-  }
-
-  const bestSectors = Array.from({ length: sectorCount }, (_, index) => {
-    const candidates = validTimedLaps
-      .map((lap) => lap.sectors.find((sector) => sector.sectorIndex === index)?.splitTimeMs ?? null)
-      .filter((value): value is number => value !== null);
-
-    return candidates.length > 0 ? Math.min(...candidates) : null;
-  });
-
-  if (bestSectors.some((value) => value === null)) {
-    return null;
-  }
-
-  return bestSectors
-    .filter((value): value is number => value !== null)
-    .reduce((sum, value) => sum + value, 0);
-}
-
-function getConsistencyValue(sessionDetail: SessionDetail | null) {
-  const validTimedLaps = getValidTimedLaps(sessionDetail);
-
-  if (validTimedLaps.length < 2) {
-    return 100;
-  }
-
-  const lapTimes = validTimedLaps.map((lap) => lap.lapTimeMs ?? 0);
-  const average = lapTimes.reduce((sum, value) => sum + value, 0) / lapTimes.length;
-  const spread = Math.max(...lapTimes) - Math.min(...lapTimes);
-  const score = 100 - (spread / average) * 100;
-
-  return Math.max(0, Math.min(100, Math.round(score)));
-}
-
-function getLapBreakdownItems(sessionDetail: SessionDetail | null): LapBreakdownItem[] {
-  const validTimedLaps = getValidTimedLaps(sessionDetail);
-  const bestLapMs = getBestLapMs(sessionDetail);
-  const sectorCount = getSectorCount(sessionDetail);
-
-  return validTimedLaps.map((lap) => {
-    const sectorMs = Array.from({ length: sectorCount }, (_, index) => {
-      const sector = lap.sectors.find((lapSector) => lapSector.sectorIndex === index);
-      return sector?.splitTimeMs ?? null;
-    });
-    const deltaMs =
-      bestLapMs !== null && lap.lapTimeMs !== null && lap.lapTimeMs !== bestLapMs
-        ? lap.lapTimeMs - bestLapMs
-        : null;
-
-    return {
-      lap: lap.lapNumber,
-      time: formatLapTime(lap.lapTimeMs),
-      timeMs: lap.lapTimeMs ?? 0,
-      delta: deltaMs === null ? null : formatDeltaMs(deltaMs),
-      sectors: sectorMs.map((value) => formatSectorTime(value)),
-      sectorMs,
-    };
-  });
-}
-
-function getAverageLapDeltaLabel(sessionDetail: SessionDetail | null) {
-  const validTimedLaps = getValidTimedLaps(sessionDetail);
-
-  if (validTimedLaps.length < 2) {
-    return i18n.t('common.tbd');
-  }
-
-  const deltas = validTimedLaps.slice(1).map((lap, index) => {
-    const previousLap = validTimedLaps[index];
-    return (lap.lapTimeMs ?? 0) - (previousLap.lapTimeMs ?? 0);
-  });
-  const averageDelta = deltas.reduce((sum, value) => sum + value, 0) / deltas.length;
-  const sign = averageDelta >= 0 ? '+' : '−';
-
-  return `${sign}${(Math.abs(averageDelta) / 1000).toFixed(1)}s`;
-}
-
-function getTrendBars(sessionDetail: SessionDetail | null) {
-  const validTimedLaps = getValidTimedLaps(sessionDetail);
-
-  if (validTimedLaps.length === 0) {
-    return [];
-  }
-
-  const lapTimes = validTimedLaps.map((lap) => lap.lapTimeMs ?? 0);
-  const fastest = Math.min(...lapTimes);
-  const slowest = Math.max(...lapTimes);
-  const range = slowest - fastest;
-
-  return validTimedLaps.map((lap) => ({
-    lap: lap.lapNumber,
-    best: lap.lapTimeMs === fastest,
-    height:
-      range === 0
-        ? 100
-        : Math.round(55 + ((slowest - (lap.lapTimeMs ?? slowest)) / range) * 45),
-  }));
 }
 
 function getDisplayGpsLine(sessionDetail: SessionDetail | null) {
@@ -346,10 +116,6 @@ function getMapRegion(sessionDetail: SessionDetail | null) {
   };
 }
 
-const STORY_TEMPLATES = ['dark', 'transparent', 'photo'] as const;
-const previewPageWidth = Dimensions.get('window').width;
-const viewabilityConfig = { itemVisiblePercentThreshold: 50 };
-
 export default function SessionDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -359,7 +125,6 @@ export default function SessionDetailScreen() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const scrollRef = useRef<ScrollView>(null);
-  const storyCardRef = useRef<View>(null);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -367,18 +132,7 @@ export default function SessionDetailScreen() {
   const [newNote, setNewNote] = useState('');
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingNoteText, setEditingNoteText] = useState('');
-  const [isSharing, setIsSharing] = useState(false);
-  const [isShareSheetVisible, setIsShareSheetVisible] = useState(false);
-  const [isStoryPreviewVisible, setIsStoryPreviewVisible] = useState(false);
-  const [storyTemplate, setStoryTemplate] = useState<'dark' | 'transparent' | 'photo'>('dark');
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
-
-  const onTemplateChange = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    const first = viewableItems[0];
-    if (first?.item) {
-      setStoryTemplate(first.item as 'dark' | 'transparent' | 'photo');
-    }
-  }).current;
+  const share = useShareSession(sessionDetail);
 
   const loadSession = useCallback(async () => {
     if (!id) {
@@ -476,118 +230,6 @@ export default function SessionDetailScreen() {
         },
       ]
     );
-  }
-
-  async function handlePickPhoto() {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 1,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri);
-    }
-  }
-
-  async function handleShareSession() {
-    if (!sessionDetail || !storyCardRef.current || isSharing) {
-      return;
-    }
-
-    if (storyTemplate === 'photo' && !photoUri) {
-      Alert.alert(i18n.t('sessions.share'), i18n.t('sessions.choosePhotoFirst'));
-      return;
-    }
-
-    try {
-      setIsSharing(true);
-      const isSticker = storyTemplate === 'transparent';
-      const storyUri = await captureRef(storyCardRef, {
-        format: 'png',
-        quality: 1,
-        result: 'tmpfile',
-        ...(isSticker ? { backgroundColor: 'transparent' } : {}),
-      });
-      console.log('[share] captured story uri', storyUri);
-
-      const result = await shareSessionToInstagramStory(storyUri, isSticker ? 'sticker' : 'background');
-      console.log('[share] instagram story result', result);
-
-      if (result.ok) {
-        closeStoryPreview();
-        return;
-      }
-
-      const baseMessage =
-        result.reason === 'missing_app_id'
-          ? i18n.t('sessions.shareConfigurationMissing')
-          : result.reason === 'instagram_unavailable'
-            ? i18n.t('sessions.instagramUnavailable')
-            : i18n.t('sessions.shareFailed');
-
-      const message = result.message ? `${baseMessage}\n\n${result.message}` : baseMessage;
-
-      Alert.alert(i18n.t('sessions.share'), message);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.log('[share] capture/share exception', message);
-      Alert.alert(i18n.t('sessions.share'), `${i18n.t('sessions.shareFailed')}\n\n${message}`);
-    } finally {
-      setIsSharing(false);
-    }
-  }
-
-  async function handleSaveToGallery() {
-    if (!sessionDetail || !storyCardRef.current || isSharing) {
-      return;
-    }
-
-    if (storyTemplate === 'photo' && !photoUri) {
-      Alert.alert(i18n.t('sessions.share'), i18n.t('sessions.choosePhotoFirst'));
-      return;
-    }
-
-    try {
-      setIsSharing(true);
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(i18n.t('sessions.share'), i18n.t('sessions.galleryPermissionDenied'));
-        return;
-      }
-
-      const uri = await captureRef(storyCardRef, {
-        format: 'png',
-        quality: 1,
-        result: 'tmpfile',
-      });
-
-      await MediaLibrary.saveToLibraryAsync(uri);
-      Alert.alert(i18n.t('sessions.share'), i18n.t('sessions.savedToGallery'));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      Alert.alert(i18n.t('sessions.share'), `${i18n.t('sessions.saveToGalleryFailed')}\n\n${message}`);
-    } finally {
-      setIsSharing(false);
-    }
-  }
-
-  function openShareSheet() {
-    if (!sessionDetail || isSharing) {
-      return;
-    }
-
-    setIsShareSheetVisible(true);
-  }
-
-  function closeStoryPreview() {
-    setIsStoryPreviewVisible(false);
-    setPhotoUri(null);
-    setStoryTemplate('dark');
-  }
-
-  function openInstagramStoryPreview() {
-    setIsShareSheetVisible(false);
-    setIsStoryPreviewVisible(true);
   }
 
   function startEditingNote(note: SessionNoteRow) {
@@ -948,12 +590,12 @@ export default function SessionDetailScreen() {
           </Pressable>
           */}
           <Pressable
-            onPress={openShareSheet}
-            disabled={isSharing || !sessionDetail}
-            className={`flex-1 rounded-2xl py-3.5 items-center ${isSharing || !sessionDetail ? 'bg-violet-500/60' : 'bg-violet-500'}`}
+            onPress={share.openShareSheet}
+            disabled={share.isSharing || !sessionDetail}
+            className={`flex-1 rounded-2xl py-3.5 items-center ${share.isSharing || !sessionDetail ? 'bg-violet-500/60' : 'bg-violet-500'}`}
           >
             <Text className="text-sm font-semibold text-white">
-              {isSharing ? i18n.t('sessions.preparingShare') : i18n.t('sessions.share')}
+              {share.isSharing ? i18n.t('sessions.preparingShare') : i18n.t('sessions.share')}
             </Text>
           </Pressable>
           <Pressable
@@ -966,7 +608,7 @@ export default function SessionDetailScreen() {
 
         {sessionDetail ? (
           <View
-            ref={storyCardRef}
+            ref={share.storyCardRef}
             collapsable={false}
             pointerEvents="none"
             style={{ position: 'absolute', left: -10000, top: 0 }}
@@ -981,157 +623,38 @@ export default function SessionDetailScreen() {
               bestLapLabel={i18n.t('sessions.storyBestLap')}
               totalLapsLabel={i18n.t('sessions.storyTotalLaps')}
               topSpeedLabel={i18n.t('sessions.storyTopSpeed')}
-              variant={storyTemplate}
-              backgroundImageUri={photoUri ?? undefined}
+              variant={share.storyTemplate}
+              backgroundImageUri={share.photoUri ?? undefined}
             />
           </View>
         ) : null}
       </ScrollView>
 
-      <Modal
-        animationType="fade"
-        transparent
-        visible={isShareSheetVisible}
-        onRequestClose={() => setIsShareSheetVisible(false)}
-      >
-        <Pressable
-          onPress={() => setIsShareSheetVisible(false)}
-          className="flex-1 bg-black/60 justify-end"
-        >
-          <Pressable
-            onPress={(e) => e.stopPropagation()}
-            className="rounded-t-3xl bg-zinc-100 dark:bg-zinc-900 px-5 pt-6 pb-10"
-          >
-            <View className="mb-5 items-center">
-              <View className="h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700" />
-            </View>
-            <Text className="text-base font-semibold text-zinc-900 dark:text-white mb-4">
-              {i18n.t('sessions.shareTo')}
-            </Text>
+      <ShareSheetModal
+        visible={share.isShareSheetVisible}
+        onClose={() => share.setIsShareSheetVisible(false)}
+        onSelectInstagramStory={share.openInstagramStoryPreview}
+      />
 
-            {/* Share destinations */}
-            <Pressable
-              onPress={openInstagramStoryPreview}
-              className="flex-row items-center gap-4 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3.5"
-            >
-              <View className="h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: '#E1306C15' }}>
-                <Ionicons name="logo-instagram" size={22} color="#E1306C" />
-              </View>
-              <View className="flex-1">
-                <Text className="text-sm font-semibold text-zinc-900 dark:text-white">
-                  {i18n.t('sessions.instagramStory')}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={isDark ? '#52525b' : '#a1a1aa'} />
-            </Pressable>
-
-            <Pressable
-              onPress={() => setIsShareSheetVisible(false)}
-              className="mt-4 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-200/70 dark:bg-white/5 py-3.5 items-center"
-            >
-              <Text className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
-                {i18n.t('common.cancel')}
-              </Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal
-        animationType="slide"
-        visible={isStoryPreviewVisible}
-        presentationStyle="fullScreen"
-        onRequestClose={closeStoryPreview}
-      >
-        <View className="flex-1 bg-zinc-50 dark:bg-zinc-950" style={{ paddingTop: insets.top }}>
-          <View className="flex-row items-center justify-between px-5 py-3 border-b border-zinc-200 dark:border-white/10">
-            <Pressable onPress={closeStoryPreview} className="w-16 py-1">
-              <Text className="text-[15px] text-zinc-500 dark:text-zinc-400">{i18n.t('common.cancel')}</Text>
-            </Pressable>
-            <Text className="text-[15px] font-semibold text-zinc-900 dark:text-white">{i18n.t('sessions.previewStory')}</Text>
-            <Pressable onPress={handleShareSession} disabled={isSharing} className="w-16 items-end py-1">
-              <Text className={`text-[15px] font-semibold ${isSharing ? 'text-violet-400/50' : 'text-violet-500 dark:text-violet-400'}`}>
-                {isSharing ? i18n.t('sessions.preparingShare') : i18n.t('sessions.share')}
-              </Text>
-            </Pressable>
-          </View>
-
-          <View className="flex-1 items-center justify-center">
-            <FlatList
-              data={STORY_TEMPLATES}
-              keyExtractor={(item) => item}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onViewableItemsChanged={onTemplateChange}
-              viewabilityConfig={viewabilityConfig}
-              style={{ flexGrow: 0 }}
-              renderItem={({ item: variant }) => (
-                <View style={{ width: previewPageWidth, alignItems: 'center' }}>
-                  <Pressable
-                    onPress={variant === 'photo' ? handlePickPhoto : undefined}
-                    disabled={variant !== 'photo'}
-                    className="overflow-hidden rounded-3xl border border-zinc-200 dark:border-white/10"
-                    style={{ width: 306, height: 544 }}
-                  >
-                    {variant === 'transparent' ? (
-                      <Checkerboard width={306} height={544} squareSize={16} />
-                    ) : null}
-                    {variant === 'photo' && !photoUri ? (
-                      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#1a1a1a', alignItems: 'center', justifyContent: 'center' }}>
-                        <Ionicons name="image-outline" size={48} color="rgba(255,255,255,0.3)" />
-                        <Text style={{ color: 'rgba(255,255,255,0.5)', marginTop: 12, fontSize: 14 }}>
-                          {i18n.t('sessions.tapToChoosePhoto')}
-                        </Text>
-                      </View>
-                    ) : null}
-                    {sessionDetail && !(variant === 'photo' && !photoUri) ? (
-                      <View style={{ width: 720, height: 1280, transform: [{ scale: 0.425 }], transformOrigin: 'top left' }}>
-                        <SessionStoryCard
-                          sessionName={sessionDetail.session.name ?? i18n.t('sessions.recordedSession')}
-                          circuitName={sessionDetail.track.name}
-                          location={[sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', ')}
-                          bestLap={formatLapTime(bestLapMs)}
-                          totalLaps={`${sessionDetail.session.totalLaps}`}
-                          topSpeed={formatSpeed(topSpeedKph)}
-                          bestLapLabel={i18n.t('sessions.storyBestLap')}
-                          totalLapsLabel={i18n.t('sessions.storyTotalLaps')}
-                          topSpeedLabel={i18n.t('sessions.storyTopSpeed')}
-                          variant={variant}
-                          backgroundImageUri={photoUri ?? undefined}
-                        />
-                      </View>
-                    ) : null}
-                  </Pressable>
-                </View>
-              )}
-            />
-
-            {/* Dot indicators */}
-            <View className="flex-row justify-center gap-2 mt-4">
-              {STORY_TEMPLATES.map((variant) => (
-                <View
-                  key={variant}
-                  className={`rounded-full ${storyTemplate === variant ? 'bg-violet-400' : 'bg-zinc-300 dark:bg-zinc-600'}`}
-                  style={{ width: 8, height: 8 }}
-                />
-              ))}
-            </View>
-
-            {/* Save to gallery */}
-            <Pressable
-              onPress={handleSaveToGallery}
-              disabled={isSharing}
-              className="flex-row items-center justify-center gap-2 mt-5 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 px-6"
-            >
-              <Ionicons name="download-outline" size={18} color={isDark ? '#ffffff' : '#18181b'} />
-              <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-                {i18n.t('sessions.saveToGallery')}
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      <StoryPreviewModal
+        visible={share.isStoryPreviewVisible}
+        isSharing={share.isSharing}
+        storyTemplate={share.storyTemplate}
+        photoUri={share.photoUri}
+        storyCardData={sessionDetail ? {
+          sessionName: sessionDetail.session.name ?? i18n.t('sessions.recordedSession'),
+          circuitName: sessionDetail.track.name,
+          location: [sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', '),
+          bestLap: formatLapTime(bestLapMs),
+          totalLaps: `${sessionDetail.session.totalLaps}`,
+          topSpeed: formatSpeed(topSpeedKph),
+        } : null}
+        onClose={share.closeStoryPreview}
+        onShare={share.handleShareSession}
+        onSaveToGallery={share.handleSaveToGallery}
+        onPickPhoto={share.handlePickPhoto}
+        onTemplateChange={share.onTemplateChange}
+      />
     </View>
     </KeyboardAvoidingView>
   );

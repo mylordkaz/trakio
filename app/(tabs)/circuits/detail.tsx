@@ -26,6 +26,7 @@ import {
 } from "@/db";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useHeaderGradient } from "@/hooks/useHeaderGradient";
+import { formatLapTime, formatSectorTime } from "@/utils/format";
 
 function formatTrackLength(lengthMeters: number | null) {
   if (lengthMeters === null) {
@@ -171,17 +172,6 @@ export default function CircuitDetailScreen() {
           longitudeDelta: mapLatitudeDelta * 1.25,
         }
       : null;
-
-  function formatLapTime(ms: number): string {
-    const totalSeconds = ms / 1000;
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds - minutes * 60;
-    return `${minutes}:${seconds.toFixed(3).padStart(6, "0")}`;
-  }
-
-  function formatSectorTime(ms: number): string {
-    return (ms / 1000).toFixed(3);
-  }
 
   function formatSetOnDate(iso: string): string {
     const d = new Date(iso);

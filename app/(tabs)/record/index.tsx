@@ -20,6 +20,7 @@ import {
   getForegroundLocationPermissionState,
   requestForegroundLocationPermission,
 } from '@/telemetry/location';
+import { formatLapTime } from '@/utils/format';
 
 type ChecklistItemKey = 'gpsLock' | 'battery' | 'startFinishLineSet';
 
@@ -464,18 +465,6 @@ export default function PreSessionScreen() {
       month: 'short',
       day: 'numeric',
     });
-  }
-
-  function formatLapTime(lapTimeMs: number | null) {
-    if (lapTimeMs === null) {
-      return '--:--.---';
-    }
-
-    const totalSeconds = lapTimeMs / 1000;
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds - minutes * 60;
-
-    return `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
   }
 
   function formatTemperature(value: number | null) {
