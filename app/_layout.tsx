@@ -3,12 +3,30 @@ import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
+import { Storage } from 'expo-sqlite/kv-store';
 import { DatabaseProvider } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import i18n from '@/i18n';
+
+// Apply persisted preferences synchronously before first render
+const storedAppearance = Storage.getItemSync('appearance_mode');
+const initialAppearance: 'light' | 'dark' | 'system' =
+  storedAppearance === 'light' || storedAppearance === 'dark' || storedAppearance === 'system'
+    ? storedAppearance
+    : 'dark';
+
+const storedLocale = Storage.getItemSync('locale');
+if (storedLocale) {
+  i18n.locale = storedLocale;
+}
 
 export default function RootLayout() {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme, setColorScheme } = useColorScheme();
   const screenBackground = colorScheme === 'dark' ? '#18181b' : '#fafafa';
+
+  useEffect(() => {
+    setColorScheme(initialAppearance);
+  }, [setColorScheme]);
 
   useEffect(() => {
     SystemUI.setBackgroundColorAsync(screenBackground);

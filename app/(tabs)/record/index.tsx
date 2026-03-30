@@ -14,6 +14,7 @@ import type { TrackListItem } from '@/db';
 import { getNextSessionNumber, getTrackById, getTrackSessionSummary, listTracks } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
+import { useMenu } from '@/contexts/MenuContext';
 import { fetchTrackWeather, type TrackWeather } from '@/services/weather';
 import {
   getCurrentLocationSample,
@@ -95,6 +96,7 @@ export default function PreSessionScreen() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('emerald');
+  const { openMenu } = useMenu();
   const [customSessionTitle, setCustomSessionTitle] = useState<string | null>(null);
   const [hasManualTrackSelection, setHasManualTrackSelection] = useState(false);
   const [hasResolvedAutoSelection, setHasResolvedAutoSelection] = useState(false);
@@ -502,7 +504,12 @@ export default function PreSessionScreen() {
         >
           {/* Header */}
           <View className="flex-row items-center justify-between mb-3">
-            <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.title')}</Text>
+            <View className="flex-row items-center gap-3">
+              <Pressable onPress={openMenu} hitSlop={8}>
+                <Ionicons name="menu" size={22} color={isDark ? '#a1a1aa' : '#71717a'} />
+              </Pressable>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.title')}</Text>
+            </View>
             <View className="flex-row items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1.5 border border-emerald-400/20">
               <View className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
               <Text className="text-sm text-emerald-400">{i18n.t('session.ready')}</Text>

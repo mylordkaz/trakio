@@ -12,10 +12,10 @@ import type { SessionListItem } from '@/db';
 import { listSessions, deleteSession } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
+import { useMenu } from '@/contexts/MenuContext';
 import { formatLapTime } from '@/utils/format';
 
 const FILTER_KEYS = ['sessions.all', 'sessions.recent', 'sessions.best'] as const;
-const FILTER_VALUES = ['All', 'Recent', 'Best'] as const;
 
 function formatSessionDate(value: string) {
   return new Date(value).toLocaleDateString(i18n.locale === 'ja' ? 'ja-JP' : 'en-US', {
@@ -49,6 +49,7 @@ export default function SessionListScreen() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('violet');
+  const { openMenu } = useMenu();
 
   useEffect(() => {
     if (!trackId) {
@@ -58,7 +59,7 @@ export default function SessionListScreen() {
     setActiveTrackFilter(trackId);
     setActiveTrackFilterName(trackNameParam ?? null);
     router.replace('/(tabs)/sessions');
-  }, [router, trackId]);
+  }, [router, trackId, trackNameParam]);
 
   useFocusEffect(
     useCallback(() => {
@@ -175,7 +176,12 @@ export default function SessionListScreen() {
           }}
         >
           <View className="flex-row items-center justify-between mb-4">
-            <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.header')}</Text>
+            <View className="flex-row items-center gap-3">
+              <Pressable onPress={openMenu} hitSlop={8}>
+                <Ionicons name="menu" size={22} color={isDark ? '#a1a1aa' : '#71717a'} />
+              </Pressable>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.header')}</Text>
+            </View>
             <Pressable onPress={() => setEditMode((prev) => !prev)}>
               <Text className="text-base font-medium text-violet-400">
                 {editMode ? i18n.t('common.done') : i18n.t('common.edit')}

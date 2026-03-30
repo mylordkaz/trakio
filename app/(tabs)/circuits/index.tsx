@@ -11,6 +11,7 @@ import type { TrackListItem } from "@/db";
 import { listTracks, listRecentTracks } from "@/db";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useHeaderGradient } from "@/hooks/useHeaderGradient";
+import { useMenu } from "@/contexts/MenuContext";
 
 const FILTER_KEYS = ["circuits.all", "circuits.recent"] as const;
 
@@ -34,6 +35,7 @@ export default function CircuitsScreen() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
   const gradientColors = useHeaderGradient("sky");
+  const { openMenu } = useMenu();
 
   useEffect(() => {
     let isMounted = true;
@@ -98,9 +100,14 @@ export default function CircuitsScreen() {
           }}
         >
           <View className="flex-row items-center justify-between mb-4">
-            <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-              {i18n.t("circuits.header")}
-            </Text>
+            <View className="flex-row items-center gap-3">
+              <Pressable onPress={openMenu} hitSlop={8}>
+                <Ionicons name="menu" size={22} color={isDark ? '#a1a1aa' : '#71717a'} />
+              </Pressable>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+                {i18n.t("circuits.header")}
+              </Text>
+            </View>
             <Text className="text-xs text-zinc-500 dark:text-zinc-400">
               {i18n.t("circuits.trackCount", { count: circuits.length })}
             </Text>
