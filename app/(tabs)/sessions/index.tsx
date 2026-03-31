@@ -158,10 +158,18 @@ export default function SessionListScreen() {
   }, [db]);
 
   return (
-    <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
+    <Pressable
+      className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden"
+      onPress={() => {
+        if (editMode) {
+          setEditMode(false);
+        }
+      }}
+    >
       <ScrollView
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#8b5cf6" />
         }
@@ -275,9 +283,12 @@ export default function SessionListScreen() {
             <View key={session.id} className="flex-row items-center gap-3">
               <Pressable
                 onPress={() => {
-                  if (!editMode) {
-                    router.push({ pathname: '/(tabs)/sessions/detail', params: { id: session.id } });
+                  if (editMode) {
+                    setEditMode(false);
+                    return;
                   }
+
+                  router.push({ pathname: '/(tabs)/sessions/detail', params: { id: session.id } });
                 }}
                 className="flex-1 rounded-3xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4"
               >
@@ -310,7 +321,12 @@ export default function SessionListScreen() {
                 </View>
               </Pressable>
               {editMode ? (
-                <Pressable onPress={() => handleDeleteSession(session)}>
+                <Pressable
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    handleDeleteSession(session);
+                  }}
+                >
                   <Ionicons name="remove-circle" size={24} color="#ef4444" />
                 </Pressable>
               ) : null}
@@ -326,6 +342,6 @@ export default function SessionListScreen() {
         </View>
         */}
       </ScrollView>
-    </View>
+    </Pressable>
   );
 }
