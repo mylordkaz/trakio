@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Dimensions, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Dimensions, Image, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
@@ -10,9 +10,13 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
+import { useRouter } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
 import i18n from '@/i18n';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useMenu } from '@/contexts/MenuContext';
+import { getUserProfile } from '@/db';
+import type { UserRow } from '@/db';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const DRAWER_WIDTH = SCREEN_WIDTH * 0.85;
@@ -38,11 +42,21 @@ function SectionHeader({ title }: { title: string }) {
   );
 }
 
+const FLAG_MAP: Record<string, string> = {
+  AU: '🇦🇺', AT: '🇦🇹', BE: '🇧🇪', BR: '🇧🇷', CA: '🇨🇦', CN: '🇨🇳',
+  DK: '🇩🇰', FI: '🇫🇮', FR: '🇫🇷', DE: '🇩🇪', IT: '🇮🇹', JP: '🇯🇵',
+  MX: '🇲🇽', NL: '🇳🇱', NZ: '🇳🇿', NO: '🇳🇴', PT: '🇵🇹', KR: '🇰🇷',
+  ES: '🇪🇸', SE: '🇸🇪', CH: '🇨🇭', GB: '🇬🇧', US: '🇺🇸',
+};
+
 export default function MenuDrawer() {
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { isMenuOpen, closeMenu, locale, setLocale, appearanceMode, setAppearanceMode } = useMenu();
+  const router = useRouter();
+  const db = useSQLiteContext();
+  const [user, setUser] = useState<UserRow | null>(null);
   const progress = useSharedValue(0);
 
   const appVersion = Constants.expoConfig?.version ?? '1.0.0';
@@ -53,6 +67,15 @@ export default function MenuDrawer() {
       easing: Easing.bezier(0.25, 0.1, 0.25, 1),
     });
   }, [isMenuOpen, progress]);
+
+  // Reload profile each time the drawer opens so it reflects any edits
+  useEffect(() => {
+    if (isMenuOpen) {
+      getUserProfile(db).then((profile) => {
+        if (profile) setUser(profile);
+      });
+    }
+  }, [isMenuOpen, db]);
 
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0, 1], [0, 1]),
@@ -123,24 +146,38 @@ export default function MenuDrawer() {
           </View>
 
           {/* User Profile */}
-          <View className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/5 p-4 mb-6">
+          <Pressable
+            onPress={() => { closeMenu(); router.push('/profile'); }}
+            className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/5 p-4 mb-6"
+          >
             <View className="flex-row items-center gap-4">
-              <View className="h-14 w-14 rounded-full bg-blue-500 items-center justify-center">
-                <Text className="text-xl font-bold text-white">T</Text>
+              <View className="h-14 w-14 rounded-full bg-blue-500 overflow-hidden items-center justify-center">
+                {user?.avatarUri ? (
+                  <Image source={{ uri: user.avatarUri }} style={{ width: 56, height: 56 }} />
+                ) : (
+                  <Text className="text-xl font-bold text-white">
+                    {(user?.username ?? 'D')[0].toUpperCase()}
+                  </Text>
+                )}
               </View>
               <View className="flex-1">
                 <View className="flex-row items-center gap-1.5">
-                  <Text className="text-base font-semibold text-zinc-900 dark:text-white">
-                    Takeshi Nakamura
+                  <Text className="text-base font-semibold text-zinc-900 dark:text-white" numberOfLines={1}>
+                    {user?.username ?? '—'}
                   </Text>
-                  <Text className="text-base">{'\u{1F1EF}\u{1F1F5}'}</Text>
+                  <Text className="text-base">
+                    {user?.countryCode ? (FLAG_MAP[user.countryCode] ?? '🏁') : '🏁'}
+                  </Text>
                 </View>
-                <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-                  GR86 Track Build
-                </Text>
+                {user?.car ? (
+                  <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5" numberOfLines={1}>
+                    {user.car}
+                  </Text>
+                ) : null}
               </View>
+              <Ionicons name="chevron-forward" size={16} color={isDark ? '#52525b' : '#a1a1aa'} />
             </View>
-          </View>
+          </Pressable>
 
           {/* External GPS */}
           <SectionHeader title={t('menu.externalGps')} />
