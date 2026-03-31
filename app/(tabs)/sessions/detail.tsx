@@ -266,6 +266,7 @@ export default function SessionDetailScreen() {
   const mapRegion = getMapRegion(sessionDetail);
   const startFinishLine =
     sessionDetail?.timingLines.find((timingLine) => timingLine.type === 'start_finish') ?? null;
+  const sectorLines = sessionDetail?.timingLines.filter((timingLine) => timingLine.type === 'sector') ?? [];
   const gpsLine = getDisplayGpsLine(sessionDetail);
 
   return (
@@ -348,6 +349,14 @@ export default function SessionDetailScreen() {
                       strokeWidth={4}
                     />
                   ) : null}
+                  {sectorLines.map((sectorLine) => (
+                    <Polyline
+                      key={sectorLine.id}
+                      coordinates={[sectorLine.a, sectorLine.b]}
+                      strokeColor="#e5e7eb"
+                      strokeWidth={2}
+                    />
+                  ))}
                 </MapView>
               ) : (
                 <View className="flex-1 items-center justify-center p-5">
@@ -360,6 +369,12 @@ export default function SessionDetailScreen() {
                 <View className="h-0.5 w-3 rounded-full bg-red-500" />
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
                   {i18n.t('circuits.startFinish')}
+                </Text>
+              </View>
+              <View className="flex-row items-center gap-1.5">
+                <View className="h-0.5 w-3 rounded-full" style={{ backgroundColor: '#e5e7eb' }} />
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {i18n.t('circuits.sectors')}
                 </Text>
               </View>
               <View className="flex-row items-center gap-1.5">
