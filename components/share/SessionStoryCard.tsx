@@ -5,6 +5,7 @@ type SessionStoryCardProps = {
   sessionName: string;
   circuitName: string;
   location: string;
+  car?: string | null;
   bestLap: string;
   totalLaps: string;
   topSpeed: string;
@@ -20,6 +21,7 @@ export default function SessionStoryCard({
   sessionName,
   circuitName,
   location,
+  car,
   bestLap,
   totalLaps,
   topSpeed,
@@ -62,6 +64,14 @@ export default function SessionStoryCard({
             >
               {location}
             </Text>
+            {car ? (
+              <Text
+                className="mt-4"
+                style={{ fontSize: 32, fontWeight: '600', color: 'rgba(255,255,255,0.6)', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 8 }}
+              >
+                {car}
+              </Text>
+            ) : null}
           </View>
 
           {/* Best lap hero — pushed to bottom */}
@@ -133,6 +143,11 @@ export default function SessionStoryCard({
           <Text className="mt-2" style={{ fontSize: 24, color: 'rgba(255,255,255,0.4)' }}>
             {location}
           </Text>
+          {car ? (
+            <Text className="mt-4" style={{ fontSize: 32, fontWeight: '600', color: 'rgba(255,255,255,0.4)' }}>
+              {car}
+            </Text>
+          ) : null}
         </View>
 
         {/* Best lap hero */}

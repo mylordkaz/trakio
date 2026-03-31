@@ -706,6 +706,7 @@ export default function SessionDetailScreen() {
               sessionName={sessionDetail.session.name ?? i18n.t('sessions.recordedSession')}
               circuitName={sessionDetail.track.name}
               location={[sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', ')}
+              car={sessionDetail.session.car}
               bestLap={formatLapTime(bestLapMs)}
               totalLaps={`${sessionDetail.session.totalLaps}`}
               topSpeed={formatSpeed(topSpeedKph)}
@@ -734,6 +735,7 @@ export default function SessionDetailScreen() {
           sessionName: sessionDetail.session.name ?? i18n.t('sessions.recordedSession'),
           circuitName: sessionDetail.track.name,
           location: [sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', '),
+          car: sessionDetail.session.car,
           bestLap: formatLapTime(bestLapMs),
           totalLaps: `${sessionDetail.session.totalLaps}`,
           topSpeed: formatSpeed(topSpeedKph),

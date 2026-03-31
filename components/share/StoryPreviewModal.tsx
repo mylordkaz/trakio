@@ -14,6 +14,7 @@ type StoryCardData = {
   sessionName: string;
   circuitName: string;
   location: string;
+  car?: string | null;
   bestLap: string;
   totalLaps: string;
   topSpeed: string;
@@ -103,6 +104,7 @@ export default function StoryPreviewModal({
                         sessionName={storyCardData.sessionName}
                         circuitName={storyCardData.circuitName}
                         location={storyCardData.location}
+                        car={storyCardData.car}
                         bestLap={storyCardData.bestLap}
                         totalLaps={storyCardData.totalLaps}
                         topSpeed={storyCardData.topSpeed}
