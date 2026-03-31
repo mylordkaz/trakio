@@ -660,7 +660,12 @@ export default function PreSessionScreen() {
 
                 router.push({
                   pathname: '/(tabs)/record/recording',
-                  params: { trackId: selectedCircuit.id, sessionName: sessionTitle },
+                  params: {
+                    trackId: selectedCircuit.id,
+                    sessionName: sessionTitle,
+                    condition: weather?.conditionKey ?? '',
+                    temperatureC: weather?.temperatureC != null ? String(weather.temperatureC) : '',
+                  },
                 });
               }}
               className="w-full rounded-2xl bg-emerald-500 py-4 items-center"

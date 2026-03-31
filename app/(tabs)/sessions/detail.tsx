@@ -26,6 +26,15 @@ import {
   updateSessionNote,
 } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
+
+const CONDITION_EMOJI: Record<string, string> = {
+  clear: '☀️',
+  cloudy: '⛅️',
+  fog: '🌫️',
+  rain: '🌧️',
+  snow: '❄️',
+  storm: '⛈️',
+};
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useShareSession } from '@/hooks/useShareSession';
 import { formatLapTime, formatGapSeconds, formatDateTime, formatDuration, formatSpeed } from '@/utils/format';
@@ -456,6 +465,38 @@ export default function SessionDetailScreen() {
               </Pressable>
             </View>
           </Card>
+
+          {sessionDetail !== null && (sessionDetail.session.condition || sessionDetail.session.temperatureC !== null) ? (
+            <Card>
+              <View className="flex-row gap-3">
+                {sessionDetail.session.condition && sessionDetail.session.condition !== 'unknown' ? (
+                  <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
+                    <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">
+                      {i18n.t('preSession.condition')}
+                    </Text>
+                    <Text className="text-2xl text-center mb-1">
+                      {CONDITION_EMOJI[sessionDetail.session.condition] ?? '—'}
+                    </Text>
+                    <Text className="text-sm font-semibold text-zinc-900 dark:text-white text-center">
+                      {i18n.t(`preSession.${sessionDetail.session.condition}`)}
+                    </Text>
+                  </View>
+                ) : null}
+                {sessionDetail.session.temperatureC !== null ? (
+                  <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
+                    <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">
+                      {i18n.t('preSession.airTemp')}
+                    </Text>
+                    <View className="flex-1 justify-center">
+                      <Text className="text-lg font-semibold text-zinc-900 dark:text-white text-center">
+                        {`${Math.round(sessionDetail.session.temperatureC)}°C`}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+            </Card>
+          ) : null}
 
           <Card>
             <View className="mb-4">

@@ -450,6 +450,18 @@ const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 8,
+    up: async (db) => {
+      const cols = await getColumnNames(db, 'sessions');
+      if (!cols.includes('condition')) {
+        await db.execAsync('ALTER TABLE sessions ADD COLUMN condition TEXT;');
+      }
+      if (!cols.includes('temperature_c')) {
+        await db.execAsync('ALTER TABLE sessions ADD COLUMN temperature_c REAL;');
+      }
+    },
+  },
 ];
 
 export const DATABASE_NAME = 'trakio.db';

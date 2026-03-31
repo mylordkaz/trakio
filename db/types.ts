@@ -72,6 +72,8 @@ export type SessionRow = {
   name: string | null;
   userId: string | null;
   car: string | null;
+  condition: string | null;
+  temperatureC: number | null;
   trackId: string;
   startedAt: ISODateString;
   endedAt: ISODateString | null;

@@ -89,7 +89,7 @@ export default function RecordingScreen() {
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const params = useLocalSearchParams<{ trackId?: string; sessionName?: string }>();
+  const params = useLocalSearchParams<{ trackId?: string; sessionName?: string; condition?: string; temperatureC?: string }>();
   const gradientColors = useHeaderGradient('red');
   const [track, setTrack] = useState<TrackDetail | null>(null);
   const [isLoadingTrack, setIsLoadingTrack] = useState(true);
@@ -223,6 +223,8 @@ export default function RecordingScreen() {
         config: {
           sessionName: params.sessionName ?? null,
           car: user.car ?? null,
+          condition: params.condition && params.condition !== 'unknown' ? params.condition : null,
+          temperatureC: (() => { const t = parseFloat(params.temperatureC ?? ''); return Number.isFinite(t) ? t : null; })(),
         },
       });
 

@@ -10,6 +10,8 @@ type CreateSessionInput = {
   id: string;
   userId?: string | null;
   car?: string | null;
+  condition?: string | null;
+  temperatureC?: number | null;
   trackId: string;
   startedAt: string;
   name?: string | null;
@@ -72,14 +74,18 @@ export function createSessionRecorder(db: SQLiteDatabase, config: RecorderConfig
         name,
         user_id,
         car,
+        condition,
+        temperature_c,
         track_id,
         started_at,
         status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         user_id = excluded.user_id,
         car = excluded.car,
+        condition = excluded.condition,
+        temperature_c = excluded.temperature_c,
         track_id = excluded.track_id,
         started_at = excluded.started_at,
         status = excluded.status,
@@ -88,6 +94,8 @@ export function createSessionRecorder(db: SQLiteDatabase, config: RecorderConfig
       input.name ?? null,
       input.userId ?? null,
       input.car ?? null,
+      input.condition ?? null,
+      input.temperatureC ?? null,
       input.trackId,
       input.startedAt,
       input.status ?? 'recording'
