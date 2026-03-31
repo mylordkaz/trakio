@@ -35,6 +35,7 @@ type DbSessionListRow = {
 };
 
 type DbSessionDetailRow = DbSessionListRow & {
+  car: string | null;
   notes: string | null;
   track_slug: string;
   track_country: string | null;
@@ -146,6 +147,7 @@ function mapSessionRow(row: DbSessionListRow | DbSessionDetailRow): SessionRow {
     id: row.id,
     name: row.name,
     userId: row.user_id,
+    car: 'car' in row ? (row.car ?? null) : null,
     trackId: row.track_id,
     startedAt: row.started_at,
     endedAt: row.ended_at,
@@ -600,6 +602,7 @@ export async function getSessionById(
       s.id,
       s.name,
       s.user_id,
+      s.car,
       s.track_id,
       s.started_at,
       s.ended_at,
@@ -777,6 +780,18 @@ export async function updateSessionName(
      WHERE id = ?;`,
     name,
     sessionId
+  );
+}
+
+export async function updateSessionCar(
+  db: SQLiteDatabase,
+  sessionId: string,
+  car: string | null,
+): Promise<void> {
+  await db.runAsync(
+    `UPDATE sessions SET car = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
+    car,
+    sessionId,
   );
 }
 

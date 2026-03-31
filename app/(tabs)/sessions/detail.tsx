@@ -21,6 +21,7 @@ import {
   deleteSession,
   deleteSessionNote,
   getSessionById,
+  updateSessionCar,
   updateSessionName,
   updateSessionNote,
 } from '@/db';
@@ -132,6 +133,8 @@ export default function SessionDetailScreen() {
   const [newNote, setNewNote] = useState('');
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingNoteText, setEditingNoteText] = useState('');
+  const [isEditingCar, setIsEditingCar] = useState(false);
+  const [carText, setCarText] = useState('');
   const share = useShareSession(sessionDetail);
 
   const loadSession = useCallback(async () => {
@@ -152,6 +155,7 @@ export default function SessionDetailScreen() {
       }
 
       setSessionDetail(nextSessionDetail);
+      setCarText(nextSessionDetail.session.car ?? '');
       setLoadError(null);
     } catch {
       setLoadError(i18n.t('sessions.unableToLoadSession'));
@@ -202,6 +206,18 @@ export default function SessionDetailScreen() {
       ...sessionDetail,
       notes: sessionDetail.notes.filter((note) => note.id !== noteId),
     });
+  }
+
+  async function handleSaveCar() {
+    if (!sessionDetail) return;
+    const trimmed = carText.trim() || null;
+    await updateSessionCar(db, sessionDetail.session.id, trimmed);
+    setSessionDetail({
+      ...sessionDetail,
+      session: { ...sessionDetail.session, car: trimmed },
+    });
+    setCarText(trimmed ?? '');
+    setIsEditingCar(false);
   }
 
   async function handleChangeTitle(newTitle: string) {
@@ -347,7 +363,7 @@ export default function SessionDetailScreen() {
                 </Text>
               </View>
               <View className="flex-row items-center gap-1.5">
-                <View className="h-0.5 w-3 rounded-full bg-violet-400" />
+                <View className="h-0.5 w-3 rounded-full" style={{ backgroundColor: '#f59e0b' }} />
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
                   {i18n.t('sessions.gpsLine')}
                 </Text>
@@ -399,6 +415,32 @@ export default function SessionDetailScreen() {
               </View>
             ))}
           </View>
+
+          <Card>
+            <View className="flex-row items-center">
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('profile.car')}</Text>
+              {isEditingCar ? (
+                <TextInput
+                  style={{ flex: 1, color: isDark ? '#e4e4e7' : '#3f3f46', fontSize: 15, padding: 0, textAlign: 'center' }}
+                  value={carText}
+                  onChangeText={setCarText}
+                  placeholder={i18n.t('sessions.carPlaceholder')}
+                  placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
+                  returnKeyType="done"
+                  autoFocus
+                  onSubmitEditing={() => void handleSaveCar()}
+                  onBlur={() => void handleSaveCar()}
+                />
+              ) : (
+                <Text className={`flex-1 text-sm font-medium text-center ${carText ? 'text-zinc-700 dark:text-zinc-200' : 'text-zinc-400 dark:text-zinc-500'}`}>
+                  {carText || i18n.t('sessions.carPlaceholder')}
+                </Text>
+              )}
+              <Pressable onPress={() => setIsEditingCar(true)} hitSlop={8}>
+                <Text className="text-sm font-medium text-violet-400">{i18n.t('common.edit')}</Text>
+              </Pressable>
+            </View>
+          </Card>
 
           <Card>
             <View className="mb-4">

@@ -227,6 +227,15 @@ export default function PostSessionScreen() {
             ))}
           </View>
 
+          {sessionDetail?.session.car ? (
+            <Card>
+              <View className="flex-row items-center">
+                <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('profile.car')}</Text>
+                <Text className="flex-1 text-sm font-medium text-center text-zinc-900 dark:text-white">{sessionDetail.session.car}</Text>
+              </View>
+            </Card>
+          ) : null}
+
           <Card>
             <View className="mb-4">
               <Text className="text-sm font-medium text-zinc-900 dark:text-white">

@@ -11,7 +11,7 @@ import i18n from '@/i18n';
 import Card from '@/components/Card';
 import EditableSessionTitle from '@/components/EditableSessionTitle';
 import type { TrackListItem } from '@/db';
-import { getNextSessionNumber, getTrackById, getTrackSessionSummary, listTracks } from '@/db';
+import { getNextSessionNumber, getOrCreateDefaultUserProfile, getTrackById, getTrackSessionSummary, listTracks } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useMenu } from '@/contexts/MenuContext';
@@ -97,6 +97,7 @@ export default function PreSessionScreen() {
   const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('emerald');
   const { openMenu } = useMenu();
+  const [userCar, setUserCar] = useState<string | null>(null);
   const [customSessionTitle, setCustomSessionTitle] = useState<string | null>(null);
   const [hasManualTrackSelection, setHasManualTrackSelection] = useState(false);
   const [hasResolvedAutoSelection, setHasResolvedAutoSelection] = useState(false);
@@ -150,6 +151,10 @@ export default function PreSessionScreen() {
     return () => {
       isMounted = false;
     };
+  }, [db]);
+
+  useEffect(() => {
+    getOrCreateDefaultUserProfile(db).then((user) => setUserCar(user.car));
   }, [db]);
 
   useEffect(() => {
@@ -632,6 +637,18 @@ export default function PreSessionScreen() {
               </View>
             )}
           </View>
+
+          {/* Car */}
+          <Pressable
+            onPress={() => router.push('/profile')}
+            className="mt-3 rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 px-4 py-3.5 flex-row items-center"
+          >
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('profile.car')}</Text>
+            <Text className={`flex-1 text-sm font-medium text-center ${userCar ? 'text-zinc-900 dark:text-white' : 'text-zinc-400 dark:text-zinc-500'}`}>
+              {userCar ?? i18n.t('preSession.setCar')}
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={isDark ? '#52525b' : '#a1a1aa'} />
+          </Pressable>
 
           {/* Start button */}
           <View className="mt-4">

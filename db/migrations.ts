@@ -441,6 +441,15 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 7,
+    up: async (db) => {
+      const cols = await getColumnNames(db, 'sessions');
+      if (!cols.includes('car')) {
+        await db.execAsync('ALTER TABLE sessions ADD COLUMN car TEXT;');
+      }
+    },
+  },
 ];
 
 export const DATABASE_NAME = 'trakio.db';

@@ -16,6 +16,7 @@ type RuntimeStatus = 'idle' | 'recording' | 'armed' | 'lap_in_progress' | 'stopp
 
 type SessionRuntimeConfig = {
   sessionName?: string | null;
+  car?: string | null;
   filterConfig?: Partial<TelemetryFilterConfig>;
   detectionConfig?: Partial<TelemetryDetectionConfig>;
 };
@@ -144,6 +145,7 @@ export function createSessionRuntime(args: {
       trackId: track.id,
       startedAt,
       name: config?.sessionName ?? null,
+      car: config?.car ?? null,
       status: 'recording',
     });
 

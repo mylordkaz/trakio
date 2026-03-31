@@ -63,6 +63,7 @@ export default {
     cornersCount: '%{count} corners',
     sessionTitle: 'Track Session %{number}',
     checklistSubtitle: 'All systems verified before recording',
+    setCar: 'Set in Profile →',
   },
   sessionConfig: {
     title: 'Session Config',
@@ -205,6 +206,7 @@ export default {
     selectTwoLaps: 'Select two laps to compare',
     selectSecondLap: 'Now select a second lap',
     deltaVsLast: '%{delta} vs last',
+    carPlaceholder: 'e.g. GR86 Track Build',
   },
   recording: {
     sessionRecording: 'Session Recording',

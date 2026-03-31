@@ -71,6 +71,7 @@ export type SessionRow = {
   id: string;
   name: string | null;
   userId: string | null;
+  car: string | null;
   trackId: string;
   startedAt: ISODateString;
   endedAt: ISODateString | null;

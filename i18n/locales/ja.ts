@@ -63,6 +63,7 @@ export default {
     cornersCount: '%{count} コーナー',
     sessionTitle: 'トラックセッション %{number}',
     checklistSubtitle: '録画前にすべてのシステムを確認済み',
+    setCar: 'プロフィールで設定 →',
   },
   sessionConfig: {
     title: 'セッション設定',
@@ -205,6 +206,7 @@ export default {
     selectTwoLaps: '比較する2つのラップを選択',
     selectSecondLap: '2つ目のラップを選択',
     deltaVsLast: '%{delta} 前回比',
+    carPlaceholder: '例：GR86 トラックビルド',
   },
   recording: {
     sessionRecording: 'セッション録画中',

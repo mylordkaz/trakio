@@ -12,7 +12,7 @@ import i18n from '@/i18n';
 import Card from '@/components/Card';
 import LapRow from '@/components/LapRow';
 import ProgressBar from '@/components/ProgressBar';
-import { createSessionRecorder, getTrackById } from '@/db';
+import { createSessionRecorder, getOrCreateDefaultUserProfile, getTrackById } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import {
@@ -214,6 +214,7 @@ export default function RecordingScreen() {
         return;
       }
 
+      const user = await getOrCreateDefaultUserProfile(db);
       const recorder = createSessionRecorder(db);
       const runtime = createSessionRuntime({
         track,
@@ -221,6 +222,7 @@ export default function RecordingScreen() {
         recorder,
         config: {
           sessionName: params.sessionName ?? null,
+          car: user.car ?? null,
         },
       });
 
