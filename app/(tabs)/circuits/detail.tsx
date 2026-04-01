@@ -17,13 +17,22 @@ import MapView, { Polyline } from "react-native-maps";
 import i18n from "@/i18n";
 import StatusPill from "@/components/StatusPill";
 import Card from "@/components/Card";
-import type { TrackDetail, TrackNoteRow } from "@/db";
+import type { TrackDetail, TrackNoteRow, UserRow } from "@/db";
 import {
   getTrackById,
   addTrackNote,
   updateTrackNote,
   deleteTrackNote,
+  getOrCreateDefaultUserProfile,
+  upsertSharedLeaderboardTime,
 } from "@/db";
+import LeaderboardPreviewCard from "@/components/LeaderboardPreviewCard";
+import {
+  listLeaderboardEntries,
+  shareLeaderboardTime,
+  type LeaderboardEntry,
+} from '@/services/leaderboard';
+import { getOrCreatePublisherId } from '@/services/publisher-id';
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useHeaderGradient } from "@/hooks/useHeaderGradient";
 import { formatLapTime, formatSectorTime } from "@/utils/format";
@@ -62,6 +71,10 @@ export default function CircuitDetailScreen() {
   const [circuit, setCircuit] = useState<TrackDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [userProfile, setUserProfile] = useState<UserRow | null>(null);
+  const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -108,6 +121,45 @@ export default function CircuitDetailScreen() {
       isMounted = false;
     };
   }, [loadCircuit]);
+
+  useEffect(() => {
+    void getOrCreateDefaultUserProfile(db).then(setUserProfile);
+  }, [db]);
+
+  useEffect(() => {
+    if (!id) {
+      setLeaderboardEntries([]);
+      setLeaderboardError(null);
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadLeaderboard() {
+      try {
+        setLeaderboardLoading(true);
+        setLeaderboardError(null);
+        const publisherId = await getOrCreatePublisherId();
+        const entries = await listLeaderboardEntries(id, publisherId);
+        if (!isMounted) return;
+        setLeaderboardEntries(entries);
+      } catch {
+        if (!isMounted) return;
+        setLeaderboardError(i18n.t('leaderboard.unableToLoad'));
+        setLeaderboardEntries([]);
+      } finally {
+        if (isMounted) {
+          setLeaderboardLoading(false);
+        }
+      }
+    }
+
+    void loadLeaderboard();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id]);
 
   async function handleAddNote() {
     const text = newNote.trim();
@@ -455,6 +507,45 @@ export default function CircuitDetailScreen() {
                 </>
               ) : null}
             </Card>
+
+            {/* Leaderboard */}
+            {userProfile ? (
+              <LeaderboardPreviewCard
+                personalBestMs={circuit?.personalBest?.lapTimeMs ?? null}
+                isProfileComplete={
+                  userProfile.username.trim().length > 0 &&
+                  (userProfile.car?.trim().length ?? 0) > 0
+                }
+                entries={leaderboardEntries}
+                isLoading={leaderboardLoading}
+                loadError={leaderboardError}
+                onShared={async (lapTimeMs) => {
+                  if (!circuit) return;
+                  const publisherId = await getOrCreatePublisherId();
+                  await shareLeaderboardTime({
+                    trackId: circuit.id,
+                    publisherId,
+                    username: userProfile.username.trim(),
+                    countryCode: userProfile.countryCode,
+                    car: userProfile.car ?? null,
+                    lapTimeMs,
+                    submittedAt: new Date().toISOString(),
+                  });
+                  await upsertSharedLeaderboardTime(db, circuit.id, lapTimeMs);
+                  const entries = await listLeaderboardEntries(circuit.id, publisherId);
+                  setLeaderboardEntries(entries);
+                  setLeaderboardError(null);
+                }}
+                onSeeAll={() =>
+                  router.push({
+                    pathname: '/(tabs)/circuits/leaderboard',
+                    params: {
+                      id: circuit?.id ?? '',
+                    },
+                  })
+                }
+              />
+            ) : null}
 
             {/* Driver Notes */}
             <Card>

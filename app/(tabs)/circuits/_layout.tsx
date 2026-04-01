@@ -5,6 +5,7 @@ export default function CircuitsLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="detail" />
+      <Stack.Screen name="leaderboard" />
     </Stack>
   );
 }

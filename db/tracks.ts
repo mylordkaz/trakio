@@ -406,3 +406,26 @@ export async function getTrackById(db: SQLiteDatabase, trackId: string): Promise
     personalBest,
   };
 }
+
+export async function getSharedLeaderboardTime(
+  db: SQLiteDatabase,
+  trackId: string,
+): Promise<number | null> {
+  const row = await db.getFirstAsync<{ leaderboard_lap_time_ms: number | null }>(
+    'SELECT leaderboard_lap_time_ms FROM tracks WHERE id = ?',
+    [trackId],
+  );
+  return row?.leaderboard_lap_time_ms ?? null;
+}
+
+export async function upsertSharedLeaderboardTime(
+  db: SQLiteDatabase,
+  trackId: string,
+  lapTimeMs: number,
+): Promise<void> {
+  await db.runAsync(
+    'UPDATE tracks SET leaderboard_lap_time_ms = ? WHERE id = ?',
+    [lapTimeMs, trackId],
+  );
+}
+
