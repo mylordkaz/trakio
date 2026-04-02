@@ -86,7 +86,7 @@ export default {
   },
   leaderboard: {
     title: 'Global Leaderboard',
-    driversCount: '{{count}} drivers',
+    driversCount: '%{count} drivers',
     allTime: 'All time',
     seeAll: 'See all',
     you: 'You',

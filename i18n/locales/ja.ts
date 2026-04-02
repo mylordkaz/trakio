@@ -86,7 +86,7 @@ export default {
   },
   leaderboard: {
     title: 'グローバルランキング',
-    driversCount: '{{count}}人のドライバー',
+    driversCount: '%{count}人のドライバー',
     allTime: '全期間',
     seeAll: 'すべて見る',
     you: 'あなた',
