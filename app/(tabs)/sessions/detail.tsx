@@ -56,9 +56,34 @@ function getMapLatitudeDelta(lengthMeters: number | null) {
   return Math.min(Math.max(lengthMeters / 450000, 0.0015), 0.0055);
 }
 
+function smoothGpsPoints(
+  points: { latitude: number; longitude: number }[],
+  passes: number
+): { latitude: number; longitude: number }[] {
+  let result = points;
+
+  for (let pass = 0; pass < passes; pass++) {
+    if (result.length <= 2) break;
+
+    result = result.map((point, index, pts) => {
+      if (index === 0 || index === pts.length - 1) return point;
+
+      const prev = pts[index - 1];
+      const next = pts[index + 1];
+
+      return {
+        latitude: (prev.latitude + point.latitude + next.latitude) / 3,
+        longitude: (prev.longitude + point.longitude + next.longitude) / 3,
+      };
+    });
+  }
+
+  return result;
+}
+
 function getDisplayGpsLine(sessionDetail: SessionDetail | null) {
   const gpsPoints = (sessionDetail?.gpsPoints ?? []).filter(
-    (point) => point.accuracyM === null || point.accuracyM <= 20
+    (point) => point.accuracyM === null || point.accuracyM <= 10
   );
 
   if (gpsPoints.length <= 2) {
@@ -68,24 +93,12 @@ function getDisplayGpsLine(sessionDetail: SessionDetail | null) {
     }));
   }
 
-  return gpsPoints.map((point, index, points) => {
-    if (index === 0 || index === points.length - 1) {
-      return {
-        latitude: point.latitude,
-        longitude: point.longitude,
-      };
-    }
+  const raw = gpsPoints.map((point) => ({
+    latitude: point.latitude,
+    longitude: point.longitude,
+  }));
 
-    const previousPoint = points[index - 1];
-    const nextPoint = points[index + 1];
-
-    return {
-      latitude:
-        (previousPoint.latitude + point.latitude + nextPoint.latitude) / 3,
-      longitude:
-        (previousPoint.longitude + point.longitude + nextPoint.longitude) / 3,
-    };
-  });
+  return smoothGpsPoints(raw, 3);
 }
 
 function getMapRegion(sessionDetail: SessionDetail | null) {
