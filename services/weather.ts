@@ -1,3 +1,12 @@
+const CACHE_TTL_MS = 15 * 60 * 1000;
+
+type WeatherCacheEntry = {
+  weather: TrackWeather;
+  fetchedAt: number;
+};
+
+const weatherCache = new Map<string, WeatherCacheEntry>();
+
 export type TrackWeather = {
   temperatureC: number | null;
   windSpeedKph: number | null;
@@ -67,6 +76,13 @@ export async function fetchTrackWeather(
   latitude: number,
   longitude: number
 ): Promise<TrackWeather> {
+  const cacheKey = `${latitude},${longitude}`;
+  const cached = weatherCache.get(cacheKey);
+
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached.weather;
+  }
+
   const url = new URL('https://api.open-meteo.com/v1/forecast');
   url.searchParams.set('latitude', String(latitude));
   url.searchParams.set('longitude', String(longitude));
@@ -94,7 +110,7 @@ export async function fetchTrackWeather(
       ? current.wind_direction_10m
       : null;
 
-  return {
+  const weather: TrackWeather = {
     temperatureC:
       typeof current?.temperature_2m === 'number' && Number.isFinite(current.temperature_2m)
         ? current.temperature_2m
@@ -108,4 +124,8 @@ export async function fetchTrackWeather(
     conditionKey: mappedWeather.conditionKey,
     emoji: mappedWeather.emoji,
   };
+
+  weatherCache.set(cacheKey, { weather, fetchedAt: Date.now() });
+
+  return weather;
 }

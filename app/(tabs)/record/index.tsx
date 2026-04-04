@@ -295,7 +295,9 @@ export default function PreSessionScreen() {
         return;
       }
 
-      try {
+      setWeather(null);
+
+    try {
         const nextWeather = await fetchTrackWeather(
           selectedCircuit.centerLatitude,
           selectedCircuit.centerLongitude
