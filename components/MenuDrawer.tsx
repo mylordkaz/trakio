@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Dimensions, Image, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Dimensions, Image, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
@@ -320,7 +320,10 @@ export default function MenuDrawer() {
 
             {/* Terms of Use */}
             <Pressable
-              onPress={() => Linking.openURL('https://trakio.app/terms')}
+              onPress={() => {
+                closeMenu();
+                router.push('/terms');
+              }}
               className="flex-row items-center justify-between px-4 py-3.5 border-b border-zinc-100 dark:border-white/5"
             >
               <Text className="text-[15px] font-medium text-zinc-900 dark:text-white">
@@ -331,7 +334,10 @@ export default function MenuDrawer() {
 
             {/* Privacy Policy */}
             <Pressable
-              onPress={() => Linking.openURL('https://trakio.app/privacy')}
+              onPress={() => {
+                closeMenu();
+                router.push('/privacy');
+              }}
               className="flex-row items-center justify-between px-4 py-3.5"
             >
               <Text className="text-[15px] font-medium text-zinc-900 dark:text-white">
