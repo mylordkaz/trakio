@@ -309,7 +309,7 @@ export default function MenuDrawer() {
 
             {/* Send Feedback */}
             <Pressable
-              onPress={() => Linking.openURL('mailto:feedback@trakio.app')}
+              onPress={() => { closeMenu(); router.push('/feedback'); }}
               className="flex-row items-center justify-between px-4 py-3.5 border-b border-zinc-100 dark:border-white/5"
             >
               <Text className="text-[15px] font-medium text-zinc-900 dark:text-white">
