@@ -1,5 +1,6 @@
 import { useMemo, useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, cancelAnimation } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -101,6 +102,19 @@ export default function PreSessionScreen() {
   const [customSessionTitle, setCustomSessionTitle] = useState<string | null>(null);
   const [hasManualTrackSelection, setHasManualTrackSelection] = useState(false);
   const [hasResolvedAutoSelection, setHasResolvedAutoSelection] = useState(false);
+  const pulseOpacity = useSharedValue(1);
+  const pulseStyle = useAnimatedStyle(() => ({ opacity: pulseOpacity.value }));
+
+  useEffect(() => {
+    pulseOpacity.value = withRepeat(
+      withTiming(0.3, { duration: 900, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+  }, [pulseOpacity]);
+
+  const badgeOpacity = useSharedValue(0.5);
+  const badgeStyle = useAnimatedStyle(() => ({ opacity: badgeOpacity.value }));
   const [circuitSearch, setCircuitSearch] = useState('');
   const sessionTitle: string = customSessionTitle ?? (i18n.t('preSession.sessionTitle', { number: sessionNumber }) as string);
 
@@ -127,10 +141,10 @@ export default function PreSessionScreen() {
         setCircuits(nextCircuits);
         setSelectedCircuit((currentCircuit) => {
           if (currentCircuit) {
-            return nextCircuits.find((circuit) => circuit.id === currentCircuit.id) ?? nextCircuits[0] ?? null;
+            return nextCircuits.find((circuit) => circuit.id === currentCircuit.id) ?? null;
           }
 
-          return nextCircuits[0] ?? null;
+          return null;
         });
         setLoadError(null);
       } catch {
@@ -493,6 +507,23 @@ export default function PreSessionScreen() {
   }
 
   const readyChecklistCount = checklistItems.filter((item) => item.status === 'ready').length;
+  const isSessionReady =
+    checklistItems.find((i) => i.key === 'gpsLock')?.status === 'ready' &&
+    checklistItems.find((i) => i.key === 'startFinishLineSet')?.status === 'ready';
+
+  useEffect(() => {
+    if (isSessionReady) {
+      badgeOpacity.value = 1;
+      badgeOpacity.value = withRepeat(
+        withTiming(0.5, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
+        -1,
+        true
+      );
+    } else {
+      cancelAnimation(badgeOpacity);
+      badgeOpacity.value = withTiming(0.5, { duration: 300 });
+    }
+  }, [isSessionReady, badgeOpacity]);
 
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
@@ -517,10 +548,10 @@ export default function PreSessionScreen() {
               </Pressable>
               <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.title')}</Text>
             </View>
-            <View className="flex-row items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1.5 border border-emerald-400/20">
+            <Animated.View style={badgeStyle} className="flex-row items-center gap-2 rounded-full bg-emerald-500/30 px-3 py-1.5 border border-emerald-400/40">
               <View className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
               <Text className="text-sm text-emerald-400">{i18n.t('session.ready')}</Text>
-            </View>
+            </Animated.View>
           </View>
 
           {/* Title + READY badge */}
@@ -548,13 +579,25 @@ export default function PreSessionScreen() {
               <View className="rounded-2xl bg-red-500/10 border border-red-500/20 px-3 py-3">
                 <Text className="text-sm text-red-700 dark:text-red-200">{loadError}</Text>
               </View>
-            ) : !selectedCircuit ? (
+            ) : !selectedCircuit && circuits.length === 0 ? (
               <View className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-3">
                 <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('circuits.noTracksFound')}</Text>
                 <Text className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
                   {i18n.t('circuits.noTracksFoundHint')}
                 </Text>
               </View>
+            ) : !selectedCircuit && !showCircuitPicker && !hasResolvedAutoSelection ? (
+              <Animated.View style={pulseStyle} className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-3">
+                <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.detectingTrack')}</Text>
+              </Animated.View>
+            ) : !selectedCircuit && !showCircuitPicker ? (
+              <Pressable
+                onPress={() => { setShowCircuitPicker(true); setCircuitSearch(''); }}
+                className="flex-row items-center justify-between rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-3"
+              >
+                <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.selectTrack')}</Text>
+                <Ionicons name="chevron-forward" size={16} color="#71717a" />
+              </Pressable>
             ) : !showCircuitPicker ? (
               <Pressable onPress={() => setShowCircuitPicker(true)}>
                 <View className="flex-row items-center justify-between">
@@ -614,7 +657,7 @@ export default function PreSessionScreen() {
                           setCircuitSearch('');
                         }}
                         className={`flex-row items-center justify-between rounded-2xl px-3 py-2.5 mb-2 border ${
-                          selectedCircuit.id === circuit.id
+                          selectedCircuit?.id === circuit.id
                             ? 'bg-emerald-500/10 border-emerald-400/30'
                             : 'bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10'
                         }`}
@@ -625,7 +668,7 @@ export default function PreSessionScreen() {
                             {formatTrackLength(circuit.lengthMeters)} · {i18n.t('preSession.cornersCount', { count: circuit.corners ?? 0 })}
                           </Text>
                         </View>
-                        {selectedCircuit.id === circuit.id && (
+                        {selectedCircuit?.id === circuit.id && (
                           <Ionicons name="checkmark" size={16} color="#34d399" />
                         )}
                       </Pressable>

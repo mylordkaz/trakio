@@ -64,6 +64,8 @@ export default {
     sessionTitle: 'Track Session %{number}',
     checklistSubtitle: 'All systems verified before recording',
     setCar: 'Set in Profile →',
+    selectTrack: 'Select a track...',
+    detectingTrack: 'Detecting nearest track...',
   },
   sessionConfig: {
     title: 'Session Config',

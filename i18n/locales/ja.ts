@@ -64,6 +64,8 @@ export default {
     sessionTitle: 'トラックセッション %{number}',
     checklistSubtitle: '録画前にすべてのシステムを確認済み',
     setCar: 'プロフィールで設定 →',
+    selectTrack: 'トラックを選択...',
+    detectingTrack: '最寄りのトラックを検索中...',
   },
   sessionConfig: {
     title: 'セッション設定',
