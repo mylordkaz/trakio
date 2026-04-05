@@ -64,6 +64,8 @@ export default {
     sessionTitle: 'Track Session %{number}',
     checklistSubtitle: 'All systems verified before recording',
     setCar: 'Set in Profile →',
+    selectTrack: 'Select a track...',
+    detectingTrack: 'Detecting nearest track...',
   },
   sessionConfig: {
     title: 'Session Config',
@@ -284,6 +286,114 @@ export default {
     sendFeedback: 'Send Feedback',
     termsOfUse: 'Terms of Use',
     privacyPolicy: 'Privacy Policy',
+  },
+  legal: {
+    lastUpdated: 'Last updated',
+    terms: {
+      title: 'Terms of Use',
+      subtitle: 'Plain-language rules for using Trakio safely and responsibly.',
+      updatedAt: 'April 4, 2026',
+      sections: {
+        overview: {
+          title: 'Using Trakio',
+          body:
+            'Trakio is a motorsport lap timer and session logging app for personal use. By using the app, you agree to use it responsibly and only in ways that are lawful where you drive or record.',
+        },
+        safety: {
+          title: 'Drive first, app second',
+          body:
+            'You are responsible for operating your vehicle safely. Do not configure, read, or interact with the app in a way that distracts you while driving. Make any setup changes before going on track or while safely stopped.',
+        },
+        accuracy: {
+          title: 'Timing and GPS limitations',
+          body:
+            'Trakio uses phone sensors, GPS data, stored timing lines, and optional hosted services. Lap times, sector splits, maps, weather, and analytics can be delayed, incomplete, or inaccurate. The app is not guaranteed to be suitable for officiating, competition scoring, or safety-critical decisions.',
+        },
+        content: {
+          title: 'Your content and shared times',
+          body:
+            'If you choose to add profile details, notes, photos, or share a leaderboard time, you are responsible for that content. Do not submit false, abusive, offensive, misleading, or impersonating information. Public leaderboard submissions may be shown to other users.',
+        },
+        hostedServices: {
+          title: 'Hosted and third-party services',
+          body:
+            'Some features rely on external services, such as weather lookups, Instagram Story sharing, email feedback, and the hosted leaderboard. These services can change, fail, or be removed at any time. Trakio may also limit, reject, or remove leaderboard entries that appear abusive or broken.',
+        },
+        liability: {
+          title: 'No warranties; limited liability',
+          body:
+            'Trakio is provided on an "as is" and "as available" basis, without warranties of any kind. To the maximum extent allowed by law, Trakio is not liable for indirect, incidental, special, consequential, or data-loss damages arising from use of the app.',
+        },
+        changes: {
+          title: 'Updates',
+          body:
+            'Features, pricing, supported tracks, hosted leaderboard behavior, and these terms may change in future versions. Continued use of the app after an update means you accept the revised terms.',
+        },
+        contact: {
+          title: 'Contact',
+          body:
+            'If you have questions about these terms, contact Trakio at %{email}.',
+        },
+      },
+    },
+    privacy: {
+      title: 'Privacy Policy',
+      subtitle: 'What Trakio stores, what it sends, and what stays on your device.',
+      updatedAt: 'April 4, 2026',
+      sections: {
+        overview: {
+          title: 'Overview',
+          body:
+            'Trakio is designed to be local-first. Most session data stays on your device unless you choose to share something, use a third-party integration, or contact us directly.',
+        },
+        localData: {
+          title: 'Data stored on your device',
+          body:
+            'Trakio stores track data, sessions, laps, sector times, GPS samples, session notes, car information, weather snapshots saved with sessions, and your local driver profile on your device. Your profile may include a username, car, nationality, avatar image, and a local publisher ID used for optional leaderboard sharing.',
+        },
+        permissions: {
+          title: 'Permissions we use',
+          body:
+            'Location permission is used to record GPS telemetry and detect lap and sector crossings. Photo library access is used only if you choose an avatar image, choose a photo for story sharing, or save a generated image to your library. If you deny these permissions, the related features will not work.',
+        },
+        networkServices: {
+          title: 'Services contacted over the network',
+          body:
+            'Trakio may contact Open-Meteo to fetch current weather for a selected track. If you use the leaderboard feature, Trakio sends your shared lap entry to the hosted leaderboard service. If you use Instagram Story sharing, the app hands your selected content off to Instagram. If you send feedback, your device mail app is used to compose an email.',
+        },
+        sharing: {
+          title: 'Public leaderboard sharing',
+          body:
+            'Leaderboard sharing is optional. When you share a lap, Trakio sends the track ID, your shared username, country code, car, lap time, submission date, and a stable local publisher ID so your time can be updated later on the same track. Shared leaderboard entries are intended to be visible to other users.',
+        },
+        retention: {
+          title: 'Retention and deletion',
+          body:
+            'Local sessions, notes, profile data, and cached app data remain on your device until you edit or delete them, or remove the app. Shared leaderboard entries may remain on the hosted leaderboard even if you later delete the related local session. Trakio does not currently provide an in-app self-service removal tool for hosted leaderboard entries.',
+        },
+        contact: {
+          title: 'Contact',
+          body:
+            'If you have privacy questions or want to request help regarding hosted shared data, contact Trakio at %{email}.',
+        },
+      },
+    },
+  },
+  feedback: {
+    title: 'Send Feedback',
+    subtitle: 'Have a suggestion? Found a bug? Your favorite track is missing? Let us know — we read every message.',
+    nameLabel: 'Your name',
+    namePlaceholder: 'e.g. Alex',
+    messageLabel: 'Message',
+    messagePlaceholder: 'What\'s on your mind?',
+    submit: 'Send Feedback',
+    sending: 'Opening Mail...',
+    missingName: 'Name required',
+    missingNameMessage: 'Please enter your name before sending.',
+    missingMessage: 'Message required',
+    missingMessageMessage: 'Please write a message before sending.',
+    noMailApp: 'No mail app found',
+    noMailAppMessage: 'Please set up a mail app on your device to send feedback.',
   },
   telemetry: {
     title: 'Live Telemetry',

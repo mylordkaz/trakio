@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { Storage } from 'expo-sqlite/kv-store';
 import { DatabaseProvider } from '@/db';
+import { MenuProvider } from '@/contexts/MenuContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import i18n from '@/i18n';
 import { getOrCreatePublisherIdSync } from '@/services/publisher-id';
@@ -44,17 +45,22 @@ export default function RootLayout() {
 
   return (
     <DatabaseProvider>
-      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: screenBackground },
-        }}
-      >
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="index" />
-        <Stack.Screen name="profile" />
-      </Stack>
+      <MenuProvider>
+        <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: screenBackground },
+          }}
+        >
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="index" />
+          <Stack.Screen name="profile" />
+          <Stack.Screen name="feedback" />
+          <Stack.Screen name="terms" />
+          <Stack.Screen name="privacy" />
+        </Stack>
+      </MenuProvider>
     </DatabaseProvider>
   );
 }

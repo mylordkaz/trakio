@@ -135,6 +135,40 @@ The value proposition has to be obvious:
 5. Add more Pro value over time if needed.
 6. Add premium track map packages only after the mapping workflow is proven.
 
+## Early Users / Grandfathering
+
+When monetization is introduced later, early users should be grandfathered into Pro.
+
+Recommended rule:
+
+- use Apple's app transaction data
+- check the user's `originalPurchaseDate`
+- if that date is earlier than the paywall launch date, grant Pro permanently
+
+Why this is better than local-only checks:
+
+- survives app reinstall
+- survives device changes
+- is tied to the App Store app download transaction
+- is stronger than checking whether local sessions still exist
+
+Recommended implementation timing:
+
+- do not build this now
+- implement it when monetization is actually added
+
+At monetization time:
+
+- define a fixed paywall launch date
+- compare `originalPurchaseDate` against that cutoff
+- if eligible, mark the user as `pro` with source `grandfathered`
+- cache the granted entitlement locally after verification
+
+Important:
+
+- this should be based on Apple app transaction data, not local DB session count or install markers alone
+- once grandfathered Pro is granted, it should not be taken away
+
 ## Technical Preparation
 
 For now, the only gating logic worth preparing is session count.
@@ -143,5 +177,7 @@ Keep it minimal:
 
 - local plan state: `free | pro`
 - entitlement helper for session-save limits
+
+There is no need to implement StoreKit grandfathering logic before monetization is real.
 
 Map packages can be planned later as a separate entitlement layer once the mapped-track product is real.
