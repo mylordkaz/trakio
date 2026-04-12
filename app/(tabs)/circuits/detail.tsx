@@ -13,7 +13,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { Ionicons } from "@expo/vector-icons";
-import MapView, { Polyline } from "react-native-maps";
+import MapView, { Polyline, PROVIDER_GOOGLE } from "react-native-maps";
 import i18n from "@/i18n";
 import StatusPill from "@/components/StatusPill";
 import Card from "@/components/Card";
@@ -247,6 +247,7 @@ export default function CircuitDetailScreen() {
               <View className="rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-200 dark:bg-zinc-950/80 mb-3 h-80 overflow-hidden">
                 {mapRegion ? (
                   <MapView
+                    provider={PROVIDER_GOOGLE}
                     initialRegion={mapRegion}
                     mapType="satellite"
                     rotateEnabled={true}
@@ -259,6 +260,9 @@ export default function CircuitDetailScreen() {
                         key={sectorLine.id}
                         coordinates={[sectorLine.a, sectorLine.b]}
                         strokeColor="#e5e7eb"
+                        strokeColors={
+                          Platform.OS === "ios" ? ["#e5e7eb"] : undefined
+                        }
                         strokeWidth={2}
                       />
                     ))}
@@ -266,6 +270,9 @@ export default function CircuitDetailScreen() {
                       <Polyline
                         coordinates={[startFinishLine.a, startFinishLine.b]}
                         strokeColor="#ef4444"
+                        strokeColors={
+                          Platform.OS === "ios" ? ["#ef4444"] : undefined
+                        }
                         strokeWidth={3}
                       />
                     ) : null}

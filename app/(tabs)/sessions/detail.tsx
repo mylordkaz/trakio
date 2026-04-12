@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import MapView, { Polyline } from 'react-native-maps';
+import MapView, { Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import i18n from '@/i18n';
 import StatusPill from '@/components/StatusPill';
@@ -98,7 +98,7 @@ function getDisplayGpsLine(sessionDetail: SessionDetail | null) {
     longitude: point.longitude,
   }));
 
-  return smoothGpsPoints(raw, 3);
+  return raw;
 }
 
 function getMapRegion(sessionDetail: SessionDetail | null) {
@@ -350,6 +350,7 @@ export default function SessionDetailScreen() {
             <View className="rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-200 dark:bg-zinc-950/80 mb-3 h-80 overflow-hidden">
               {mapRegion ? (
                 <MapView
+                  provider={PROVIDER_GOOGLE}
                   initialRegion={mapRegion}
                   mapType="satellite"
                   rotateEnabled={true}
@@ -361,6 +362,9 @@ export default function SessionDetailScreen() {
                     <Polyline
                       coordinates={gpsLine}
                       strokeColor="#f59e0b"
+                      strokeColors={
+                        Platform.OS === 'ios' ? ['#f59e0b'] : undefined
+                      }
                       strokeWidth={3}
                     />
                   ) : null}
@@ -368,6 +372,9 @@ export default function SessionDetailScreen() {
                     <Polyline
                       coordinates={[startFinishLine.a, startFinishLine.b]}
                       strokeColor="#ef4444"
+                      strokeColors={
+                        Platform.OS === 'ios' ? ['#ef4444'] : undefined
+                      }
                       strokeWidth={4}
                     />
                   ) : null}
@@ -376,6 +383,9 @@ export default function SessionDetailScreen() {
                       key={sectorLine.id}
                       coordinates={[sectorLine.a, sectorLine.b]}
                       strokeColor="#e5e7eb"
+                      strokeColors={
+                        Platform.OS === 'ios' ? ['#e5e7eb'] : undefined
+                      }
                       strokeWidth={2}
                     />
                   ))}
