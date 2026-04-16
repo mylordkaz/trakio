@@ -38,6 +38,7 @@ const CONDITION_EMOJI: Record<string, string> = {
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useShareSession } from '@/hooks/useShareSession';
 import { formatLapTime, formatGapSeconds, formatDateTime, formatDuration, formatSpeed } from '@/utils/format';
+import { getBestLapRacingLine } from '@/utils/racingLine';
 import {
   getBestLapMs,
   getTopSpeedKph,
@@ -738,6 +739,8 @@ export default function SessionDetailScreen() {
               topSpeedLabel={i18n.t('sessions.storyTopSpeed')}
               variant={share.storyTemplate}
               backgroundImageUri={share.photoUri ?? undefined}
+              racingLinePoints={getBestLapRacingLine(sessionDetail)}
+              gpsUnavailableLabel={i18n.t('sessions.storyGpsUnavailable')}
             />
           </View>
         ) : null}
@@ -762,6 +765,7 @@ export default function SessionDetailScreen() {
           bestLap: formatLapTime(bestLapMs),
           totalLaps: `${sessionDetail.session.totalLaps}`,
           topSpeed: formatSpeed(topSpeedKph),
+          racingLinePoints: getBestLapRacingLine(sessionDetail),
         } : null}
         onClose={share.closeStoryPreview}
         onShare={share.handleShareSession}

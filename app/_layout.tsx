@@ -8,6 +8,7 @@ import { DatabaseProvider } from '@/db';
 import { MenuProvider } from '@/contexts/MenuContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import i18n from '@/i18n';
+import { getOrCreatePublisherIdSync } from '@/services/publisher-id';
 
 // Apply persisted preferences synchronously before first render
 const storedAppearance = Storage.getItemSync('appearance_mode');
@@ -20,6 +21,9 @@ const storedLocale = Storage.getItemSync('locale');
 if (storedLocale) {
   i18n.locale = storedLocale;
 }
+
+// Ensure the local leaderboard publisher id exists for future share requests.
+getOrCreatePublisherIdSync();
 
 export default function RootLayout() {
   const { colorScheme, setColorScheme } = useColorScheme();

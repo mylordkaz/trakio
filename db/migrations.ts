@@ -462,6 +462,15 @@ const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 9,
+    up: async (db) => {
+      const cols = await getColumnNames(db, 'tracks');
+      if (!cols.includes('leaderboard_lap_time_ms')) {
+        await db.execAsync('ALTER TABLE tracks ADD COLUMN leaderboard_lap_time_ms INTEGER;');
+      }
+    },
+  },
 ];
 
 export const DATABASE_NAME = 'trakio.db';

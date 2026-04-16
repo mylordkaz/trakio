@@ -255,6 +255,7 @@ export default function ProfileScreen() {
                 placeholder="Driver"
                 placeholderTextColor={isDark ? '#52525b' : '#a1a1aa'}
                 returnKeyType="done"
+                maxLength={24}
               />
             </View>
             <View className="flex-row items-center px-4 py-3.5">
@@ -266,6 +267,7 @@ export default function ProfileScreen() {
                 placeholder="e.g. GR86 Track Build"
                 placeholderTextColor={isDark ? '#52525b' : '#a1a1aa'}
                 returnKeyType="done"
+                maxLength={40}
               />
             </View>
           </View>

@@ -5,8 +5,9 @@ import i18n from '@/i18n';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import Checkerboard from '@/components/share/Checkerboard';
 import SessionStoryCard from '@/components/share/SessionStoryCard';
+import type { GeoPoint } from '@/utils/racingLine';
 
-const STORY_TEMPLATES = ['dark', 'transparent', 'photo'] as const;
+const STORY_TEMPLATES = ['dark', 'line', 'transparent', 'photo'] as const;
 const previewPageWidth = Dimensions.get('window').width;
 const viewabilityConfig = { itemVisiblePercentThreshold: 50 };
 
@@ -18,12 +19,13 @@ type StoryCardData = {
   bestLap: string;
   totalLaps: string;
   topSpeed: string;
+  racingLinePoints?: GeoPoint[];
 };
 
 type StoryPreviewModalProps = {
   visible: boolean;
   isSharing: boolean;
-  storyTemplate: 'dark' | 'transparent' | 'photo';
+  storyTemplate: 'dark' | 'transparent' | 'photo' | 'line';
   photoUri: string | null;
   storyCardData: StoryCardData | null;
   onClose: () => void;
@@ -32,6 +34,8 @@ type StoryPreviewModalProps = {
   onPickPhoto: () => void;
   onTemplateChange: (info: { viewableItems: ViewToken[] }) => void;
 };
+
+type StoryVariant = (typeof STORY_TEMPLATES)[number];
 
 export default function StoryPreviewModal({
   visible,
@@ -111,8 +115,10 @@ export default function StoryPreviewModal({
                         bestLapLabel={i18n.t('sessions.storyBestLap')}
                         totalLapsLabel={i18n.t('sessions.storyTotalLaps')}
                         topSpeedLabel={i18n.t('sessions.storyTopSpeed')}
-                        variant={variant}
+                        variant={variant as StoryVariant}
                         backgroundImageUri={photoUri ?? undefined}
+                        racingLinePoints={storyCardData.racingLinePoints}
+                        gpsUnavailableLabel={i18n.t('sessions.storyGpsUnavailable')}
                       />
                     </View>
                   ) : null}

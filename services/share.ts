@@ -10,6 +10,12 @@ type ShareResult =
 
 type ShareMode = 'background' | 'sticker';
 
+type InstagramStoryShareOptions = {
+  mode?: ShareMode;
+  backdropTopColor?: string;
+  backdropBottomColor?: string;
+};
+
 const INSTAGRAM_PACKAGE = 'com.instagram.android';
 const INSTAGRAM_STORIES_URL = 'instagram-stories://share';
 
@@ -31,8 +37,9 @@ async function isInstagramStoriesAvailable() {
 
 export async function shareSessionToInstagramStory(
   imageUri: string,
-  mode: ShareMode = 'background',
+  options: InstagramStoryShareOptions = {},
 ): Promise<ShareResult> {
+  const { mode = 'background', backdropTopColor, backdropBottomColor } = options;
   const appId = getInstagramAppId();
 
   if (!appId) {
@@ -45,18 +52,17 @@ export async function shareSessionToInstagramStory(
   }
 
   try {
+    const baseParams = {
+      social: Social.InstagramStories,
+      appId,
+      ...(backdropTopColor ? { backgroundTopColor: backdropTopColor } : {}),
+      ...(backdropBottomColor ? { backgroundBottomColor: backdropBottomColor } : {}),
+    };
+
     if (mode === 'sticker') {
-      await Share.shareSingle({
-        social: Social.InstagramStories,
-        appId,
-        stickerImage: imageUri,
-      });
+      await Share.shareSingle({ ...baseParams, stickerImage: imageUri });
     } else {
-      await Share.shareSingle({
-        social: Social.InstagramStories,
-        appId,
-        backgroundImage: imageUri,
-      });
+      await Share.shareSingle({ ...baseParams, backgroundImage: imageUri });
     }
 
     return { ok: true };
