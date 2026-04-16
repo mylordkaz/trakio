@@ -211,6 +211,7 @@ export default {
     storyBestLap: 'Best Lap',
     storyTotalLaps: 'Laps',
     storyTopSpeed: 'Top Speed',
+    storyGpsUnavailable: 'GPS data unavailable',
     viewReplay: 'View Replay',
     sessionInsights: 'Session Insights',
     performanceSummary: 'Quick performance summary',

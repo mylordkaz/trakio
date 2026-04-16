@@ -210,6 +210,7 @@ export default {
     storyBestLap: 'ベストラップ',
     storyTotalLaps: 'ラップ',
     storyTopSpeed: '最高速度',
+    storyGpsUnavailable: 'GPSデータなし',
     viewReplay: 'リプレイを見る',
     sessionInsights: 'セッションインサイト',
     performanceSummary: 'パフォーマンスサマリー',

@@ -7,7 +7,7 @@ import i18n from '@/i18n';
 import type { SessionDetail } from '@/db';
 import { shareSessionToInstagramStory } from '@/services/share';
 
-type StoryTemplate = 'dark' | 'transparent' | 'photo';
+type StoryTemplate = 'dark' | 'transparent' | 'photo' | 'line';
 
 export function useShareSession(sessionDetail: SessionDetail | null) {
   const storyCardRef = useRef<View>(null);
@@ -75,7 +75,11 @@ export function useShareSession(sessionDetail: SessionDetail | null) {
       });
       console.log('[share] captured story uri', storyUri);
 
-      const result = await shareSessionToInstagramStory(storyUri, isSticker ? 'sticker' : 'background');
+      const result = await shareSessionToInstagramStory(storyUri, {
+        mode: isSticker ? 'sticker' : 'background',
+        backdropTopColor: '#0d2233',
+        backdropBottomColor: '#0a1a28',
+      });
       console.log('[share] instagram story result', result);
 
       if (result.ok) {

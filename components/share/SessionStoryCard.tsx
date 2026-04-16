@@ -1,5 +1,8 @@
 import { View, Text, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path } from 'react-native-svg';
+import { gpsPointsToSvgPath, type GeoPoint } from '@/utils/racingLine';
 
 type SessionStoryCardProps = {
   sessionName: string;
@@ -12,9 +15,14 @@ type SessionStoryCardProps = {
   bestLapLabel: string;
   totalLapsLabel: string;
   topSpeedLabel: string;
-  variant?: 'dark' | 'transparent' | 'photo';
+  variant?: 'dark' | 'transparent' | 'photo' | 'line';
   backgroundImageUri?: string;
+  racingLinePoints?: GeoPoint[];
+  gpsUnavailableLabel?: string;
 };
+
+const LINE_SVG_WIDTH = 600;
+const LINE_SVG_HEIGHT = 700;
 
 
 export default function SessionStoryCard({
@@ -30,7 +38,168 @@ export default function SessionStoryCard({
   topSpeedLabel,
   variant = 'dark',
   backgroundImageUri,
+  racingLinePoints,
+  gpsUnavailableLabel,
 }: SessionStoryCardProps) {
+  if (variant === 'line') {
+    const pathData = racingLinePoints
+      ? gpsPointsToSvgPath(racingLinePoints, LINE_SVG_WIDTH, LINE_SVG_HEIGHT, 20)
+      : null;
+
+    return (
+      <LinearGradient
+        colors={['#0d2233', '#0b1f30', '#0a1a28']}
+        locations={[0, 0.5, 1]}
+        start={{ x: 0.15, y: 0 }}
+        end={{ x: 0.85, y: 1 }}
+        style={{ width: 720, height: 1280 }}
+      >
+        {/* Top: racing line */}
+        <View
+          style={{
+            width: 720,
+            height: 780,
+            paddingTop: 100,
+            paddingHorizontal: 60,
+            paddingBottom: 40,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {pathData ? (
+            <Svg
+              width={LINE_SVG_WIDTH}
+              height={LINE_SVG_HEIGHT}
+              viewBox={`0 0 ${LINE_SVG_WIDTH} ${LINE_SVG_HEIGHT}`}
+            >
+              <Path
+                d={pathData}
+                stroke="rgba(56,189,248,0.22)"
+                strokeWidth={24}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+              <Path
+                d={pathData}
+                stroke="#38bdf8"
+                strokeWidth={8}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+            </Svg>
+          ) : (
+            <View style={{ alignItems: 'center' }}>
+              <Ionicons name="navigate-outline" size={72} color="rgba(255,255,255,0.22)" />
+              <Text
+                style={{
+                  fontSize: 26,
+                  color: 'rgba(255,255,255,0.4)',
+                  fontWeight: '500',
+                  marginTop: 20,
+                  letterSpacing: 0.5,
+                }}
+              >
+                {gpsUnavailableLabel ?? 'GPS data unavailable'}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Bottom: info */}
+        <View
+          style={{
+            flex: 1,
+            paddingHorizontal: 64,
+            paddingTop: 20,
+            paddingBottom: 50,
+          }}
+        >
+          <View>
+            <Text
+              className="text-white"
+              style={{ fontSize: 56, lineHeight: 62, fontWeight: '600', fontStyle: 'italic', letterSpacing: -0.5 }}
+            >
+              {circuitName}
+            </Text>
+            {car ? (
+              <Text
+                className="mt-3"
+                style={{ fontSize: 30, color: 'rgba(255,255,255,0.55)', fontWeight: '400' }}
+              >
+                {car}
+              </Text>
+            ) : null}
+          </View>
+
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <Text
+              className="uppercase"
+              style={{ fontSize: 18, fontWeight: '500', letterSpacing: 3, color: 'rgba(255,255,255,0.35)' }}
+            >
+              {bestLapLabel}
+            </Text>
+            <Text
+              className="text-white"
+              style={{
+                marginTop: 8,
+                fontSize: 96,
+                lineHeight: 104,
+                fontWeight: '500',
+                fontVariant: ['tabular-nums'],
+                textShadowColor: 'rgba(20,160,180,0.4)',
+                textShadowOffset: { width: 0, height: 0 },
+                textShadowRadius: 28,
+              }}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {bestLap}
+            </Text>
+            <LinearGradient
+              colors={['#14b8c8', '#0ea5e9']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={{ width: 100, height: 4, borderRadius: 2, marginTop: 20 }}
+            />
+          </View>
+
+          <View>
+            <Text
+              className="uppercase"
+              style={{ fontSize: 16, fontWeight: '500', letterSpacing: 3, color: 'rgba(255,255,255,0.35)' }}
+            >
+              {topSpeedLabel}
+            </Text>
+            <Text
+              className="text-white"
+              style={{ fontSize: 36, fontWeight: '500', fontVariant: ['tabular-nums'], marginTop: 4 }}
+            >
+              {topSpeed}
+            </Text>
+          </View>
+
+          <Text
+            className="mt-8 text-center"
+            style={{
+              fontSize: 30,
+              fontWeight: '600',
+              fontStyle: 'italic',
+              letterSpacing: 1,
+              color: 'rgba(255,255,255,0.35)',
+              textShadowColor: 'rgba(20,160,180,0.3)',
+              textShadowOffset: { width: 0, height: 0 },
+              textShadowRadius: 12,
+            }}
+          >
+            Trakio
+          </Text>
+        </View>
+      </LinearGradient>
+    );
+  }
+
   if (variant === 'photo') {
     return (
       <View style={{ width: 720, height: 1280, backgroundColor: '#000' }}>
