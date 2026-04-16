@@ -74,12 +74,15 @@ function FullLeaderboardRow({
 }) {
   const gap = entry.lapTimeMs - p1Ms;
   const gapStr = gap === 0 ? '—' : (formatDeltaMs(gap) ?? '—');
+  const isMeBelowPodium = entry.isCurrentUser && entry.rank > 3;
 
   const rankColor =
     entry.rank === 1 ? '#f59e0b'
     : entry.rank === 3 ? '#b45309'
-    : entry.isCurrentUser ? '#38bdf8'
+    : isMeBelowPodium ? '#38bdf8'
     : undefined;
+
+  const accentOrWhite = isMeBelowPodium ? '#38bdf8' : '#ffffff';
 
   return (
     <View
@@ -119,7 +122,7 @@ function FullLeaderboardRow({
             style={{
               fontSize: 15,
               fontWeight: '600',
-              color: entry.isCurrentUser ? '#38bdf8' : '#ffffff',
+              color: accentOrWhite,
             }}
             numberOfLines={1}
           >
@@ -144,7 +147,7 @@ function FullLeaderboardRow({
           style={{
             fontSize: 15,
             fontWeight: '700',
-            color: entry.isCurrentUser ? '#38bdf8' : '#ffffff',
+            color: accentOrWhite,
             fontVariant: ['tabular-nums'],
           }}
         >
@@ -284,12 +287,12 @@ export default function LeaderboardScreen() {
             </View>
           </View>
 
-          {/* Podium */}
-          {p1 && p2 && p3 ? (
+          {/* Podium — adapts to 1, 2, or 3+ entries */}
+          {p1 ? (
             <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end', marginTop: 20 }}>
-              <PodiumCard entry={p2} height={148} isP1={false} />
+              {p2 ? <PodiumCard entry={p2} height={148} isP1={false} /> : <View style={{ flex: 1 }} />}
               <PodiumCard entry={p1} height={188} isP1={true} />
-              <PodiumCard entry={p3} height={148} isP1={false} />
+              {p3 ? <PodiumCard entry={p3} height={148} isP1={false} /> : <View style={{ flex: 1 }} />}
             </View>
           ) : null}
         </LinearGradient>

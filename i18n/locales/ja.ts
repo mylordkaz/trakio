@@ -88,7 +88,9 @@ export default {
   },
   leaderboard: {
     title: 'グローバルランキング',
-    driversCount: '%{count}人のドライバー',
+    driversCount: {
+      other: '%{count}人のドライバー',
+    },
     allTime: '全期間',
     seeAll: 'すべて見る',
     you: 'あなた',
@@ -102,6 +104,9 @@ export default {
     goToProfile: 'プロフィールへ',
     noEntries: 'まだ共有されたタイムはありません。',
     unableToLoad: 'ランキングを読み込めませんでした。',
+    sharing: '共有中...',
+    shareFailedTitle: '共有に失敗しました',
+    shareFailedMessage: 'タイムを共有できませんでした。通信状況を確認してもう一度お試しください。',
   },
   circuits: {
     title: 'トラックデータベース',

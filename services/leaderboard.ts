@@ -1,5 +1,15 @@
 const LEADERBOARD_API_BASE_URL = 'https://trakio-d1.mylord.workers.dev';
 
+export const USERNAME_MAX_LENGTH = 24;
+export const CAR_MAX_LENGTH = 40;
+
+function sanitizeText(value: string, maxLength: number): string {
+  return value
+    .replace(/[\u0000-\u001F\u007F\u200B-\u200D\uFEFF]/g, '')
+    .trim()
+    .slice(0, maxLength);
+}
+
 type ApiLeaderboardEntry = {
   track_id: string;
   publisher_id: string;
@@ -86,12 +96,18 @@ export async function listLeaderboardEntries(
 export async function shareLeaderboardTime(
   payload: ShareLeaderboardPayload,
 ): Promise<ShareResponse> {
+  const cleanedPayload: ShareLeaderboardPayload = {
+    ...payload,
+    username: sanitizeText(payload.username, USERNAME_MAX_LENGTH),
+    car: payload.car === null ? null : sanitizeText(payload.car, CAR_MAX_LENGTH) || null,
+  };
+
   const response = await fetch(`${LEADERBOARD_API_BASE_URL}/leaderboard/share`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json; charset=utf-8',
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(cleanedPayload),
   });
 
   if (!response.ok) {

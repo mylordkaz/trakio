@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Alert, View, Text, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import Card from '@/components/Card';
@@ -11,27 +12,39 @@ type LeaderboardPreviewCardProps = {
   entries: LeaderboardEntry[];
   isLoading?: boolean;
   loadError?: string | null;
-  onShared: (lapTimeMs: number) => void;
+  onShared: (lapTimeMs: number) => Promise<void>;
   onSeeAll?: () => void;
 };
 
 function LeaderboardRow({ entry, p1Ms }: { entry: LeaderboardEntry; p1Ms: number }) {
   const gap = entry.lapTimeMs - p1Ms;
   const gapStr = gap === 0 ? '—' : (formatDeltaMs(gap) ?? '—');
+  const isMeOnPodium = entry.isCurrentUser && entry.rank <= 3;
+  const isMeBelowPodium = entry.isCurrentUser && entry.rank > 3;
 
   return (
     <View
-      className={`flex-row items-center px-3 py-2.5 rounded-2xl ${entry.isCurrentUser ? 'bg-sky-500/10' : ''}`}
+      className={`flex-row items-center px-3 py-2.5 rounded-2xl ${
+        isMeOnPodium
+          ? 'bg-sky-500/10 border border-sky-500/30'
+          : isMeBelowPodium
+          ? 'bg-sky-500/10'
+          : ''
+      }`}
     >
       <Text
-        className={`w-8 text-sm font-semibold ${entry.isCurrentUser ? 'text-sky-500' : 'text-zinc-500 dark:text-zinc-400'}`}
+        className={`w-8 text-sm font-semibold ${
+          isMeBelowPodium ? 'text-sky-500' : 'text-zinc-500 dark:text-zinc-400'
+        }`}
         style={{ fontVariant: ['tabular-nums'] }}
       >
-        {entry.isCurrentUser ? `P${entry.rank}` : rankLabel(entry.rank)}
+        {isMeBelowPodium ? `P${entry.rank}` : rankLabel(entry.rank)}
       </Text>
       <Text className="w-7 text-base">{flagEmoji(entry.countryCode)}</Text>
       <Text
-        className={`flex-1 text-sm font-medium ${entry.isCurrentUser ? 'text-sky-500' : 'text-zinc-900 dark:text-white'}`}
+        className={`flex-1 text-sm font-medium ${
+          isMeBelowPodium ? 'text-sky-500' : 'text-zinc-900 dark:text-white'
+        }`}
         numberOfLines={1}
       >
         {entry.isCurrentUser
@@ -39,7 +52,9 @@ function LeaderboardRow({ entry, p1Ms }: { entry: LeaderboardEntry; p1Ms: number
           : entry.name}
       </Text>
       <Text
-        className={`text-sm font-semibold mr-2 ${entry.isCurrentUser ? 'text-sky-500' : 'text-zinc-900 dark:text-white'}`}
+        className={`text-sm font-semibold mr-2 ${
+          isMeBelowPodium ? 'text-sky-500' : 'text-zinc-900 dark:text-white'
+        }`}
         style={{ fontVariant: ['tabular-nums'] }}
       >
         {formatLapTime(entry.lapTimeMs)}
@@ -64,18 +79,20 @@ export default function LeaderboardPreviewCard({
   onSeeAll,
 }: LeaderboardPreviewCardProps) {
   const router = useRouter();
+  const [isSharing, setIsSharing] = useState(false);
   const p1Ms = entries[0]?.lapTimeMs ?? 0;
   const top3 = entries.slice(0, 3);
   const userEntry = entries.find(e => e.isCurrentUser) ?? null;
   const userIsInTop3 = userEntry !== null && userEntry.rank <= 3;
 
-  const sharedLapTimeMs = userEntry?.lapTimeMs ?? null;
-  const hasShared = userEntry !== null;
-  const hasNewPb = hasShared && personalBestMs !== null && personalBestMs < sharedLapTimeMs!;
-  const isUpToDate = hasShared && !hasNewPb;
+  const hasNewPb =
+    userEntry !== null && personalBestMs !== null && personalBestMs < userEntry.lapTimeMs;
+  const isUpToDate = userEntry !== null && !hasNewPb;
   const showButton = personalBestMs !== null;
+  const buttonDisabled = isUpToDate || isSharing;
 
-  function handleShare() {
+  async function handleShare() {
+    if (isSharing) return;
     if (!isProfileComplete) {
       Alert.alert(
         i18n.t('leaderboard.completeProfileTitle'),
@@ -87,8 +104,18 @@ export default function LeaderboardPreviewCard({
       );
       return;
     }
-    if (personalBestMs !== null) {
-      onShared(personalBestMs);
+    if (personalBestMs === null) return;
+
+    try {
+      setIsSharing(true);
+      await onShared(personalBestMs);
+    } catch {
+      Alert.alert(
+        i18n.t('leaderboard.shareFailedTitle'),
+        i18n.t('leaderboard.shareFailedMessage'),
+      );
+    } finally {
+      setIsSharing(false);
     }
   }
 
@@ -147,15 +174,15 @@ export default function LeaderboardPreviewCard({
       {/* Share button */}
       {showButton ? (
         <Pressable
-          onPress={isUpToDate ? undefined : handleShare}
-          disabled={isUpToDate}
+          onPress={buttonDisabled ? undefined : handleShare}
+          disabled={buttonDisabled}
           className={`mt-3 rounded-2xl py-3.5 items-center border ${
             isUpToDate
               ? 'bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10'
               : hasNewPb
               ? 'bg-amber-500/10 border-amber-500/30'
               : 'bg-sky-500/10 border-sky-500/30'
-          }`}
+          } ${isSharing ? 'opacity-60' : ''}`}
         >
           <Text
             className={`text-sm font-semibold ${
@@ -166,7 +193,9 @@ export default function LeaderboardPreviewCard({
                 : 'text-sky-500'
             }`}
           >
-            {isUpToDate
+            {isSharing
+              ? i18n.t('leaderboard.sharing')
+              : isUpToDate
               ? `${i18n.t('leaderboard.timeIsLive')} ✓`
               : hasNewPb
               ? i18n.t('leaderboard.updateMyTime')

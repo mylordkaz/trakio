@@ -88,7 +88,10 @@ export default {
   },
   leaderboard: {
     title: 'Global Leaderboard',
-    driversCount: '%{count} drivers',
+    driversCount: {
+      one: '1 driver',
+      other: '%{count} drivers',
+    },
     allTime: 'All time',
     seeAll: 'See all',
     you: 'You',
@@ -102,6 +105,9 @@ export default {
     goToProfile: 'Go to Profile',
     noEntries: 'No shared times yet.',
     unableToLoad: 'Unable to load leaderboard.',
+    sharing: 'Sharing...',
+    shareFailedTitle: 'Share Failed',
+    shareFailedMessage: 'Unable to share your time. Please check your connection and try again.',
   },
   circuits: {
     title: 'Track Database',

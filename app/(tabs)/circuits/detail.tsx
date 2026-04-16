@@ -24,7 +24,6 @@ import {
   updateTrackNote,
   deleteTrackNote,
   getOrCreateDefaultUserProfile,
-  upsertSharedLeaderboardTime,
 } from "@/db";
 import LeaderboardPreviewCard from "@/components/LeaderboardPreviewCard";
 import {
@@ -532,16 +531,19 @@ export default function CircuitDetailScreen() {
                   await shareLeaderboardTime({
                     trackId: circuit.id,
                     publisherId,
-                    username: userProfile.username.trim(),
+                    username: userProfile.username,
                     countryCode: userProfile.countryCode,
                     car: userProfile.car ?? null,
                     lapTimeMs,
                     submittedAt: new Date().toISOString(),
                   });
-                  await upsertSharedLeaderboardTime(db, circuit.id, lapTimeMs);
-                  const entries = await listLeaderboardEntries(circuit.id, publisherId);
-                  setLeaderboardEntries(entries);
-                  setLeaderboardError(null);
+                  try {
+                    const entries = await listLeaderboardEntries(circuit.id, publisherId);
+                    setLeaderboardEntries(entries);
+                    setLeaderboardError(null);
+                  } catch {
+                    // Share succeeded; refetch is best-effort and will retry on next mount.
+                  }
                 }}
                 onSeeAll={() =>
                   router.push({
