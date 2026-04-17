@@ -201,7 +201,7 @@ export default {
     xTweetText: '🏎️ %{track} — Best Lap %{time}%{carLine}\n\n#Trakio #TrackDay',
     previewStory: 'Preview Story',
     shareToInstagram: 'Share to Instagram',
-    preparingShare: 'Preparing story...',
+    preparingShare: 'Preparing...',
     instagramUnavailable: 'Instagram Stories is unavailable on this device.',
     shareConfigurationMissing: 'Instagram Story sharing is not configured yet.',
     shareFailed: 'Unable to share this session to Instagram Story.',

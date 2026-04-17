@@ -54,7 +54,7 @@ export default function RootLayout() {
           }}
         >
           <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="index" />
+          <Stack.Screen name="index" options={{ animation: 'fade' }} />
           <Stack.Screen name="profile" />
           <Stack.Screen name="feedback" />
           <Stack.Screen name="terms" />

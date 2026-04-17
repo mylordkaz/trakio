@@ -200,7 +200,7 @@ export default {
     xTweetText: '🏎️ %{track} — ベストラップ %{time}%{carLine}\n\n#Trakio #走行会',
     previewStory: 'ストーリーのプレビュー',
     shareToInstagram: 'Instagram に共有',
-    preparingShare: 'ストーリーを準備中...',
+    preparingShare: '準備中...',
     instagramUnavailable: 'この端末では Instagram ストーリーズを利用できません。',
     shareConfigurationMissing: 'Instagram ストーリー共有はまだ設定されていません。',
     shareFailed: 'このセッションを Instagram ストーリーに共有できませんでした。',
