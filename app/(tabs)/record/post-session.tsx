@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
+import { Storage } from "expo-sqlite/kv-store";
+import * as StoreReview from "expo-store-review";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import i18n from "@/i18n";
@@ -22,6 +24,28 @@ import {
   getAverageLapDeltaLabel,
   getTrendBars,
 } from "@/utils/session-analytics";
+
+const REVIEW_REQUESTED_KEY = "review_requested";
+const REVIEW_SESSION_THRESHOLD = 3;
+
+async function maybeRequestReview(db: import("expo-sqlite").SQLiteDatabase) {
+  try {
+    if (Storage.getItemSync(REVIEW_REQUESTED_KEY)) return;
+
+    const row = await db.getFirstAsync<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM sessions WHERE status = 'completed'",
+    );
+    if ((row?.count ?? 0) < REVIEW_SESSION_THRESHOLD) return;
+
+    const available = await StoreReview.isAvailableAsync();
+    if (!available) return;
+
+    await StoreReview.requestReview();
+    Storage.setItemSync(REVIEW_REQUESTED_KEY, "1");
+  } catch {
+    // best-effort — never block post-session
+  }
+}
 
 export default function PostSessionScreen() {
   const router = useRouter();
@@ -72,6 +96,8 @@ export default function PostSessionScreen() {
 
         setSessionDetail(nextSession);
         setLoadError(null);
+
+        maybeRequestReview(db);
       } catch {
         if (!isMounted) {
           return;
