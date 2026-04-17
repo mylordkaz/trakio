@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
-import { View, Text, Image } from 'react-native';
+import { useCallback } from 'react';
+import { Text, Image } from 'react-native';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import Animated, {
   useSharedValue,
@@ -12,8 +13,6 @@ import Animated, {
 import { LinearGradient } from 'expo-linear-gradient';
 import i18n from '@/i18n';
 
-SplashScreen.preventAutoHideAsync();
-
 const LANDING_DURATION_MS = 2500;
 
 export default function LandingScreen() {
@@ -22,7 +21,7 @@ export default function LandingScreen() {
   const textOpacity = useSharedValue(0);
   const contentScale = useSharedValue(0.95);
 
-  useEffect(() => {
+  const onReady = useCallback(() => {
     SplashScreen.hideAsync();
 
     const ease = Easing.out(Easing.ease);
@@ -55,8 +54,10 @@ export default function LandingScreen() {
       locations={[0, 0.5, 1]}
       start={{ x: 0.15, y: 0 }}
       end={{ x: 0.85, y: 1 }}
+      onLayout={onReady}
       style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
     >
+      <StatusBar style="light" />
       <Animated.View style={[{ alignItems: 'center' }, containerStyle]}>
         <Animated.View style={logoStyle}>
           <Image

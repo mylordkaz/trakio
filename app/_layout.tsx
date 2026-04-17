@@ -2,6 +2,7 @@ import '../global.css';
 import { useEffect, useRef } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
 import { Storage } from 'expo-sqlite/kv-store';
 import { DatabaseProvider } from '@/db';
@@ -9,6 +10,8 @@ import { MenuProvider } from '@/contexts/MenuContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import i18n from '@/i18n';
 import { getOrCreatePublisherIdSync } from '@/services/publisher-id';
+
+SplashScreen.preventAutoHideAsync();
 
 // Apply persisted preferences synchronously before first render
 const storedAppearance = Storage.getItemSync('appearance_mode');
