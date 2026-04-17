@@ -1,5 +1,7 @@
 # Motorsport Lap Timer App – Product Proposal
 
+> **Status:** The core product described here is shipped and live. This document is kept as a historical reference for the original vision. See README.md for the current feature set.
+
 ## Overview
 A mobile application that records GPS telemetry during motorsport track sessions, automatically computes lap and sector times, and visualizes driving lines over a satellite map. The product is designed primarily for track-day drivers and amateur racers. The application must function reliably without internet connectivity, as many race tracks have limited network coverage.
 
@@ -56,11 +58,12 @@ Mobile Application (React Native)
 - Session Analysis UI
 
 ## Technology Stack
-- **Framework:** React Native with TypeScript
-- **Map:** Mapbox or react-native-maps, not decided yet.
-- **Database:** SQLite
-- **Location Services:** Native iOS and Android location APIs
-- **State Management:** Zustand or Redux Toolkit
+- **Framework:** React Native with TypeScript (Expo SDK 54)
+- **Map:** react-native-maps (Google Maps provider)
+- **Database:** expo-sqlite
+- **Location Services:** expo-location (BestForNavigation mode)
+- **Styling:** NativeWind (Tailwind CSS)
+- **i18n:** i18n-js + expo-localization
 
 ## Data Model
 
@@ -114,7 +117,7 @@ Mobile Application (React Native)
 ## Future Expansion
 - Lap comparison tools
 - Predictive lap timing
-- External GPS receiver support
+- ~~External GPS receiver support~~ — shipped
 - Video overlays
 - Cloud synchronization
-- Community track sharing
+- ~~Community track sharing~~ — partially shipped (per-track leaderboard)

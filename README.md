@@ -6,53 +6,86 @@ Designed to work fully offline — most race tracks have limited network coverag
 
 ## Features
 
-- **Predefined Track Database** — circuits with ordered timing lines stored locally
-- **GPS Telemetry Recording** — continuous capture of location, speed, timestamp, and accuracy at 1-5 Hz
-- **Automatic Lap Detection** — detects start/finish line crossings with debounce and minimum lap time safeguards
+### Core Recording
+- **Track Database** — predefined circuits with ordered timing lines stored locally
+- **GPS Telemetry Recording** — continuous capture of location, speed, timestamp, and accuracy at ~5 Hz
+- **Automatic Lap Detection** — start/finish line crossing detection with debounce and minimum lap time safeguards
 - **Sector Timing** — split times calculated as sector lines are crossed
 - **Live Session Display** — current lap timer, last lap, best lap, sector splits, and lap count in a large, glanceable UI
-- **Lap Path Map View** — display saved lap paths over satellite imagery with optional speed-based coloring
-- **Session History** — browse past sessions by track, date, best lap, and lap count
-- **Local Storage** — all data stored on-device via SQLite
+- **Pre-Session Setup** — checklist (GPS lock, battery, start/finish line), weather conditions, car selection
+
+### Session Review
+- **Session Library** — browse past sessions by track, date, best lap, and lap count
+- **Lap Path Map** — display saved GPS traces over Google Maps satellite imagery
+- **Session Analytics** — consistency score, theoretical best, lap delta trends, sector breakdowns
+- **Session Notes** — per-session driver notes
+- **Track Notes** — per-circuit driver notes
+
+### Sharing
+- **Instagram Stories** — four templates (dark, transparent, photo background, racing line)
+- **Social Post Sharing** — 1080x1080 card shared via OS share sheet (X, Threads, LINE, etc.)
+- **Save to Photos** — export share cards to photo library
+
+### Leaderboard
+- **Global Leaderboard** — per-track leaderboard hosted on Cloudflare Workers + D1
+- **Share Best Time** — publish your best lap with username, car, and country
+
+### Profile & Preferences
+- **Driver Profile** — username, car, nationality, avatar
+- **Localization** — English and Japanese (i18n-js)
+- **Dark/Light Mode** — system-aware appearance
+
+### Other
+- **Weather** — Open-Meteo integration for current conditions at selected track
+- **Feedback** — in-app email feedback form
+- **App Store Review Prompt** — native review dialog after 3rd completed session
+- **Legal** — in-app Terms of Use and Privacy Policy (EN/JP)
 
 ## Tech Stack
 
-| Layer              | Technology                          |
-| ------------------ | ----------------------------------- |
-| Framework          | React Native (Expo SDK 54)          |
-| Language           | TypeScript                          |
-| Routing            | Expo Router (file-based)            |
-| Database           | SQLite                              |
-| Maps               | TBD (Mapbox or react-native-maps)   |
-| State Management   | TBD (Zustand or Redux Toolkit)      |
-| Location Services  | Native iOS / Android location APIs  |
+| Layer             | Technology                                  |
+| ----------------- | ------------------------------------------- |
+| Framework         | React Native 0.81 (Expo SDK 54)             |
+| Language          | TypeScript                                  |
+| Routing           | Expo Router (file-based, typed routes)       |
+| Styling           | NativeWind (Tailwind CSS)                    |
+| Database          | expo-sqlite with versioned migrations        |
+| Maps              | react-native-maps (Google Maps provider)     |
+| Location          | expo-location (BestForNavigation mode)       |
+| Sharing           | react-native-share, react-native-view-shot   |
+| i18n              | i18n-js + expo-localization                   |
+| Backend           | Cloudflare Workers + D1 (leaderboard only)   |
 
 ## Data Model
 
 ```
-Track        -> has many Timing Lines and Sessions
+Track        -> has many Timing Lines, Sessions, and Track Notes
 Timing Line  -> start/finish, sector, speed trap, pit gate
-Session      -> has many Laps
+Session      -> has many Laps, GPS Points, and Session Notes
 Lap          -> has many GPS Points and Lap Sectors
-GPS Point    -> latitude, longitude, timestamp, speed, accuracy
+GPS Point    -> latitude, longitude, timestamp, speed, accuracy, elapsed_ms
+User         -> driver profile (username, car, nationality, avatar)
 ```
 
-Current SQLite schema:
+SQLite tables:
 
-- `tracks` — track metadata and optional center point
-- `timing_lines` — ordered gate segments with `type`, `seq`, and `a/b` endpoints
-- `sessions`
-- `laps`
-- `lap_sectors`
-- `gps_points`
+- `tracks` — name, country, location, layout, length, corners, direction, center point
+- `timing_lines` — ordered gate segments with type, seq, and a/b endpoints
+- `sessions` — track reference, status, best lap, top speed, car, weather condition/temperature
+- `laps` — lap number, time, out-lap/invalid flags, max speed
+- `lap_sectors` — sector index and split time per lap
+- `gps_points` — full telemetry samples with lap linkage and elapsed time
+- `track_notes` — per-track driver notes
+- `session_notes` — per-session driver notes
+- `users` — local driver profile
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js
-- Expo CLI (`npm install -g expo-cli`)
-- iOS Simulator, Android Emulator, or [Expo Go](https://expo.dev/go)
+- EAS CLI (`npm install -g eas-cli`)
+- iOS Simulator or physical device
 
 ### Install & Run
 
@@ -61,43 +94,30 @@ npm install
 npx expo start
 ```
 
-Then open the app on iOS or Android from the Expo dev tools.
-
 ## Project Structure
 
 ```
-app/            # Screens and routing (file-based via Expo Router)
-components/     # Reusable UI components
+app/            # Screens and routing (Expo Router, file-based)
+components/     # Reusable UI components (including share card templates)
 constants/      # App-wide constants
-db/             # SQLite schema, migrations, and provider
+contexts/       # React context providers (menu/preferences)
+db/             # SQLite schema, migrations, queries, and provider
 hooks/          # Custom React hooks
+i18n/           # Localization (en, ja)
+services/       # External service integrations (leaderboard, share, weather, etc.)
+telemetry/      # GPS recording pipeline (location, filters, detection, session runtime)
+utils/          # Formatting, analytics, racing line projection
 assets/         # Images, fonts, and static files
-docs/           # Product proposal, MVP spec, and design mockups
+docs/           # Product proposal, specs, and design references
 ```
-
-## MVP Scope
-
-The MVP delivers a working app that can:
-
-1. Select a predefined track
-2. Start and record a session with GPS telemetry
-3. Automatically detect laps via start/finish line crossing
-4. Calculate sector split times
-5. Save all session data locally
-6. Display saved lap paths on a satellite map
-
-### Excluded from MVP
-
-Delta timing comparisons, optimal lap calculation, external GPS receivers, video overlays, cloud sync, and social sharing.
 
 ## Future Roadmap
 
 - Lap comparison tools
 - Predictive lap timing
-- External GPS receiver support
 - Video overlays
 - Cloud synchronization
-- Community track sharing
+- Monetization (Pro tier, track map packages)
 
 ## License
 

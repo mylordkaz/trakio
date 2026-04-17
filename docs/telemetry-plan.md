@@ -1,8 +1,10 @@
 # Telemetry Plan
 
+> **Status:** The architecture described here is fully implemented. This document serves as a reference for the telemetry pipeline design.
+
 ## Scope
 
-The active MVP focus is:
+The core telemetry features are shipped:
 - track selection
 - live GPS capture
 - automatic lap detection
@@ -205,9 +207,9 @@ Recommended API direction:
 
 Expo SQLite is appropriate for this recorder layer.
 
-## Suggested Module Layout
+## Module Layout
 
-Planned files:
+All modules are implemented:
 - `telemetry/types.ts`
 - `telemetry/location.ts`
 - `telemetry/filters.ts`
@@ -215,22 +217,9 @@ Planned files:
 - `telemetry/session-runtime.ts`
 - `db/session-recorder.ts`
 
-## Implementation Order
-
-1. Add `expo-location`
-2. Create `telemetry/types.ts`
-3. Implement `telemetry/location.ts`
-4. Implement `telemetry/filters.ts`
-5. Implement `db/session-recorder.ts`
-6. Implement `telemetry/detection.ts`
-7. Implement `telemetry/session-runtime.ts`
-8. Wire the recording screen to runtime
-9. Replace mock recording and post-session flows with real session data
-
-## Excluded
+## Not Yet Implemented
 
 - background tracking
-- external GPS receivers
 - full track geometry
 - predictive timing
 - cloud sync

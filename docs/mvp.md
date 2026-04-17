@@ -1,5 +1,7 @@
 # Motorsport Lap Timer App – MVP Specification
 
+> **Status:** All MVP features are shipped and live on the App Store. This document is kept as a historical reference for the original scope.
+
 ## MVP Goal
 
 Deliver a working mobile application capable of recording track sessions, detecting laps automatically, and displaying lap paths on a satellite map.
@@ -94,19 +96,21 @@ A simple list of past sessions including:
 Selecting a session opens detailed results.
 
 ## Excluded from MVP
-The following features are intentionally excluded to reduce development complexity:
+
+The following features were excluded from the initial MVP. Some have since been shipped in later versions.
 
 - track edges
 - centerline telemetry alignment
 - delta timing comparisons
 - optimal lap calculation
-- external GPS receivers
+- ~~external GPS receivers~~ — shipped (BLE external GPS)
 - video overlays
 - cloud synchronization
-- social sharing
+- ~~social sharing~~ — shipped (Instagram Stories + social post sharing)
 
 ## MVP Success Criteria
-The MVP is successful if the application can:
+
+All criteria below have been met. The app is live on the App Store.
 
 1. Select a track
 2. Start a session
@@ -115,5 +119,3 @@ The MVP is successful if the application can:
 5. Calculate sector splits
 6. Save session data
 7. Display lap paths on a satellite map
-
-If these functions work reliably, the application provides real value for track-day drivers and establishes a solid foundation for future features.
