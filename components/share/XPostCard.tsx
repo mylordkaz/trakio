@@ -49,21 +49,22 @@ export default function XPostCard({
       <View style={{ flex: 1, paddingHorizontal: 72, paddingTop: 72, paddingBottom: 56 }}>
         {/* Session header */}
         <View>
-          <Text style={{ fontSize: 24, fontWeight: '600', letterSpacing: 4, color: 'rgba(20,180,200,0.9)' }}>
+          <Text style={{ fontSize: 28, fontWeight: '600', letterSpacing: 4, color: 'rgba(20,180,200,0.9)' }}>
             TRACK DAY · {sessionName.toUpperCase()}
           </Text>
           <Text
             className="mt-3 text-white"
-            style={{ fontSize: 56, lineHeight: 62, fontWeight: '700' }}
+            style={{ fontSize: 64, lineHeight: 70, fontWeight: '700' }}
             numberOfLines={1}
+            adjustsFontSizeToFit
           >
             {circuitName}
           </Text>
-          <Text className="mt-2" style={{ fontSize: 26, color: 'rgba(255,255,255,0.4)' }}>
+          <Text className="mt-2" style={{ fontSize: 30, color: 'rgba(255,255,255,0.4)' }}>
             {location}
           </Text>
           {car ? (
-            <Text className="mt-3" style={{ fontSize: 32, fontWeight: '500', color: 'rgba(255,255,255,0.4)' }}>
+            <Text className="mt-3" style={{ fontSize: 36, fontWeight: '500', color: 'rgba(255,255,255,0.4)' }}>
               {car}
             </Text>
           ) : null}
@@ -73,15 +74,15 @@ export default function XPostCard({
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <Text
             className="uppercase"
-            style={{ fontSize: 22, fontWeight: '500', letterSpacing: 4, color: 'rgba(255,255,255,0.35)' }}
+            style={{ fontSize: 26, fontWeight: '500', letterSpacing: 4, color: 'rgba(255,255,255,0.35)' }}
           >
             {bestLapLabel}
           </Text>
           <Text
             className="mt-2"
             style={{
-              fontSize: 108,
-              lineHeight: 116,
+              fontSize: 120,
+              lineHeight: 128,
               fontWeight: '600',
               fontVariant: ['tabular-nums'],
               color: '#ffffff',
@@ -107,13 +108,13 @@ export default function XPostCard({
           <View className="items-center">
             <Text
               className="uppercase"
-              style={{ fontSize: 22, fontWeight: '500', letterSpacing: 3, color: 'rgba(255,255,255,0.35)' }}
+              style={{ fontSize: 26, fontWeight: '500', letterSpacing: 3, color: 'rgba(255,255,255,0.35)' }}
             >
               {totalLapsLabel}
             </Text>
             <Text
               className="mt-2 text-white"
-              style={{ fontSize: 48, fontWeight: '600', fontVariant: ['tabular-nums'] }}
+              style={{ fontSize: 56, fontWeight: '600', fontVariant: ['tabular-nums'] }}
             >
               {totalLaps}
             </Text>
@@ -121,13 +122,13 @@ export default function XPostCard({
           <View className="items-center">
             <Text
               className="uppercase"
-              style={{ fontSize: 22, fontWeight: '500', letterSpacing: 3, color: 'rgba(255,255,255,0.35)' }}
+              style={{ fontSize: 26, fontWeight: '500', letterSpacing: 3, color: 'rgba(255,255,255,0.35)' }}
             >
               {topSpeedLabel}
             </Text>
             <Text
               className="mt-2 text-white"
-              style={{ fontSize: 48, fontWeight: '600', fontVariant: ['tabular-nums'] }}
+              style={{ fontSize: 56, fontWeight: '600', fontVariant: ['tabular-nums'] }}
             >
               {topSpeed}
             </Text>
@@ -138,7 +139,7 @@ export default function XPostCard({
         <Text
           className="text-center"
           style={{
-            fontSize: 34,
+            fontSize: 38,
             fontWeight: '700',
             fontStyle: 'italic',
             letterSpacing: 1,

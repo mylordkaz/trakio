@@ -137,7 +137,7 @@ export function useShareSession(sessionDetail: SessionDetail | null) {
       const tweetText = i18n.t('sessions.xTweetText', {
         track,
         time: bestLapMs !== null ? formatLapTime(bestLapMs) : '--:--.---',
-        car: car ?? '',
+        carLine: car ? ` | ${car}` : '',
       });
 
       const result = await shareImageWithText(uri, tweetText.trim());
