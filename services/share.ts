@@ -52,22 +52,47 @@ export async function shareSessionToInstagramStory(
   }
 
   try {
-    const baseParams = {
-      social: Social.InstagramStories,
-      appId,
-      ...(backdropTopColor ? { backgroundTopColor: backdropTopColor } : {}),
-      ...(backdropBottomColor ? { backgroundBottomColor: backdropBottomColor } : {}),
-    };
-
     if (mode === 'sticker') {
-      await Share.shareSingle({ ...baseParams, stickerImage: imageUri });
+      await Share.shareSingle({
+        social: Social.InstagramStories,
+        appId,
+        stickerImage: imageUri,
+        ...(backdropTopColor ? { backgroundTopColor: backdropTopColor } : {}),
+        ...(backdropBottomColor ? { backgroundBottomColor: backdropBottomColor } : {}),
+      });
     } else {
-      await Share.shareSingle({ ...baseParams, backgroundImage: imageUri });
+      await Share.shareSingle({
+        social: Social.InstagramStories,
+        appId,
+        backgroundImage: imageUri,
+        ...(backdropTopColor ? { backgroundTopColor: backdropTopColor } : {}),
+        ...(backdropBottomColor ? { backgroundBottomColor: backdropBottomColor } : {}),
+      });
     }
 
     return { ok: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, reason: 'share_failed', message };
+  }
+}
+
+export async function shareImageWithText(
+  imageUri: string,
+  text: string,
+): Promise<ShareResult> {
+  try {
+    await Share.open({
+      url: imageUri,
+      message: text,
+      type: 'image/png',
+    });
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('User did not share')) {
+      return { ok: true };
+    }
     return { ok: false, reason: 'share_failed', message };
   }
 }

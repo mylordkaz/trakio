@@ -7,9 +7,10 @@ type ShareSheetModalProps = {
   visible: boolean;
   onClose: () => void;
   onSelectInstagramStory: () => void;
+  onSelectXPost: () => void;
 };
 
-export default function ShareSheetModal({ visible, onClose, onSelectInstagramStory }: ShareSheetModalProps) {
+export default function ShareSheetModal({ visible, onClose, onSelectInstagramStory, onSelectXPost }: ShareSheetModalProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -45,6 +46,21 @@ export default function ShareSheetModal({ visible, onClose, onSelectInstagramSto
             <View className="flex-1">
               <Text className="text-sm font-semibold text-zinc-900 dark:text-white">
                 {i18n.t('sessions.instagramStory')}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={isDark ? '#52525b' : '#a1a1aa'} />
+          </Pressable>
+
+          <Pressable
+            onPress={onSelectXPost}
+            className="mt-3 flex-row items-center gap-4 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3.5"
+          >
+            <View className="h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+              <Ionicons name="logo-x" size={22} color={isDark ? '#ffffff' : '#18181b'} />
+            </View>
+            <View className="flex-1">
+              <Text className="text-sm font-semibold text-zinc-900 dark:text-white">
+                {i18n.t('sessions.xPost')}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={isDark ? '#52525b' : '#a1a1aa'} />

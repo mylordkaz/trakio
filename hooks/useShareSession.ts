@@ -5,15 +5,18 @@ import * as MediaLibrary from 'expo-media-library';
 import * as ImagePicker from 'expo-image-picker';
 import i18n from '@/i18n';
 import type { SessionDetail } from '@/db';
-import { shareSessionToInstagramStory } from '@/services/share';
+import { shareSessionToInstagramStory, shareImageWithText } from '@/services/share';
+import { formatLapTime } from '@/utils/format';
 
 type StoryTemplate = 'dark' | 'transparent' | 'photo' | 'line';
 
 export function useShareSession(sessionDetail: SessionDetail | null) {
   const storyCardRef = useRef<View>(null);
+  const xPostCardRef = useRef<View>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [isShareSheetVisible, setIsShareSheetVisible] = useState(false);
   const [isStoryPreviewVisible, setIsStoryPreviewVisible] = useState(false);
+  const [isXPostPreviewVisible, setIsXPostPreviewVisible] = useState(false);
   const [storyTemplate, setStoryTemplate] = useState<StoryTemplate>('dark');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
 
@@ -41,6 +44,15 @@ export function useShareSession(sessionDetail: SessionDetail | null) {
   function openInstagramStoryPreview() {
     setIsShareSheetVisible(false);
     setIsStoryPreviewVisible(true);
+  }
+
+  function openXPostPreview() {
+    setIsShareSheetVisible(false);
+    setIsXPostPreviewVisible(true);
+  }
+
+  function closeXPostPreview() {
+    setIsXPostPreviewVisible(false);
   }
 
   async function handlePickPhoto() {
@@ -106,6 +118,73 @@ export function useShareSession(sessionDetail: SessionDetail | null) {
     }
   }
 
+  async function handleShareToX() {
+    if (!sessionDetail || !xPostCardRef.current || isSharing) {
+      return;
+    }
+
+    try {
+      setIsSharing(true);
+      const uri = await captureRef(xPostCardRef, {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+      });
+
+      const track = sessionDetail.track.name;
+      const bestLapMs = sessionDetail.session.bestLapMs;
+      const car = sessionDetail.session.car;
+      const tweetText = i18n.t('sessions.xTweetText', {
+        track,
+        time: bestLapMs !== null ? formatLapTime(bestLapMs) : '--:--.---',
+        car: car ?? '',
+      });
+
+      const result = await shareImageWithText(uri, tweetText.trim());
+
+      if (result.ok) {
+        closeXPostPreview();
+        return;
+      }
+
+      Alert.alert(i18n.t('sessions.share'), i18n.t('sessions.shareFailed'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      Alert.alert(i18n.t('sessions.share'), `${i18n.t('sessions.shareFailed')}\n\n${message}`);
+    } finally {
+      setIsSharing(false);
+    }
+  }
+
+  async function handleSaveXPostToGallery() {
+    if (!sessionDetail || !xPostCardRef.current || isSharing) {
+      return;
+    }
+
+    try {
+      setIsSharing(true);
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(i18n.t('sessions.share'), i18n.t('sessions.galleryPermissionDenied'));
+        return;
+      }
+
+      const uri = await captureRef(xPostCardRef, {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+      });
+
+      await MediaLibrary.saveToLibraryAsync(uri);
+      Alert.alert(i18n.t('sessions.share'), i18n.t('sessions.savedToGallery'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      Alert.alert(i18n.t('sessions.share'), `${i18n.t('sessions.saveToGalleryFailed')}\n\n${message}`);
+    } finally {
+      setIsSharing(false);
+    }
+  }
+
   async function handleSaveToGallery() {
     if (!sessionDetail || !storyCardRef.current || isSharing) {
       return;
@@ -142,18 +221,24 @@ export function useShareSession(sessionDetail: SessionDetail | null) {
 
   return {
     storyCardRef,
+    xPostCardRef,
     isSharing,
     isShareSheetVisible,
     setIsShareSheetVisible,
     isStoryPreviewVisible,
+    isXPostPreviewVisible,
     storyTemplate,
     photoUri,
     onTemplateChange,
     openShareSheet,
     closeStoryPreview,
+    closeXPostPreview,
     openInstagramStoryPreview,
+    openXPostPreview,
     handlePickPhoto,
     handleShareSession,
+    handleShareToX,
     handleSaveToGallery,
+    handleSaveXPostToGallery,
   };
 }

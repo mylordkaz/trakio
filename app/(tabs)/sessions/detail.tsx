@@ -13,8 +13,10 @@ import EditableSessionTitle from '@/components/EditableSessionTitle';
 import LapBreakdown from '@/components/LapBreakdown';
 import ProgressBar from '@/components/ProgressBar';
 import SessionStoryCard from '@/components/share/SessionStoryCard';
+import XPostCard from '@/components/share/XPostCard';
 import ShareSheetModal from '@/components/share/ShareSheetModal';
 import StoryPreviewModal from '@/components/share/StoryPreviewModal';
+import XPostPreviewModal from '@/components/share/XPostPreviewModal';
 import type { SessionDetail, SessionNoteRow } from '@/db';
 import {
   addSessionNote,
@@ -744,12 +746,35 @@ export default function SessionDetailScreen() {
             />
           </View>
         ) : null}
+
+        {sessionDetail ? (
+          <View
+            ref={share.xPostCardRef}
+            collapsable={false}
+            pointerEvents="none"
+            style={{ position: 'absolute', left: -10000, top: 0 }}
+          >
+            <XPostCard
+              sessionName={sessionDetail.session.name ?? i18n.t('sessions.recordedSession')}
+              circuitName={sessionDetail.track.name}
+              location={[sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', ')}
+              car={sessionDetail.session.car}
+              bestLap={formatLapTime(bestLapMs)}
+              totalLaps={`${sessionDetail.session.totalLaps}`}
+              topSpeed={formatSpeed(topSpeedKph)}
+              bestLapLabel={i18n.t('sessions.storyBestLap')}
+              totalLapsLabel={i18n.t('sessions.storyTotalLaps')}
+              topSpeedLabel={i18n.t('sessions.storyTopSpeed')}
+            />
+          </View>
+        ) : null}
       </ScrollView>
 
       <ShareSheetModal
         visible={share.isShareSheetVisible}
         onClose={() => share.setIsShareSheetVisible(false)}
         onSelectInstagramStory={share.openInstagramStoryPreview}
+        onSelectXPost={share.openXPostPreview}
       />
 
       <StoryPreviewModal
@@ -772,6 +797,23 @@ export default function SessionDetailScreen() {
         onSaveToGallery={share.handleSaveToGallery}
         onPickPhoto={share.handlePickPhoto}
         onTemplateChange={share.onTemplateChange}
+      />
+
+      <XPostPreviewModal
+        visible={share.isXPostPreviewVisible}
+        isSharing={share.isSharing}
+        cardData={sessionDetail ? {
+          sessionName: sessionDetail.session.name ?? i18n.t('sessions.recordedSession'),
+          circuitName: sessionDetail.track.name,
+          location: [sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', '),
+          car: sessionDetail.session.car,
+          bestLap: formatLapTime(bestLapMs),
+          totalLaps: `${sessionDetail.session.totalLaps}`,
+          topSpeed: formatSpeed(topSpeedKph),
+        } : null}
+        onClose={share.closeXPostPreview}
+        onShare={share.handleShareToX}
+        onSaveToGallery={share.handleSaveXPostToGallery}
       />
     </View>
     </KeyboardAvoidingView>
