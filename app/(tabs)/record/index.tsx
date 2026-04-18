@@ -608,7 +608,7 @@ export default function PreSessionScreen() {
                 <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.selectTrack')}</Text>
                 <Ionicons name="chevron-forward" size={16} color="#71717a" />
               </Pressable>
-            ) : !showCircuitPicker ? (
+            ) : !showCircuitPicker && selectedCircuit ? (
               <Pressable onPress={() => setShowCircuitPicker(true)}>
                 <View className="flex-row items-center justify-between">
                   <View className="flex-1">

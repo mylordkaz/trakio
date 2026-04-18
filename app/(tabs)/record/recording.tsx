@@ -6,6 +6,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useKeepAwake } from 'expo-keep-awake';
+import * as Haptics from 'expo-haptics';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import i18n from '@/i18n';
 import Card from '@/components/Card';
@@ -275,7 +276,16 @@ export default function RecordingScreen() {
           setLoadError('Location subscription error.');
         },
         onActiveSourceChange: () => {},
-        onExternalDeviceStateChange: () => {},
+        onExternalDeviceStateChange: (state) => {
+          if (!isMounted || !selectedDeviceRef.current) return;
+          if (state === 'connected') {
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } else if (state === 'disconnected') {
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          } else if (state === 'reconnecting') {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }
+        },
         },
         selectedDeviceRef.current ?? undefined
       );

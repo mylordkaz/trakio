@@ -12,39 +12,42 @@ function getManager(): BleManager {
   return manager;
 }
 
-export async function requestBlePermissions(): Promise<boolean> {
-  if (Platform.OS === 'ios') {
-    const bleManager = getManager();
-    const state = await new Promise<State>((resolve) => {
-      const sub = bleManager.onStateChange((s) => {
-        if (s !== State.Unknown) {
-          sub.remove();
-          resolve(s);
-        }
-      }, true);
-    });
-    return state === State.PoweredOn;
-  }
+async function waitForBleState(): Promise<State> {
+  const bleManager = getManager();
+  return new Promise<State>((resolve) => {
+    const sub = bleManager.onStateChange((s) => {
+      if (s !== State.Unknown) {
+        sub.remove();
+        resolve(s);
+      }
+    }, true);
+  });
+}
 
+export async function isBleAvailable(): Promise<boolean> {
+  const state = await waitForBleState();
+  return state === State.PoweredOn;
+}
+
+export async function requestBlePermissions(): Promise<boolean> {
   if (Platform.OS === 'android' && Platform.Version >= 31) {
     const results = await PermissionsAndroid.requestMultiple([
       PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
       PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
       PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
     ]);
-    return Object.values(results).every(
+    const granted = Object.values(results).every(
       (r) => r === PermissionsAndroid.RESULTS.GRANTED
     );
-  }
-
-  if (Platform.OS === 'android') {
+    if (!granted) return false;
+  } else if (Platform.OS === 'android') {
     const result = await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
     );
-    return result === PermissionsAndroid.RESULTS.GRANTED;
+    if (result !== PermissionsAndroid.RESULTS.GRANTED) return false;
   }
 
-  return false;
+  return isBleAvailable();
 }
 
 export function scanForDevices(
@@ -105,6 +108,11 @@ export function scanForDevices(
 }
 
 export async function connectToDevice(deviceId: string): Promise<Device> {
+  const available = await isBleAvailable();
+  if (!available) {
+    throw new Error('Bluetooth is not available');
+  }
+
   const bleManager = getManager();
   const device = await bleManager.connectToDevice(deviceId, {
     requestMTU: 247,

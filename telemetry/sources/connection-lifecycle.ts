@@ -22,7 +22,6 @@ export type ConnectionLifecycleCallbacks = {
 
 export type ConnectionLifecycleConfig = {
   retryAttempts?: number;
-  retryWindowMs?: number;
   reconnectDelayMs?: number;
   onResetContinuity?: () => void;
 };
