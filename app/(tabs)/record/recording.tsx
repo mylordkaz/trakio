@@ -16,6 +16,7 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { requestForegroundLocationPermission } from '@/telemetry/location';
 import { createConnectionLifecycle } from '@/telemetry/sources/connection-lifecycle';
+import { useExternalGps } from '@/contexts/ExternalGpsContext';
 import { createSessionRuntime } from '@/telemetry/session-runtime';
 import type { TrackDetail } from '@/db';
 import type { TelemetrySample } from '@/telemetry/types';
@@ -87,6 +88,9 @@ export default function RecordingScreen() {
   const isDark = colorScheme === 'dark';
   const params = useLocalSearchParams<{ trackId?: string; sessionName?: string; condition?: string; temperatureC?: string }>();
   const gradientColors = useHeaderGradient('red');
+  const { selectedDevice } = useExternalGps();
+  const selectedDeviceRef = useRef(selectedDevice);
+  selectedDeviceRef.current = selectedDevice;
   const [track, setTrack] = useState<TrackDetail | null>(null);
   const [isLoadingTrack, setIsLoadingTrack] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -238,7 +242,8 @@ export default function RecordingScreen() {
       });
       lifecycleRef.current = lifecycle;
 
-      await lifecycle.start({
+      await lifecycle.start(
+        {
         resolveElapsedMs: (recordedAt) =>
           Math.max(0, recordedAt - (startedSnapshot.sessionStartedAtMs ?? recordedAt)),
         onSample: (sample) => {
@@ -271,7 +276,9 @@ export default function RecordingScreen() {
         },
         onActiveSourceChange: () => {},
         onExternalDeviceStateChange: () => {},
-      });
+        },
+        selectedDeviceRef.current ?? undefined
+      );
     }
 
     void startRecordingSession();
