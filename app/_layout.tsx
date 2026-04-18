@@ -7,6 +7,7 @@ import * as SystemUI from 'expo-system-ui';
 import { Storage } from 'expo-sqlite/kv-store';
 import { DatabaseProvider } from '@/db';
 import { MenuProvider } from '@/contexts/MenuContext';
+import { ExternalGpsProvider } from '@/contexts/ExternalGpsContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import i18n from '@/i18n';
 import { getOrCreatePublisherIdSync } from '@/services/publisher-id';
@@ -48,22 +49,24 @@ export default function RootLayout() {
 
   return (
     <DatabaseProvider>
-      <MenuProvider>
-        <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: screenBackground },
-          }}
-        >
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="index" options={{ animation: 'fade' }} />
-          <Stack.Screen name="profile" />
-          <Stack.Screen name="feedback" />
-          <Stack.Screen name="terms" />
-          <Stack.Screen name="privacy" />
-        </Stack>
-      </MenuProvider>
+      <ExternalGpsProvider>
+        <MenuProvider>
+          <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: screenBackground },
+            }}
+          >
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="index" options={{ animation: 'fade' }} />
+            <Stack.Screen name="profile" />
+            <Stack.Screen name="feedback" />
+            <Stack.Screen name="terms" />
+            <Stack.Screen name="privacy" />
+          </Stack>
+        </MenuProvider>
+      </ExternalGpsProvider>
     </DatabaseProvider>
   );
 }
