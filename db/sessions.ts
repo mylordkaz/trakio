@@ -77,6 +77,29 @@ type DbGpsPointRow = {
   altitude_m: number | null;
   heading_deg: number | null;
   is_timing_crossing: 0 | 1;
+  source: string | null;
+  i_tow: number | null;
+  time_accuracy_ns: number | null;
+  nanosecond: number | null;
+  g_force_x: number | null;
+  g_force_y: number | null;
+  g_force_z: number | null;
+  rotation_rate_x: number | null;
+  rotation_rate_y: number | null;
+  rotation_rate_z: number | null;
+  vertical_accuracy_m: number | null;
+  speed_accuracy_mps: number | null;
+  heading_accuracy_deg: number | null;
+  pdop: number | null;
+  satellite_count: number | null;
+  fix_type: number | null;
+  fix_flags: number | null;
+  validity_flags: number | null;
+  date_time_flags: number | null;
+  lat_lon_flags: number | null;
+  battery_level: number | null;
+  is_charging: 0 | 1 | null;
+  input_voltage_v: number | null;
   created_at: ISODateString;
 };
 
@@ -211,6 +234,29 @@ function mapGpsPointRow(row: DbGpsPointRow): GpsPointRow {
     altitudeM: row.altitude_m,
     headingDeg: row.heading_deg,
     isTimingCrossing: row.is_timing_crossing,
+    source: row.source,
+    iTow: row.i_tow,
+    timeAccuracyNs: row.time_accuracy_ns,
+    nanosecond: row.nanosecond,
+    gForceX: row.g_force_x,
+    gForceY: row.g_force_y,
+    gForceZ: row.g_force_z,
+    rotationRateX: row.rotation_rate_x,
+    rotationRateY: row.rotation_rate_y,
+    rotationRateZ: row.rotation_rate_z,
+    verticalAccuracyM: row.vertical_accuracy_m,
+    speedAccuracyMps: row.speed_accuracy_mps,
+    headingAccuracyDeg: row.heading_accuracy_deg,
+    pdop: row.pdop,
+    satelliteCount: row.satellite_count,
+    fixType: row.fix_type,
+    fixFlags: row.fix_flags,
+    validityFlags: row.validity_flags,
+    dateTimeFlags: row.date_time_flags,
+    latLonFlags: row.lat_lon_flags,
+    batteryLevel: row.battery_level,
+    isCharging: row.is_charging,
+    inputVoltageV: row.input_voltage_v,
     createdAt: row.created_at,
   };
 }
@@ -442,40 +488,87 @@ export async function syncSessionTestSeeds(db: SQLiteDatabase) {
       for (const point of gpsPoints) {
         await txn.runAsync(
           `INSERT INTO gps_points (
-            id,
-            session_id,
-            lap_id,
-            recorded_at,
-            latitude,
-            longitude,
-            speed_mps,
-            accuracy_m,
-            altitude_m,
-            heading_deg,
-            is_timing_crossing
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            id, session_id, lap_id, recorded_at, elapsed_ms,
+            latitude, longitude, speed_mps, accuracy_m, altitude_m, heading_deg,
+            is_timing_crossing, source,
+            i_tow, time_accuracy_ns, nanosecond,
+            g_force_x, g_force_y, g_force_z,
+            rotation_rate_x, rotation_rate_y, rotation_rate_z,
+            vertical_accuracy_m, speed_accuracy_mps, heading_accuracy_deg,
+            pdop, satellite_count, fix_type, fix_flags,
+            validity_flags, date_time_flags, lat_lon_flags,
+            battery_level, is_charging, input_voltage_v
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             session_id = excluded.session_id,
             lap_id = excluded.lap_id,
             recorded_at = excluded.recorded_at,
+            elapsed_ms = excluded.elapsed_ms,
             latitude = excluded.latitude,
             longitude = excluded.longitude,
             speed_mps = excluded.speed_mps,
             accuracy_m = excluded.accuracy_m,
             altitude_m = excluded.altitude_m,
             heading_deg = excluded.heading_deg,
-            is_timing_crossing = excluded.is_timing_crossing;`,
+            is_timing_crossing = excluded.is_timing_crossing,
+            source = excluded.source,
+            i_tow = excluded.i_tow,
+            time_accuracy_ns = excluded.time_accuracy_ns,
+            nanosecond = excluded.nanosecond,
+            g_force_x = excluded.g_force_x,
+            g_force_y = excluded.g_force_y,
+            g_force_z = excluded.g_force_z,
+            rotation_rate_x = excluded.rotation_rate_x,
+            rotation_rate_y = excluded.rotation_rate_y,
+            rotation_rate_z = excluded.rotation_rate_z,
+            vertical_accuracy_m = excluded.vertical_accuracy_m,
+            speed_accuracy_mps = excluded.speed_accuracy_mps,
+            heading_accuracy_deg = excluded.heading_accuracy_deg,
+            pdop = excluded.pdop,
+            satellite_count = excluded.satellite_count,
+            fix_type = excluded.fix_type,
+            fix_flags = excluded.fix_flags,
+            validity_flags = excluded.validity_flags,
+            date_time_flags = excluded.date_time_flags,
+            lat_lon_flags = excluded.lat_lon_flags,
+            battery_level = excluded.battery_level,
+            is_charging = excluded.is_charging,
+            input_voltage_v = excluded.input_voltage_v;`,
           point.id,
           session.id,
           point.lapId,
           point.recordedAt,
+          point.elapsedMs ?? null,
           point.latitude,
           point.longitude,
           point.speedMps ?? null,
           point.accuracyM ?? null,
           point.altitudeM ?? null,
           point.headingDeg ?? null,
-          point.isTimingCrossing ?? 0
+          point.isTimingCrossing ?? 0,
+          point.source ?? null,
+          point.iTow ?? null,
+          point.timeAccuracyNs ?? null,
+          point.nanosecond ?? null,
+          point.gForceX ?? null,
+          point.gForceY ?? null,
+          point.gForceZ ?? null,
+          point.rotationRateX ?? null,
+          point.rotationRateY ?? null,
+          point.rotationRateZ ?? null,
+          point.verticalAccuracyM ?? null,
+          point.speedAccuracyMps ?? null,
+          point.headingAccuracyDeg ?? null,
+          point.pdop ?? null,
+          point.satelliteCount ?? null,
+          point.fixType ?? null,
+          point.fixFlags ?? null,
+          point.validityFlags ?? null,
+          point.dateTimeFlags ?? null,
+          point.latLonFlags ?? null,
+          point.batteryLevel ?? null,
+          point.isCharging ?? null,
+          point.inputVoltageV ?? null
         );
       }
 

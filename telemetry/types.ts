@@ -1,4 +1,4 @@
-export type TelemetrySampleSource = 'gps';
+export type TelemetrySampleSource = 'gps' | 'racebox' | 'nmea-ble';
 
 export type TelemetrySample = {
   recordedAt: number;
@@ -10,6 +10,31 @@ export type TelemetrySample = {
   headingDeg: number | null;
   altitudeM: number | null;
   source: TelemetrySampleSource;
+};
+
+export type ExtendedTelemetrySample = TelemetrySample & {
+  iTOW?: number;
+  timeAccuracyNs?: number;
+  nanosecond?: number;
+  gForceX?: number;
+  gForceY?: number;
+  gForceZ?: number;
+  rotationRateX?: number;
+  rotationRateY?: number;
+  rotationRateZ?: number;
+  verticalAccuracyM?: number;
+  speedAccuracyMps?: number;
+  headingAccuracyDeg?: number;
+  pdop?: number;
+  satelliteCount?: number;
+  fixType?: number;
+  fixFlags?: number;
+  validityFlags?: number;
+  dateTimeFlags?: number;
+  latLonFlags?: number;
+  batteryLevel?: number;
+  isCharging?: boolean;
+  inputVoltageV?: number;
 };
 
 export type LocationPermissionState = 'undetermined' | 'granted' | 'denied';

@@ -3,7 +3,6 @@ import { Animated, View, Text, ScrollView, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { useSQLiteContext } from 'expo-sqlite';
-import type { LocationSubscription } from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useKeepAwake } from 'expo-keep-awake';
@@ -15,11 +14,8 @@ import ProgressBar from '@/components/ProgressBar';
 import { createSessionRecorder, getOrCreateDefaultUserProfile, getTrackById } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
-import {
-  requestForegroundLocationPermission,
-  startLocationSubscription,
-  stopLocationSubscription,
-} from '@/telemetry/location';
+import { requestForegroundLocationPermission } from '@/telemetry/location';
+import { createConnectionLifecycle } from '@/telemetry/sources/connection-lifecycle';
 import { createSessionRuntime } from '@/telemetry/session-runtime';
 import type { TrackDetail } from '@/db';
 import type { TelemetrySample } from '@/telemetry/types';
@@ -98,7 +94,7 @@ export default function RecordingScreen() {
   const [brakePercent, setBrakePercent] = useState(0);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ReturnType<ReturnType<typeof createSessionRuntime>['getSnapshot']> | null>(null);
   const runtimeRef = useRef<ReturnType<typeof createSessionRuntime> | null>(null);
-  const locationSubscriptionRef = useRef<LocationSubscription | null>(null);
+  const lifecycleRef = useRef<ReturnType<typeof createConnectionLifecycle> | null>(null);
   const hasStoppedRef = useRef(false);
   const pulseOpacity = useRef(new Animated.Value(1)).current;
   const previousAcceptedSampleRef = useRef<TelemetrySample | null>(null);
@@ -237,7 +233,12 @@ export default function RecordingScreen() {
 
       setRuntimeSnapshot(startedSnapshot);
 
-      locationSubscriptionRef.current = await startLocationSubscription({
+      const lifecycle = createConnectionLifecycle({
+        onResetContinuity: () => runtimeRef.current?.resetContinuity(),
+      });
+      lifecycleRef.current = lifecycle;
+
+      await lifecycle.start({
         resolveElapsedMs: (recordedAt) =>
           Math.max(0, recordedAt - (startedSnapshot.sessionStartedAtMs ?? recordedAt)),
         onSample: (sample) => {
@@ -268,6 +269,8 @@ export default function RecordingScreen() {
 
           setLoadError('Location subscription error.');
         },
+        onActiveSourceChange: () => {},
+        onExternalDeviceStateChange: () => {},
       });
     }
 
@@ -275,15 +278,15 @@ export default function RecordingScreen() {
 
     return () => {
       isMounted = false;
-      stopLocationSubscription(locationSubscriptionRef.current);
-      locationSubscriptionRef.current = null;
+      void lifecycleRef.current?.stop();
+      lifecycleRef.current = null;
 
       const activeRuntime = runtimeRef.current;
       if (activeRuntime && !hasStoppedRef.current) {
         void activeRuntime.stop().catch(() => undefined);
       }
     };
-  }, [db, params.sessionName, track]);
+  }, [db, params.sessionName, params.condition, params.temperatureC, track]);
 
   useEffect(() => {
     const sessionStartedAtMs = runtimeSnapshot?.sessionStartedAtMs;
@@ -388,8 +391,8 @@ export default function RecordingScreen() {
     try {
       // Stop telemetry
       const activeRuntime = runtimeRef.current;
-      stopLocationSubscription(locationSubscriptionRef.current);
-      locationSubscriptionRef.current = null;
+      void lifecycleRef.current?.stop();
+      lifecycleRef.current = null;
 
       let sessionId = '';
       if (activeRuntime && !hasStoppedRef.current) {

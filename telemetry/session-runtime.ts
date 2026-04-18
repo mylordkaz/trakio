@@ -415,10 +415,15 @@ export function createSessionRuntime(args: {
     return { ...snapshot };
   }
 
+  function resetContinuity(): void {
+    snapshot = { ...snapshot, latestAcceptedSample: null };
+  }
+
   return {
     start,
     stop,
     handleSample,
     getSnapshot,
+    resetContinuity,
   };
 }

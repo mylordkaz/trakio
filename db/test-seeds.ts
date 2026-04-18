@@ -33,6 +33,7 @@ export type SessionTestSeed = {
     id: string;
     lapId: string | null;
     recordedAt: string;
+    elapsedMs?: number | null;
     latitude: number;
     longitude: number;
     speedMps?: number | null;
@@ -40,6 +41,29 @@ export type SessionTestSeed = {
     altitudeM?: number | null;
     headingDeg?: number | null;
     isTimingCrossing?: 0 | 1;
+    source?: string | null;
+    iTow?: number | null;
+    timeAccuracyNs?: number | null;
+    nanosecond?: number | null;
+    gForceX?: number | null;
+    gForceY?: number | null;
+    gForceZ?: number | null;
+    rotationRateX?: number | null;
+    rotationRateY?: number | null;
+    rotationRateZ?: number | null;
+    verticalAccuracyM?: number | null;
+    speedAccuracyMps?: number | null;
+    headingAccuracyDeg?: number | null;
+    pdop?: number | null;
+    satelliteCount?: number | null;
+    fixType?: number | null;
+    fixFlags?: number | null;
+    validityFlags?: number | null;
+    dateTimeFlags?: number | null;
+    latLonFlags?: number | null;
+    batteryLevel?: number | null;
+    isCharging?: 0 | 1 | null;
+    inputVoltageV?: number | null;
   }[];
   notes: {
     id: string;

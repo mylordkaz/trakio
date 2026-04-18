@@ -106,6 +106,29 @@ async function createBaseSchema(db: SQLiteDatabase) {
         altitude_m REAL,
         heading_deg REAL,
         is_timing_crossing INTEGER NOT NULL DEFAULT 0 CHECK (is_timing_crossing IN (0, 1)),
+        source TEXT,
+        i_tow INTEGER,
+        time_accuracy_ns INTEGER,
+        nanosecond INTEGER,
+        g_force_x REAL,
+        g_force_y REAL,
+        g_force_z REAL,
+        rotation_rate_x REAL,
+        rotation_rate_y REAL,
+        rotation_rate_z REAL,
+        vertical_accuracy_m REAL,
+        speed_accuracy_mps REAL,
+        heading_accuracy_deg REAL,
+        pdop REAL,
+        satellite_count INTEGER,
+        fix_type INTEGER,
+        fix_flags INTEGER,
+        validity_flags INTEGER,
+        date_time_flags INTEGER,
+        lat_lon_flags INTEGER,
+        battery_level INTEGER,
+        is_charging INTEGER,
+        input_voltage_v REAL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -468,6 +491,42 @@ const MIGRATIONS: Migration[] = [
       const cols = await getColumnNames(db, 'tracks');
       if (!cols.includes('leaderboard_lap_time_ms')) {
         await db.execAsync('ALTER TABLE tracks ADD COLUMN leaderboard_lap_time_ms INTEGER;');
+      }
+    },
+  },
+  {
+    version: 10,
+    up: async (db) => {
+      const cols = await getColumnNames(db, 'gps_points');
+      const newColumns: { name: string; sql: string }[] = [
+        { name: 'source', sql: 'ALTER TABLE gps_points ADD COLUMN source TEXT;' },
+        { name: 'i_tow', sql: 'ALTER TABLE gps_points ADD COLUMN i_tow INTEGER;' },
+        { name: 'time_accuracy_ns', sql: 'ALTER TABLE gps_points ADD COLUMN time_accuracy_ns INTEGER;' },
+        { name: 'nanosecond', sql: 'ALTER TABLE gps_points ADD COLUMN nanosecond INTEGER;' },
+        { name: 'g_force_x', sql: 'ALTER TABLE gps_points ADD COLUMN g_force_x REAL;' },
+        { name: 'g_force_y', sql: 'ALTER TABLE gps_points ADD COLUMN g_force_y REAL;' },
+        { name: 'g_force_z', sql: 'ALTER TABLE gps_points ADD COLUMN g_force_z REAL;' },
+        { name: 'rotation_rate_x', sql: 'ALTER TABLE gps_points ADD COLUMN rotation_rate_x REAL;' },
+        { name: 'rotation_rate_y', sql: 'ALTER TABLE gps_points ADD COLUMN rotation_rate_y REAL;' },
+        { name: 'rotation_rate_z', sql: 'ALTER TABLE gps_points ADD COLUMN rotation_rate_z REAL;' },
+        { name: 'vertical_accuracy_m', sql: 'ALTER TABLE gps_points ADD COLUMN vertical_accuracy_m REAL;' },
+        { name: 'speed_accuracy_mps', sql: 'ALTER TABLE gps_points ADD COLUMN speed_accuracy_mps REAL;' },
+        { name: 'heading_accuracy_deg', sql: 'ALTER TABLE gps_points ADD COLUMN heading_accuracy_deg REAL;' },
+        { name: 'pdop', sql: 'ALTER TABLE gps_points ADD COLUMN pdop REAL;' },
+        { name: 'satellite_count', sql: 'ALTER TABLE gps_points ADD COLUMN satellite_count INTEGER;' },
+        { name: 'fix_type', sql: 'ALTER TABLE gps_points ADD COLUMN fix_type INTEGER;' },
+        { name: 'fix_flags', sql: 'ALTER TABLE gps_points ADD COLUMN fix_flags INTEGER;' },
+        { name: 'validity_flags', sql: 'ALTER TABLE gps_points ADD COLUMN validity_flags INTEGER;' },
+        { name: 'date_time_flags', sql: 'ALTER TABLE gps_points ADD COLUMN date_time_flags INTEGER;' },
+        { name: 'lat_lon_flags', sql: 'ALTER TABLE gps_points ADD COLUMN lat_lon_flags INTEGER;' },
+        { name: 'battery_level', sql: 'ALTER TABLE gps_points ADD COLUMN battery_level INTEGER;' },
+        { name: 'is_charging', sql: 'ALTER TABLE gps_points ADD COLUMN is_charging INTEGER;' },
+        { name: 'input_voltage_v', sql: 'ALTER TABLE gps_points ADD COLUMN input_voltage_v REAL;' },
+      ];
+      for (const col of newColumns) {
+        if (!cols.includes(col.name)) {
+          await db.execAsync(col.sql);
+        }
       }
     },
   },
