@@ -4,7 +4,6 @@ import {
   Image,
   Pressable,
   ScrollView,
-  Switch,
   Text,
   View,
 } from "react-native";
@@ -23,6 +22,7 @@ import { useSQLiteContext } from "expo-sqlite";
 import i18n from "@/i18n";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useMenu } from "@/contexts/MenuContext";
+import ExternalGpsSection from "@/components/ExternalGpsSection";
 import { getUserProfile } from "@/db";
 import type { UserRow } from "@/db";
 
@@ -245,65 +245,7 @@ export default function MenuDrawer() {
 
           {/* External GPS */}
           <SectionHeader title={t("menu.externalGps")} />
-          <View className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/5 p-4 mb-6 overflow-hidden">
-            <View
-              className="flex-row items-center justify-between"
-              style={{ opacity: 0.4 }}
-            >
-              <View className="flex-1 mr-3">
-                <Text className="text-[15px] font-medium text-zinc-900 dark:text-white">
-                  {t("menu.externalGpsDevice")}
-                </Text>
-                <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-                  {t("menu.noDevicePaired")}
-                </Text>
-              </View>
-              <Switch
-                value={false}
-                disabled
-                trackColor={{
-                  false: isDark ? "#3f3f46" : "#d4d4d8",
-                  true: "#22c55e",
-                }}
-                thumbColor="#ffffff"
-              />
-            </View>
-            <Pressable
-              disabled
-              style={{ opacity: 0.4 }}
-              className="mt-3 rounded-xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 py-3 items-center"
-            >
-              <Text className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
-                {t("menu.scanForDevices")}
-              </Text>
-            </Pressable>
-            {/* "Soon" watermark — rendered last so it's on top */}
-            <View
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                alignItems: "center",
-                justifyContent: "center",
-                zIndex: 1,
-              }}
-              pointerEvents="none"
-            >
-              <Text
-                style={{
-                  fontSize: 48,
-                  fontWeight: "800",
-                  color: isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.08)",
-                  textTransform: "uppercase",
-                  letterSpacing: 6,
-                }}
-              >
-                SOON
-              </Text>
-            </View>
-          </View>
+          <ExternalGpsSection />
 
           {/* Preferences */}
           <SectionHeader title={t("menu.preferences")} />

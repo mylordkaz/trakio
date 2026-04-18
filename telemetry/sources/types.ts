@@ -20,7 +20,7 @@ export type ActiveSourceInfo = {
 
 export type DeviceClassification = {
   sourceType: TelemetrySampleSource;
-  protocol: 'racebox-binary' | 'nmea';
+  protocol: 'racebox-binary';
 };
 
 export type DiscoveredDevice = {

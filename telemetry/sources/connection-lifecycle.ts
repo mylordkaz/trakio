@@ -73,7 +73,6 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
     if (device.classification.protocol === 'racebox-binary') {
       return createRaceBoxSource(device.id, device.name);
     }
-    // Phase 4: NMEA sources
     return null;
   }
 

@@ -1,4 +1,4 @@
-export type TelemetrySampleSource = 'gps' | 'racebox' | 'nmea-ble';
+export type TelemetrySampleSource = 'gps' | 'racebox';
 
 export type TelemetrySample = {
   recordedAt: number;

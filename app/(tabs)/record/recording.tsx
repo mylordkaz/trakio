@@ -19,7 +19,7 @@ import { createConnectionLifecycle } from '@/telemetry/sources/connection-lifecy
 import { useExternalGps } from '@/contexts/ExternalGpsContext';
 import { createSessionRuntime } from '@/telemetry/session-runtime';
 import type { TrackDetail } from '@/db';
-import type { TelemetrySample } from '@/telemetry/types';
+import type { TelemetrySample, ExtendedTelemetrySample } from '@/telemetry/types';
 import { formatLapTime, formatDurationMs as formatDuration, formatSpeed } from '@/utils/format';
 
 function formatSectorTime(elapsedMs: number | null) {
@@ -368,11 +368,6 @@ export default function RecordingScreen() {
       : runtimeSnapshot?.status === 'armed'
         ? 1
         : 0;
-  const currentSpeedKph =
-    runtimeSnapshot?.latestAcceptedSample?.speedMps !== null &&
-    runtimeSnapshot?.latestAcceptedSample?.speedMps !== undefined
-      ? runtimeSnapshot.latestAcceptedSample.speedMps * 3.6
-      : null;
   const currentSectorElapsedMs =
     runtimeSnapshot?.status === 'lap_in_progress' &&
     runtimeSnapshot.currentSectorStartedElapsedMs !== null &&
@@ -624,7 +619,11 @@ export default function RecordingScreen() {
             <View className="flex-row items-center justify-between mb-3">
               <View>
                 <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('telemetry.title')}</Text>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('telemetry.subtitle')}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {selectedDeviceRef.current
+                    ? i18n.t('telemetry.subtitleDevice', { name: selectedDeviceRef.current.name })
+                    : i18n.t('telemetry.subtitle')}
+                </Text>
               </View>
               <Text className="text-sm text-emerald-400">
                 {runtimeSnapshot?.latestAcceptedSample ? i18n.t('telemetry.stable') : i18n.t('common.tbd')}
@@ -632,17 +631,38 @@ export default function RecordingScreen() {
             </View>
             <View className="gap-3">
               <ProgressBar
-                label={i18n.t('telemetry.throttle')}
-                value={`${Math.min(100, Math.round(currentSpeedKph ?? 0))}%`}
-              />
-              <ProgressBar
-                label={i18n.t('telemetry.brake')}
-                value={`${brakePercent}%`}
+                label={i18n.t('telemetry.gpsSource')}
+                value={selectedDeviceRef.current ? selectedDeviceRef.current.name : i18n.t('telemetry.phoneGps')}
+                color="bg-emerald-400"
               />
               <ProgressBar
                 label={i18n.t('telemetry.gpsSignal')}
                 value={getGpsSignalLabel(runtimeSnapshot?.latestAcceptedSample?.accuracyM ?? null)}
                 color="bg-emerald-400"
+              />
+              {(() => {
+                const ext = runtimeSnapshot?.latestAcceptedSample as ExtendedTelemetrySample | undefined;
+                if (!ext?.satelliteCount) return null;
+                return (
+                  <>
+                    <ProgressBar
+                      label={i18n.t('telemetry.satellites')}
+                      value={`${ext.satelliteCount}`}
+                      color="bg-sky-400"
+                    />
+                    {ext.batteryLevel != null && (
+                      <ProgressBar
+                        label={i18n.t('telemetry.deviceBattery')}
+                        value={`${ext.batteryLevel}%`}
+                        color="bg-amber-400"
+                      />
+                    )}
+                  </>
+                );
+              })()}
+              <ProgressBar
+                label={i18n.t('telemetry.brake')}
+                value={`${brakePercent}%`}
               />
             </View>
           </Card>

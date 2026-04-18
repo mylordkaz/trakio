@@ -16,6 +16,7 @@ import { getNextSessionNumber, getOrCreateDefaultUserProfile, getTrackById, getT
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useMenu } from '@/contexts/MenuContext';
+import { useExternalGps } from '@/contexts/ExternalGpsContext';
 import { fetchTrackWeather, type TrackWeather } from '@/services/weather';
 import {
   getCurrentLocationSample,
@@ -98,6 +99,7 @@ export default function PreSessionScreen() {
   const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('emerald');
   const { openMenu } = useMenu();
+  const { selectedDevice } = useExternalGps();
   const [userCar, setUserCar] = useState<string | null>(null);
   const [customSessionTitle, setCustomSessionTitle] = useState<string | null>(null);
   const [hasManualTrackSelection, setHasManualTrackSelection] = useState(false);
@@ -358,49 +360,57 @@ export default function PreSessionScreen() {
         status: 'warning',
       };
 
-      try {
-        let permissionState = await getForegroundLocationPermissionState();
-
-        if (permissionState === 'undetermined') {
-          permissionState = await requestForegroundLocationPermission();
-        }
-
-        if (permissionState === 'denied') {
-          gpsItem = {
-            key: 'gpsLock',
-            value: i18n.t('telemetry.blocked'),
-            status: 'error',
-          };
-        } else if (permissionState === 'granted') {
-          const locationSample = await getCurrentLocationSample();
-          const accuracyM = locationSample?.accuracyM ?? null;
-
-          if (accuracyM === null) {
-            gpsItem = {
-              key: 'gpsLock',
-              value: i18n.t('telemetry.searching'),
-              status: 'warning',
-            };
-          } else if (accuracyM <= 10) {
-            gpsItem = {
-              key: 'gpsLock',
-              value: i18n.t('telemetry.strong'),
-              status: 'ready',
-            };
-          } else {
-            gpsItem = {
-              key: 'gpsLock',
-              value: i18n.t('telemetry.weak'),
-              status: 'warning',
-            };
-          }
-        }
-      } catch {
+      if (selectedDevice) {
         gpsItem = {
           key: 'gpsLock',
-          value: i18n.t('telemetry.searching'),
+          value: selectedDevice.name,
           status: 'warning',
         };
+      } else {
+        try {
+          let permissionState = await getForegroundLocationPermissionState();
+
+          if (permissionState === 'undetermined') {
+            permissionState = await requestForegroundLocationPermission();
+          }
+
+          if (permissionState === 'denied') {
+            gpsItem = {
+              key: 'gpsLock',
+              value: i18n.t('telemetry.blocked'),
+              status: 'error',
+            };
+          } else if (permissionState === 'granted') {
+            const locationSample = await getCurrentLocationSample();
+            const accuracyM = locationSample?.accuracyM ?? null;
+
+            if (accuracyM === null) {
+              gpsItem = {
+                key: 'gpsLock',
+                value: i18n.t('telemetry.searching'),
+                status: 'warning',
+              };
+            } else if (accuracyM <= 10) {
+              gpsItem = {
+                key: 'gpsLock',
+                value: i18n.t('telemetry.strong'),
+                status: 'ready',
+              };
+            } else {
+              gpsItem = {
+                key: 'gpsLock',
+                value: i18n.t('telemetry.weak'),
+                status: 'warning',
+              };
+            }
+          }
+        } catch {
+          gpsItem = {
+            key: 'gpsLock',
+            value: i18n.t('telemetry.searching'),
+            status: 'warning',
+          };
+        }
       }
 
       try {
@@ -450,7 +460,7 @@ export default function PreSessionScreen() {
     return () => {
       isMounted = false;
     };
-  }, [db, selectedCircuit]);
+  }, [db, selectedCircuit, selectedDevice]);
 
   useFocusEffect(
     useCallback(() => {
