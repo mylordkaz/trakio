@@ -89,6 +89,7 @@ export default {
   leaderboard: {
     title: 'グローバルランキング',
     driversCount: {
+      one: '%{count}人のドライバー',
       other: '%{count}人のドライバー',
     },
     allTime: '全期間',
