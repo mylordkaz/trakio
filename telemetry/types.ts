@@ -17,7 +17,8 @@ export type LocationPermissionState = 'undetermined' | 'granted' | 'denied';
 export type TelemetrySampleRejectionReason =
   | 'invalid_coordinate'
   | 'poor_accuracy'
-  | 'impossible_jump';
+  | 'impossible_jump'
+  | 'out_of_order';
 
 export type AcceptedTelemetrySample = {
   accepted: true;
@@ -47,6 +48,7 @@ export type DetectionState = {
 export type TelemetryDetectionConfig = {
   debounceMs: number;
   minLapTimeMs: number;
+  minCrossingSpeedMps: number;
 };
 
 export type TelemetryDetectionEvent = {

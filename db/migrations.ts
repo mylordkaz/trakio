@@ -78,6 +78,7 @@ async function createBaseSchema(db: SQLiteDatabase) {
         ended_at TEXT,
         lap_time_ms INTEGER,
         is_out_lap INTEGER NOT NULL DEFAULT 0 CHECK (is_out_lap IN (0, 1)),
+        is_in_lap INTEGER NOT NULL DEFAULT 0 CHECK (is_in_lap IN (0, 1)),
         is_invalid INTEGER NOT NULL DEFAULT 0 CHECK (is_invalid IN (0, 1)),
         max_speed_kph REAL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -485,6 +486,18 @@ const MIGRATIONS: Migration[] = [
           deleted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
       `);
+    },
+  },
+  {
+    version: 11,
+    up: async (db) => {
+      const lapColumns = await getColumnNames(db, 'laps');
+
+      if (!lapColumns.includes('is_in_lap')) {
+        await db.execAsync(
+          'ALTER TABLE laps ADD COLUMN is_in_lap INTEGER NOT NULL DEFAULT 0 CHECK (is_in_lap IN (0, 1));'
+        );
+      }
     },
   },
 ];

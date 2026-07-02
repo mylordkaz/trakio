@@ -1,6 +1,6 @@
 import { createSessionRecorder } from '@/db/session-recorder';
 import type { TimingLineRow, TrackRow } from '@/db/types';
-import { detectTimingLineCrossing } from '@/telemetry/detection';
+import { detectTimingLineCrossings } from '@/telemetry/detection';
 import { filterTelemetrySample, type TelemetryFilterConfig } from '@/telemetry/filters';
 import type {
   DetectionState,
@@ -23,6 +23,10 @@ type SessionRuntimeConfig = {
   detectionConfig?: Partial<TelemetryDetectionConfig>;
 };
 
+// A pause in accepted samples longer than this is surfaced as a recording
+// interruption (backgrounded app, GPS dropout, phone call).
+const SAMPLE_GAP_THRESHOLD_MS = 3000;
+
 type SessionRuntimeSnapshot = {
   status: RuntimeStatus;
   sessionId: string | null;
@@ -34,14 +38,20 @@ type SessionRuntimeSnapshot = {
   currentLapStartedElapsedMs: number | null;
   currentSectorStartedElapsedMs: number | null;
   lastCrossedSectorSeq: number | null;
+  lastCrossedTimingLineId: string | null;
   lastCrossingElapsedMs: number | null;
   bestLapMs: number | null;
   lastLapMs: number | null;
   totalLaps: number;
   maxSpeedKph: number | null;
+  currentLapMaxSpeedKph: number | null;
   latestAcceptedSample: TelemetrySample | null;
   latestEvent: TelemetryDetectionEvent | null;
   bufferedPointCount: number;
+  consecutiveRejectedCount: number;
+  lastRejectionReason: TelemetrySampleRejectionReason | null;
+  sampleGapCount: number;
+  lastSampleGapMs: number | null;
   currentLapSectorSplitsMs: Record<number, number>;
   completedLaps: {
     lapNumber: number;
@@ -59,7 +69,7 @@ type HandleSampleResult =
     }
   | {
       accepted: true;
-      event: TelemetryDetectionEvent | null;
+      events: TelemetryDetectionEvent[];
       snapshot: SessionRuntimeSnapshot;
     };
 
@@ -88,18 +98,6 @@ function getSectorCount(timingLines: TimingLineRow[]) {
   return sectorLineCount + (hasStartFinish ? 1 : 0);
 }
 
-function toDetectionState(snapshot: SessionRuntimeSnapshot): DetectionState {
-  return {
-    lastTimingLineId: snapshot.latestEvent?.timingLineId ?? null,
-    lastCrossingElapsedMs: snapshot.lastCrossingElapsedMs,
-    expectedSectorSeq:
-      snapshot.status === 'lap_in_progress'
-        ? (snapshot.lastCrossedSectorSeq ?? 0) + 1
-        : null,
-    currentLapStartedElapsedMs: snapshot.currentLapStartedElapsedMs,
-  };
-}
-
 export function createSessionRuntime(args: {
   track: TrackRow;
   timingLines: TimingLineRow[];
@@ -109,6 +107,7 @@ export function createSessionRuntime(args: {
   const { track, recorder, config } = args;
   const timingLines = getRelevantTimingLines(args.timingLines);
   const sectorCount = getSectorCount(timingLines);
+  const sectorLineCount = getSectorLineCount(timingLines);
 
   let snapshot: SessionRuntimeSnapshot = {
     status: 'idle',
@@ -121,59 +120,99 @@ export function createSessionRuntime(args: {
     currentLapStartedElapsedMs: null,
     currentSectorStartedElapsedMs: null,
     lastCrossedSectorSeq: null,
+    lastCrossedTimingLineId: null,
     lastCrossingElapsedMs: null,
     bestLapMs: null,
     lastLapMs: null,
     totalLaps: 0,
     maxSpeedKph: null,
+    currentLapMaxSpeedKph: null,
     latestAcceptedSample: null,
     latestEvent: null,
     bufferedPointCount: 0,
+    consecutiveRejectedCount: 0,
+    lastRejectionReason: null,
+    sampleGapCount: 0,
+    lastSampleGapMs: null,
     currentLapSectorSplitsMs: {},
     completedLaps: [],
   };
 
-  async function start() {
-    if (snapshot.status !== 'idle' && snapshot.status !== 'stopped') {
-      throw new Error('Session runtime can only start from idle or stopped state.');
-    }
+  // Samples arrive from an async callback while previous samples may still be
+  // awaiting DB writes; processing them concurrently would race on the
+  // snapshot and double-detect crossings, so everything funnels through here.
+  let processingQueue: Promise<unknown> = Promise.resolve();
 
-    const sessionId = generateId();
-    const sessionStartedAtMs = Date.now();
-    const startedAt = new Date(sessionStartedAtMs).toISOString();
+  // Set by markPitIn; consumed when the next lap starts.
+  let pendingOutLap = false;
 
-    await recorder.createSession({
-      id: sessionId,
-      trackId: track.id,
-      startedAt,
-      name: config?.sessionName ?? null,
-      car: config?.car ?? null,
-      condition: config?.condition ?? null,
-      temperatureC: config?.temperatureC ?? null,
-      status: 'recording',
-    });
+  function enqueue<T>(work: () => Promise<T>): Promise<T> {
+    const run = processingQueue.then(work);
+    processingQueue = run.catch(() => undefined);
+    return run;
+  }
 
-    snapshot = {
-      ...snapshot,
-      status: 'recording',
-      sessionId,
-      sessionStartedAtMs,
-      sessionEndedAtMs: null,
-      currentLapId: null,
-      currentLapNumber: 0,
-      currentLapStartedElapsedMs: null,
-      currentSectorStartedElapsedMs: null,
-      lastCrossedSectorSeq: null,
-      lastCrossingElapsedMs: null,
-      lastLapMs: null,
-      latestAcceptedSample: null,
-      latestEvent: null,
-      bufferedPointCount: recorder.getBufferedPointCount(),
-      currentLapSectorSplitsMs: {},
-      completedLaps: [],
+  function toDetectionState(): DetectionState {
+    return {
+      lastTimingLineId: snapshot.lastCrossedTimingLineId,
+      lastCrossingElapsedMs: snapshot.lastCrossingElapsedMs,
+      expectedSectorSeq:
+        snapshot.status === 'lap_in_progress'
+          ? (snapshot.lastCrossedSectorSeq ?? 0) + 1
+          : null,
+      currentLapStartedElapsedMs: snapshot.currentLapStartedElapsedMs,
     };
+  }
 
-    return getSnapshot();
+  async function start() {
+    return enqueue(async () => {
+      if (snapshot.status !== 'idle' && snapshot.status !== 'stopped') {
+        throw new Error('Session runtime can only start from idle or stopped state.');
+      }
+
+      const sessionId = generateId();
+      const sessionStartedAtMs = Date.now();
+      const startedAt = new Date(sessionStartedAtMs).toISOString();
+
+      await recorder.createSession({
+        id: sessionId,
+        trackId: track.id,
+        startedAt,
+        name: config?.sessionName ?? null,
+        car: config?.car ?? null,
+        condition: config?.condition ?? null,
+        temperatureC: config?.temperatureC ?? null,
+        status: 'recording',
+      });
+
+      snapshot = {
+        ...snapshot,
+        status: 'recording',
+        sessionId,
+        sessionStartedAtMs,
+        sessionEndedAtMs: null,
+        currentLapId: null,
+        currentLapNumber: 0,
+        currentLapStartedElapsedMs: null,
+        currentSectorStartedElapsedMs: null,
+        lastCrossedSectorSeq: null,
+        lastCrossedTimingLineId: null,
+        lastCrossingElapsedMs: null,
+        lastLapMs: null,
+        currentLapMaxSpeedKph: null,
+        latestAcceptedSample: null,
+        latestEvent: null,
+        bufferedPointCount: recorder.getBufferedPointCount(),
+        consecutiveRejectedCount: 0,
+        lastRejectionReason: null,
+        sampleGapCount: 0,
+        lastSampleGapMs: null,
+        currentLapSectorSplitsMs: {},
+        completedLaps: [],
+      };
+
+      return getSnapshot();
+    });
   }
 
   async function handleStartFinishCrossing(event: TelemetryDetectionEvent) {
@@ -189,7 +228,9 @@ export function createSessionRuntime(args: {
         sessionId: snapshot.sessionId,
         lapNumber: 1,
         startedAt: new Date(event.sampleRecordedAt).toISOString(),
+        isOutLap: pendingOutLap ? 1 : 0,
       });
+      pendingOutLap = false;
 
       snapshot = {
         ...snapshot,
@@ -199,7 +240,9 @@ export function createSessionRuntime(args: {
         currentLapStartedElapsedMs: event.sampleElapsedMs,
         currentSectorStartedElapsedMs: event.sampleElapsedMs,
         lastCrossedSectorSeq: null,
+        lastCrossedTimingLineId: event.timingLineId,
         lastCrossingElapsedMs: event.sampleElapsedMs,
+        currentLapMaxSpeedKph: null,
         latestEvent: event,
         currentLapSectorSplitsMs: {},
       };
@@ -211,7 +254,13 @@ export function createSessionRuntime(args: {
       return;
     }
 
-    if (sectorCount > 0 && snapshot.currentSectorStartedElapsedMs !== null) {
+    // The closing split is only trustworthy when every sector line of the lap
+    // was actually crossed; otherwise it would silently span skipped sectors.
+    if (
+      sectorCount > 0 &&
+      snapshot.currentSectorStartedElapsedMs !== null &&
+      snapshot.lastCrossedSectorSeq === sectorLineCount
+    ) {
       await recorder.insertLapSector({
         id: generateId(),
         lapId: snapshot.currentLapId,
@@ -241,7 +290,7 @@ export function createSessionRuntime(args: {
       lapId: snapshot.currentLapId,
       endedAt: new Date(event.sampleRecordedAt).toISOString(),
       lapTimeMs,
-      maxSpeedKph: snapshot.maxSpeedKph,
+      maxSpeedKph: snapshot.currentLapMaxSpeedKph,
     });
 
     const nextLapNumber = snapshot.currentLapNumber + 1;
@@ -252,7 +301,9 @@ export function createSessionRuntime(args: {
       sessionId: snapshot.sessionId,
       lapNumber: nextLapNumber,
       startedAt: new Date(event.sampleRecordedAt).toISOString(),
+      isOutLap: pendingOutLap ? 1 : 0,
     });
+    pendingOutLap = false;
 
     snapshot = {
       ...snapshot,
@@ -262,10 +313,12 @@ export function createSessionRuntime(args: {
       currentLapStartedElapsedMs: event.sampleElapsedMs,
       currentSectorStartedElapsedMs: event.sampleElapsedMs,
       lastCrossedSectorSeq: null,
+      lastCrossedTimingLineId: event.timingLineId,
       lastCrossingElapsedMs: event.sampleElapsedMs,
       bestLapMs: updatedBestLapMs,
       lastLapMs: lapTimeMs,
       totalLaps: snapshot.totalLaps + 1,
+      currentLapMaxSpeedKph: null,
       latestEvent: event,
       currentLapSectorSplitsMs: {},
       completedLaps,
@@ -281,30 +334,47 @@ export function createSessionRuntime(args: {
       return;
     }
 
-    await recorder.insertLapSector({
-      id: generateId(),
-      lapId: snapshot.currentLapId,
-      sectorIndex: event.seq - 1,
-      splitTimeMs: Math.max(0, Math.round(event.sampleElapsedMs - snapshot.currentSectorStartedElapsedMs)),
-    });
+    const expectedSectorSeq = (snapshot.lastCrossedSectorSeq ?? 0) + 1;
+    const splitTimeMs = Math.max(
+      0,
+      Math.round(event.sampleElapsedMs - snapshot.currentSectorStartedElapsedMs)
+    );
+
+    // A crossing beyond the expected line means at least one line was missed
+    // (GPS gap); timing continues but the spanned split is not recorded.
+    const isExpectedSector = event.seq === expectedSectorSeq;
+
+    if (isExpectedSector) {
+      await recorder.insertLapSector({
+        id: generateId(),
+        lapId: snapshot.currentLapId,
+        sectorIndex: event.seq - 1,
+        splitTimeMs,
+      });
+    }
 
     snapshot = {
       ...snapshot,
       lastCrossedSectorSeq: event.seq,
+      lastCrossedTimingLineId: event.timingLineId,
       lastCrossingElapsedMs: event.sampleElapsedMs,
       currentSectorStartedElapsedMs: event.sampleElapsedMs,
       latestEvent: event,
-      currentLapSectorSplitsMs: {
-        ...snapshot.currentLapSectorSplitsMs,
-        [event.seq - 1]: Math.max(
-          0,
-          Math.round(event.sampleElapsedMs - snapshot.currentSectorStartedElapsedMs)
-        ),
-      },
+      currentLapSectorSplitsMs: isExpectedSector
+        ? {
+            ...snapshot.currentLapSectorSplitsMs,
+            [event.seq - 1]: splitTimeMs,
+          }
+        : snapshot.currentLapSectorSplitsMs,
     };
   }
 
   async function handleAcceptedSample(sample: TelemetrySample) {
+    const sessionId = snapshot.sessionId;
+    if (!sessionId) {
+      throw new Error('Session runtime received a sample without an active session.');
+    }
+
     if (snapshot.status === 'recording') {
       snapshot = {
         ...snapshot,
@@ -312,20 +382,29 @@ export function createSessionRuntime(args: {
       };
     }
 
-    const detectionState = toDetectionState(snapshot);
-    const event = detectTimingLineCrossing(
-      snapshot.latestAcceptedSample,
+    const previousAcceptedSample = snapshot.latestAcceptedSample;
+    const gapMs = previousAcceptedSample
+      ? sample.recordedAt - previousAcceptedSample.recordedAt
+      : null;
+    const hasGap = gapMs !== null && gapMs > SAMPLE_GAP_THRESHOLD_MS;
+
+    const events = detectTimingLineCrossings(
+      previousAcceptedSample,
       sample,
       timingLines,
-      detectionState,
+      toDetectionState(),
       config?.detectionConfig
     );
 
-    if (event?.type === 'start_finish_crossed') {
-      await handleStartFinishCrossing(event);
-    } else if (event?.type === 'sector_crossed') {
-      await handleSectorCrossing(event);
-    } else {
+    for (const event of events) {
+      if (event.type === 'start_finish_crossed') {
+        await handleStartFinishCrossing(event);
+      } else {
+        await handleSectorCrossing(event);
+      }
+    }
+
+    if (events.length === 0) {
       snapshot = {
         ...snapshot,
         latestEvent: null,
@@ -334,10 +413,10 @@ export function createSessionRuntime(args: {
 
     await recorder.appendGpsSample({
       id: generateId(),
-      sessionId: snapshot.sessionId ?? generateId(),
+      sessionId,
       lapId: snapshot.currentLapId,
       sample,
-      isTimingCrossing: event ? 1 : 0,
+      isTimingCrossing: events.length > 0 ? 1 : 0,
     });
 
     const sampleSpeedKph = sample.speedMps !== null ? sample.speedMps * 3.6 : null;
@@ -351,13 +430,23 @@ export function createSessionRuntime(args: {
           : snapshot.maxSpeedKph === null
             ? sampleSpeedKph
             : Math.max(snapshot.maxSpeedKph, sampleSpeedKph),
+      currentLapMaxSpeedKph:
+        sampleSpeedKph === null
+          ? snapshot.currentLapMaxSpeedKph
+          : snapshot.currentLapMaxSpeedKph === null
+            ? sampleSpeedKph
+            : Math.max(snapshot.currentLapMaxSpeedKph, sampleSpeedKph),
       bufferedPointCount: recorder.getBufferedPointCount(),
+      consecutiveRejectedCount: 0,
+      lastRejectionReason: null,
+      sampleGapCount: hasGap ? snapshot.sampleGapCount + 1 : snapshot.sampleGapCount,
+      lastSampleGapMs: hasGap ? gapMs : snapshot.lastSampleGapMs,
     };
 
-    return event;
+    return events;
   }
 
-  async function handleSample(sample: TelemetrySample): Promise<HandleSampleResult> {
+  async function processSample(sample: TelemetrySample): Promise<HandleSampleResult> {
     if (snapshot.status === 'idle' || snapshot.status === 'stopped' || !snapshot.sessionId) {
       throw new Error('Session runtime must be started before handling samples.');
     }
@@ -369,6 +458,12 @@ export function createSessionRuntime(args: {
     );
 
     if (!validation.accepted) {
+      snapshot = {
+        ...snapshot,
+        consecutiveRejectedCount: snapshot.consecutiveRejectedCount + 1,
+        lastRejectionReason: validation.reason,
+      };
+
       return {
         accepted: false,
         rejectionReason: validation.reason,
@@ -376,39 +471,57 @@ export function createSessionRuntime(args: {
       };
     }
 
-    const event = await handleAcceptedSample(validation.sample);
+    const events = await handleAcceptedSample(validation.sample);
 
     return {
       accepted: true,
-      event,
+      events,
       snapshot: getSnapshot(),
     };
   }
 
-  async function stop() {
-    if (!snapshot.sessionId || (snapshot.status !== 'recording' && snapshot.status !== 'armed' && snapshot.status !== 'lap_in_progress')) {
-      throw new Error('Session runtime can only stop an active session.');
-    }
+  async function handleSample(sample: TelemetrySample): Promise<HandleSampleResult> {
+    return enqueue(() => processSample(sample));
+  }
 
-    await recorder.finalizeSession({
-      sessionId: snapshot.sessionId,
-      endedAt: new Date(Date.now()).toISOString(),
-      status: 'completed',
-      bestLapMs: snapshot.bestLapMs,
-      totalLaps: snapshot.totalLaps,
-      maxSpeedKph: snapshot.maxSpeedKph,
+  // Marks the lap currently in progress as an in-lap (ends in the pits) and
+  // the next lap that starts as an out-lap; both are excluded from stats.
+  async function markPitIn() {
+    return enqueue(async () => {
+      pendingOutLap = true;
+
+      if (snapshot.status === 'lap_in_progress' && snapshot.currentLapId) {
+        await recorder.setLapInLap({ lapId: snapshot.currentLapId, isInLap: 1 });
+      }
+
+      return getSnapshot();
     });
+  }
 
-    const sessionEndedAtMs = Date.now();
+  async function stop() {
+    return enqueue(async () => {
+      if (!snapshot.sessionId || (snapshot.status !== 'recording' && snapshot.status !== 'armed' && snapshot.status !== 'lap_in_progress')) {
+        throw new Error('Session runtime can only stop an active session.');
+      }
 
-    snapshot = {
-      ...snapshot,
-      status: 'stopped',
-      sessionEndedAtMs,
-      bufferedPointCount: recorder.getBufferedPointCount(),
-    };
+      await recorder.finalizeSession({
+        sessionId: snapshot.sessionId,
+        endedAt: new Date(Date.now()).toISOString(),
+        status: 'completed',
+        bestLapMs: snapshot.bestLapMs,
+        totalLaps: snapshot.totalLaps,
+        maxSpeedKph: snapshot.maxSpeedKph,
+      });
 
-    return getSnapshot();
+      snapshot = {
+        ...snapshot,
+        status: 'stopped',
+        sessionEndedAtMs: Date.now(),
+        bufferedPointCount: recorder.getBufferedPointCount(),
+      };
+
+      return getSnapshot();
+    });
   }
 
   function getSnapshot(): SessionRuntimeSnapshot {
@@ -419,6 +532,7 @@ export function createSessionRuntime(args: {
     start,
     stop,
     handleSample,
+    markPitIn,
     getSnapshot,
   };
 }

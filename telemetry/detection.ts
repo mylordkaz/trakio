@@ -5,10 +5,12 @@ import type {
   TelemetryDetectionEvent,
   TelemetrySample,
 } from '@/telemetry/types';
+import { haversineDistanceMeters, toRadians } from '@/utils/geo';
 
 const DEFAULT_DETECTION_CONFIG: TelemetryDetectionConfig = {
   debounceMs: 1500,
   minLapTimeMs: 15000,
+  minCrossingSpeedMps: 5,
 };
 
 type Point = {
@@ -16,56 +18,18 @@ type Point = {
   y: number;
 };
 
-type Intersection = {
+type CandidateCrossing = {
+  timingLine: TimingLineRow;
   movementFraction: number;
 };
 
-function orientation(a: Point, b: Point, c: Point) {
-  const value = (b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y);
-
-  if (Math.abs(value) < 1e-10) {
-    return 0;
-  }
-
-  return value > 0 ? 1 : 2;
-}
-
-function onSegment(a: Point, b: Point, c: Point) {
-  return (
-    b.x <= Math.max(a.x, c.x) &&
-    b.x >= Math.min(a.x, c.x) &&
-    b.y <= Math.max(a.y, c.y) &&
-    b.y >= Math.min(a.y, c.y)
-  );
-}
-
-function segmentsIntersect(a1: Point, a2: Point, b1: Point, b2: Point) {
-  const o1 = orientation(a1, a2, b1);
-  const o2 = orientation(a1, a2, b2);
-  const o3 = orientation(b1, b2, a1);
-  const o4 = orientation(b1, b2, a2);
-
-  if (o1 !== o2 && o3 !== o4) {
-    return true;
-  }
-
-  if (o1 === 0 && onSegment(a1, b1, a2)) {
-    return true;
-  }
-
-  if (o2 === 0 && onSegment(a1, b2, a2)) {
-    return true;
-  }
-
-  if (o3 === 0 && onSegment(b1, a1, b2)) {
-    return true;
-  }
-
-  if (o4 === 0 && onSegment(b1, a2, b2)) {
-    return true;
-  }
-
-  return false;
+// Longitude degrees shrink by cos(latitude); projecting keeps the intersection
+// fraction (and therefore the interpolated crossing time) locally metric.
+function projectPoint(latitude: number, longitude: number, lngScale: number): Point {
+  return {
+    x: longitude * lngScale,
+    y: latitude,
+  };
 }
 
 function cross(a: Point, b: Point) {
@@ -79,17 +43,17 @@ function subtract(a: Point, b: Point): Point {
   };
 }
 
-function getSegmentIntersection(
+function getMovementFraction(
   movementStart: Point,
   movementEnd: Point,
   timingLineStart: Point,
   timingLineEnd: Point
-): Intersection | null {
+): number | null {
   const movement = subtract(movementEnd, movementStart);
   const timingLine = subtract(timingLineEnd, timingLineStart);
   const denominator = cross(movement, timingLine);
 
-  if (Math.abs(denominator) < 1e-10) {
+  if (Math.abs(denominator) < 1e-12) {
     return null;
   }
 
@@ -106,35 +70,47 @@ function getSegmentIntersection(
     return null;
   }
 
-  return {
-    movementFraction: movementFraction,
-  };
+  return movementFraction;
 }
 
-function sampleToPoint(sample: TelemetrySample): Point {
-  return {
-    x: sample.lng,
-    y: sample.lat,
-  };
-}
+// A stationary car sitting on a timing line jitters back and forth across it;
+// requiring plausible movement speed keeps those phantom crossings out.
+function hasSufficientCrossingSpeed(
+  previousSample: TelemetrySample,
+  currentSample: TelemetrySample,
+  config: TelemetryDetectionConfig
+) {
+  const speedCandidates: number[] = [];
 
-function timingLineStartPoint(timingLine: TimingLineRow): Point {
-  return {
-    x: timingLine.a.longitude,
-    y: timingLine.a.latitude,
-  };
-}
+  if (previousSample.speedMps !== null) {
+    speedCandidates.push(previousSample.speedMps);
+  }
 
-function timingLineEndPoint(timingLine: TimingLineRow): Point {
-  return {
-    x: timingLine.b.longitude,
-    y: timingLine.b.latitude,
-  };
+  if (currentSample.speedMps !== null) {
+    speedCandidates.push(currentSample.speedMps);
+  }
+
+  const elapsedSeconds = (currentSample.recordedAt - previousSample.recordedAt) / 1000;
+  if (elapsedSeconds > 0) {
+    const distanceMeters = haversineDistanceMeters(
+      previousSample.lat,
+      previousSample.lng,
+      currentSample.lat,
+      currentSample.lng
+    );
+    speedCandidates.push(distanceMeters / elapsedSeconds);
+  }
+
+  if (speedCandidates.length === 0) {
+    return true;
+  }
+
+  return Math.max(...speedCandidates) >= config.minCrossingSpeedMps;
 }
 
 function isDebounced(
   state: DetectionState,
-  sample: TelemetrySample,
+  event: TelemetryDetectionEvent,
   timingLineId: string,
   config: TelemetryDetectionConfig
 ) {
@@ -142,7 +118,7 @@ function isDebounced(
     return false;
   }
 
-  return sample.elapsedMs - state.lastCrossingElapsedMs < config.debounceMs;
+  return event.sampleElapsedMs - state.lastCrossingElapsedMs < config.debounceMs;
 }
 
 function isSectorOrderValid(state: DetectionState, timingLine: TimingLineRow) {
@@ -151,15 +127,15 @@ function isSectorOrderValid(state: DetectionState, timingLine: TimingLineRow) {
   }
 
   if (state.expectedSectorSeq === null) {
-    return timingLine.seq === 1;
+    return false;
   }
 
-  return timingLine.seq === state.expectedSectorSeq;
+  return timingLine.seq >= state.expectedSectorSeq;
 }
 
 function satisfiesMinLapTime(
   state: DetectionState,
-  sample: TelemetrySample,
+  event: TelemetryDetectionEvent,
   timingLine: TimingLineRow,
   config: TelemetryDetectionConfig
 ) {
@@ -167,21 +143,21 @@ function satisfiesMinLapTime(
     return true;
   }
 
-  return sample.elapsedMs - state.currentLapStartedElapsedMs >= config.minLapTimeMs;
+  return event.sampleElapsedMs - state.currentLapStartedElapsedMs >= config.minLapTimeMs;
 }
 
 function toDetectionEvent(
   timingLine: TimingLineRow,
   previousSample: TelemetrySample,
   currentSample: TelemetrySample,
-  intersection: Intersection
+  movementFraction: number
 ): TelemetryDetectionEvent {
   const interpolatedRecordedAt =
     previousSample.recordedAt +
-    (currentSample.recordedAt - previousSample.recordedAt) * intersection.movementFraction;
+    (currentSample.recordedAt - previousSample.recordedAt) * movementFraction;
   const interpolatedElapsedMs =
     previousSample.elapsedMs +
-    (currentSample.elapsedMs - previousSample.elapsedMs) * intersection.movementFraction;
+    (currentSample.elapsedMs - previousSample.elapsedMs) * movementFraction;
 
   return {
     type: timingLine.type === 'start_finish' ? 'start_finish_crossed' : 'sector_crossed',
@@ -192,72 +168,92 @@ function toDetectionEvent(
   };
 }
 
-export function detectTimingLineCrossing(
+// Mirrors how the session runtime advances its state after consuming an event,
+// so several crossings inside one movement segment validate consistently.
+function applyEventToState(
+  state: DetectionState,
+  event: TelemetryDetectionEvent,
+  timingLine: TimingLineRow
+) {
+  state.lastTimingLineId = timingLine.id;
+  state.lastCrossingElapsedMs = event.sampleElapsedMs;
+
+  if (timingLine.type === 'start_finish') {
+    state.currentLapStartedElapsedMs = event.sampleElapsedMs;
+    state.expectedSectorSeq = 1;
+    return;
+  }
+
+  state.expectedSectorSeq = event.seq + 1;
+}
+
+export function detectTimingLineCrossings(
   previousSample: TelemetrySample | null,
   currentSample: TelemetrySample,
   timingLines: TimingLineRow[],
   state: DetectionState,
   config: Partial<TelemetryDetectionConfig> = {}
-): TelemetryDetectionEvent | null {
+): TelemetryDetectionEvent[] {
   if (!previousSample) {
-    return null;
+    return [];
   }
 
   const mergedConfig = { ...DEFAULT_DETECTION_CONFIG, ...config };
-  const movementStart = sampleToPoint(previousSample);
-  const movementEnd = sampleToPoint(currentSample);
+  const lngScale = Math.cos(toRadians((previousSample.lat + currentSample.lat) / 2));
+  const movementStart = projectPoint(previousSample.lat, previousSample.lng, lngScale);
+  const movementEnd = projectPoint(currentSample.lat, currentSample.lng, lngScale);
 
-  const sortedTimingLines = [...timingLines].sort((a, b) => a.seq - b.seq);
+  const candidates: CandidateCrossing[] = [];
 
-  for (const timingLine of sortedTimingLines) {
-    const timingLineStart = timingLineStartPoint(timingLine);
-    const timingLineEnd = timingLineEndPoint(timingLine);
-
-    if (!segmentsIntersect(
+  for (const timingLine of timingLines) {
+    const movementFraction = getMovementFraction(
       movementStart,
       movementEnd,
-      timingLineStart,
-      timingLineEnd
-    )) {
-      continue;
-    }
-
-    const intersection = getSegmentIntersection(
-      movementStart,
-      movementEnd,
-      timingLineStart,
-      timingLineEnd
+      projectPoint(timingLine.a.latitude, timingLine.a.longitude, lngScale),
+      projectPoint(timingLine.b.latitude, timingLine.b.longitude, lngScale)
     );
 
-    if (!intersection) {
-      continue;
+    if (movementFraction !== null) {
+      candidates.push({ timingLine, movementFraction });
     }
-
-    const interpolatedElapsedMs =
-      previousSample.elapsedMs +
-      (currentSample.elapsedMs - previousSample.elapsedMs) * intersection.movementFraction;
-    const interpolatedSample = {
-      ...currentSample,
-      recordedAt:
-        previousSample.recordedAt +
-        (currentSample.recordedAt - previousSample.recordedAt) * intersection.movementFraction,
-      elapsedMs: interpolatedElapsedMs,
-    };
-
-    if (isDebounced(state, interpolatedSample, timingLine.id, mergedConfig)) {
-      continue;
-    }
-
-    if (!isSectorOrderValid(state, timingLine)) {
-      continue;
-    }
-
-    if (!satisfiesMinLapTime(state, interpolatedSample, timingLine, mergedConfig)) {
-      continue;
-    }
-
-    return toDetectionEvent(timingLine, previousSample, currentSample, intersection);
   }
 
-  return null;
+  if (candidates.length === 0) {
+    return [];
+  }
+
+  if (!hasSufficientCrossingSpeed(previousSample, currentSample, mergedConfig)) {
+    return [];
+  }
+
+  candidates.sort((a, b) => a.movementFraction - b.movementFraction);
+
+  const localState: DetectionState = { ...state };
+  const events: TelemetryDetectionEvent[] = [];
+
+  for (const candidate of candidates) {
+    const event = toDetectionEvent(
+      candidate.timingLine,
+      previousSample,
+      currentSample,
+      candidate.movementFraction
+    );
+
+    if (isDebounced(localState, event, candidate.timingLine.id, mergedConfig)) {
+      continue;
+    }
+
+    if (!isSectorOrderValid(localState, candidate.timingLine)) {
+      continue;
+    }
+
+    if (!satisfiesMinLapTime(localState, event, candidate.timingLine, mergedConfig)) {
+      continue;
+    }
+
+    events.push(event);
+    applyEventToState(localState, event, candidate.timingLine);
+  }
+
+  return events;
 }
