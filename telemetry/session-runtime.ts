@@ -45,6 +45,7 @@ type SessionRuntimeSnapshot = {
   totalLaps: number;
   maxSpeedKph: number | null;
   currentLapMaxSpeedKph: number | null;
+  pitInMarked: boolean;
   latestAcceptedSample: TelemetrySample | null;
   latestEvent: TelemetryDetectionEvent | null;
   bufferedPointCount: number;
@@ -58,6 +59,7 @@ type SessionRuntimeSnapshot = {
     lapTimeMs: number;
     deltaToBestMs: number | null;
     isBest: boolean;
+    isExcluded: boolean;
   }[];
 };
 
@@ -127,6 +129,7 @@ export function createSessionRuntime(args: {
     totalLaps: 0,
     maxSpeedKph: null,
     currentLapMaxSpeedKph: null,
+    pitInMarked: false,
     latestAcceptedSample: null,
     latestEvent: null,
     bufferedPointCount: 0,
@@ -145,6 +148,10 @@ export function createSessionRuntime(args: {
 
   // Set by markPitIn; consumed when the next lap starts.
   let pendingOutLap = false;
+  // Pit-flagged laps stay visible in the lap list but are excluded from
+  // best-lap and delta stats, matching how the saved queries treat them.
+  let currentLapIsInLap = false;
+  let currentLapIsOutLap = false;
 
   function enqueue<T>(work: () => Promise<T>): Promise<T> {
     const run = processingQueue.then(work);
@@ -169,6 +176,10 @@ export function createSessionRuntime(args: {
       if (snapshot.status !== 'idle' && snapshot.status !== 'stopped') {
         throw new Error('Session runtime can only start from idle or stopped state.');
       }
+
+      pendingOutLap = false;
+      currentLapIsInLap = false;
+      currentLapIsOutLap = false;
 
       const sessionId = generateId();
       const sessionStartedAtMs = Date.now();
@@ -200,6 +211,7 @@ export function createSessionRuntime(args: {
         lastCrossingElapsedMs: null,
         lastLapMs: null,
         currentLapMaxSpeedKph: null,
+        pitInMarked: false,
         latestAcceptedSample: null,
         latestEvent: null,
         bufferedPointCount: recorder.getBufferedPointCount(),
@@ -230,6 +242,8 @@ export function createSessionRuntime(args: {
         startedAt: new Date(event.sampleRecordedAt).toISOString(),
         isOutLap: pendingOutLap ? 1 : 0,
       });
+      currentLapIsOutLap = pendingOutLap;
+      currentLapIsInLap = false;
       pendingOutLap = false;
 
       snapshot = {
@@ -243,6 +257,7 @@ export function createSessionRuntime(args: {
         lastCrossedTimingLineId: event.timingLineId,
         lastCrossingElapsedMs: event.sampleElapsedMs,
         currentLapMaxSpeedKph: null,
+        pitInMarked: false,
         latestEvent: event,
         currentLapSectorSplitsMs: {},
       };
@@ -270,20 +285,28 @@ export function createSessionRuntime(args: {
     }
 
     const lapTimeMs = Math.max(0, Math.round(event.sampleElapsedMs - snapshot.currentLapStartedElapsedMs));
-    const updatedBestLapMs =
-      snapshot.bestLapMs === null ? lapTimeMs : Math.min(snapshot.bestLapMs, lapTimeMs);
+    const isExcludedLap = currentLapIsInLap || currentLapIsOutLap;
+    const updatedBestLapMs = isExcludedLap
+      ? snapshot.bestLapMs
+      : snapshot.bestLapMs === null
+        ? lapTimeMs
+        : Math.min(snapshot.bestLapMs, lapTimeMs);
     const completedLaps = [
       ...snapshot.completedLaps,
       {
         lapNumber: snapshot.currentLapNumber,
         lapTimeMs,
-        deltaToBestMs: null,
+        deltaToBestMs: null as number | null,
         isBest: false,
+        isExcluded: isExcludedLap,
       },
     ].map((lap) => ({
       ...lap,
-      deltaToBestMs: lap.lapTimeMs === updatedBestLapMs ? null : lap.lapTimeMs - updatedBestLapMs,
-      isBest: lap.lapTimeMs === updatedBestLapMs,
+      deltaToBestMs:
+        lap.isExcluded || updatedBestLapMs === null || lap.lapTimeMs === updatedBestLapMs
+          ? null
+          : lap.lapTimeMs - updatedBestLapMs,
+      isBest: !lap.isExcluded && lap.lapTimeMs === updatedBestLapMs,
     }));
 
     await recorder.finishLap({
@@ -303,6 +326,8 @@ export function createSessionRuntime(args: {
       startedAt: new Date(event.sampleRecordedAt).toISOString(),
       isOutLap: pendingOutLap ? 1 : 0,
     });
+    currentLapIsOutLap = pendingOutLap;
+    currentLapIsInLap = false;
     pendingOutLap = false;
 
     snapshot = {
@@ -319,6 +344,7 @@ export function createSessionRuntime(args: {
       lastLapMs: lapTimeMs,
       totalLaps: snapshot.totalLaps + 1,
       currentLapMaxSpeedKph: null,
+      pitInMarked: false,
       latestEvent: event,
       currentLapSectorSplitsMs: {},
       completedLaps,
@@ -491,8 +517,14 @@ export function createSessionRuntime(args: {
       pendingOutLap = true;
 
       if (snapshot.status === 'lap_in_progress' && snapshot.currentLapId) {
+        currentLapIsInLap = true;
         await recorder.setLapInLap({ lapId: snapshot.currentLapId, isInLap: 1 });
       }
+
+      snapshot = {
+        ...snapshot,
+        pitInMarked: true,
+      };
 
       return getSnapshot();
     });

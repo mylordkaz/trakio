@@ -20,7 +20,8 @@ export function getSectorCount(sessionDetail: SessionDetail | null) {
 
 export function getValidTimedLaps(sessionDetail: SessionDetail | null) {
   return (sessionDetail?.laps ?? []).filter(
-    (lap) => lap.lapTimeMs !== null && lap.isInvalid === 0 && lap.isOutLap === 0
+    (lap) =>
+      lap.lapTimeMs !== null && lap.isInvalid === 0 && lap.isOutLap === 0 && lap.isInLap === 0
   );
 }
 

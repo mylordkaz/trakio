@@ -90,6 +90,7 @@ type DbLapRow = {
   ended_at: ISODateString | null;
   lap_time_ms: number | null;
   is_out_lap: 0 | 1;
+  is_in_lap: 0 | 1;
   is_invalid: 0 | 1;
   max_speed_kph: number | null;
   created_at: ISODateString;
@@ -226,6 +227,7 @@ function mapLapRow(row: DbLapRow): LapRow {
     endedAt: row.ended_at,
     lapTimeMs: row.lap_time_ms,
     isOutLap: row.is_out_lap,
+    isInLap: row.is_in_lap,
     isInvalid: row.is_invalid,
     maxSpeedKph: row.max_speed_kph,
     createdAt: row.created_at,
@@ -264,7 +266,7 @@ async function getBestSessionIdPerTrack(db: SQLiteDatabase): Promise<Set<string>
           s.best_lap_ms,
           MIN(
             CASE
-              WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0
+              WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0 AND l.is_in_lap = 0
                 THEN l.lap_time_ms
             END
           )
@@ -281,7 +283,7 @@ async function getBestSessionIdPerTrack(db: SQLiteDatabase): Promise<Set<string>
         MIN(
           COALESCE(
             s.best_lap_ms,
-            (SELECT MIN(l2.lap_time_ms) FROM laps l2 WHERE l2.session_id = s.id AND l2.is_invalid = 0 AND l2.is_out_lap = 0 AND l2.lap_time_ms IS NOT NULL)
+            (SELECT MIN(l2.lap_time_ms) FROM laps l2 WHERE l2.session_id = s.id AND l2.is_invalid = 0 AND l2.is_out_lap = 0 AND l2.is_in_lap = 0 AND l2.lap_time_ms IS NOT NULL)
           )
         ) AS track_best_ms
       FROM sessions s
@@ -533,7 +535,7 @@ export async function listSessions(db: SQLiteDatabase): Promise<SessionListItem[
         s.best_lap_ms,
         MIN(
           CASE
-            WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0
+            WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0 AND l.is_in_lap = 0
               THEN l.lap_time_ms
           END
         )
@@ -580,7 +582,7 @@ export async function getTrackSessionSummary(
       MAX(s.started_at) AS last_visit,
       MIN(
         CASE
-          WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0
+          WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0 AND l.is_in_lap = 0
             THEN l.lap_time_ms
         END
       ) AS best_lap_ms
@@ -634,7 +636,7 @@ export async function getSessionById(
         s.best_lap_ms,
         MIN(
           CASE
-            WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0
+            WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0 AND l.is_in_lap = 0
               THEN l.lap_time_ms
           END
         )
