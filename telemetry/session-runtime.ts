@@ -9,6 +9,7 @@ import type {
   TelemetrySample,
   TelemetrySampleRejectionReason,
 } from '@/telemetry/types';
+import { getSectorCount, getSectorLineCount } from '@/utils/timing';
 
 type SessionRecorder = ReturnType<typeof createSessionRecorder>;
 
@@ -83,21 +84,6 @@ function getRelevantTimingLines(timingLines: TimingLineRow[]) {
   return timingLines
     .filter((timingLine) => timingLine.type === 'start_finish' || timingLine.type === 'sector')
     .sort((a, b) => a.seq - b.seq);
-}
-
-function getSectorLineCount(timingLines: TimingLineRow[]) {
-  return timingLines.filter((timingLine) => timingLine.type === 'sector').length;
-}
-
-function getSectorCount(timingLines: TimingLineRow[]) {
-  const sectorLineCount = getSectorLineCount(timingLines);
-  const hasStartFinish = timingLines.some((timingLine) => timingLine.type === 'start_finish');
-
-  if (sectorLineCount === 0) {
-    return 0;
-  }
-
-  return sectorLineCount + (hasStartFinish ? 1 : 0);
 }
 
 export function createSessionRuntime(args: {

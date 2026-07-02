@@ -8,7 +8,7 @@ Designed to work fully offline — most race tracks have limited network coverag
 
 ### Core Recording
 - **Track Database** — predefined circuits with ordered timing lines stored locally
-- **GPS Telemetry Recording** — continuous capture of location, speed, timestamp, and accuracy at ~5 Hz
+- **GPS Telemetry Recording** — continuous capture of location, speed, timestamp, and accuracy (up to ~5 Hz on Android; iOS delivers ~1 Hz), with outlier and out-of-order sample rejection
 - **Automatic Lap Detection** — start/finish line crossing detection with debounce and minimum lap time safeguards
 - **Sector Timing** — split times calculated as sector lines are crossed
 - **Live Session Display** — current lap timer, last lap, best lap, sector splits, and lap count in a large, glanceable UI
@@ -16,7 +16,7 @@ Designed to work fully offline — most race tracks have limited network coverag
 
 ### Session Review
 - **Session Library** — browse past sessions by track, date, best lap, and lap count
-- **Lap Path Map** — display saved GPS traces over Google Maps satellite imagery
+- **Lap Path Map** — display saved GPS traces over Google Maps satellite imagery, per lap or whole session, cleaned by a display-only pipeline (spike rejection, gap splitting, smoothing, simplification, spline densification)
 - **Session Analytics** — consistency score, theoretical best, lap delta trends, sector breakdowns
 - **Session Notes** — per-session driver notes
 - **Track Notes** — per-circuit driver notes

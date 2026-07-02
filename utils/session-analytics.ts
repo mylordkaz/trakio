@@ -2,20 +2,14 @@ import i18n from '@/i18n';
 import type { SessionDetail } from '@/db';
 import type { LapBreakdownItem } from '@/components/LapBreakdown';
 import { formatLapTime, formatSectorTime, formatDeltaMs } from '@/utils/format';
+import { getSectorCount as getSectorCountFromTimingLines } from '@/utils/timing';
 
 export function getSectorCount(sessionDetail: SessionDetail | null) {
   if (!sessionDetail) {
     return 0;
   }
 
-  const sectorLineCount = sessionDetail.timingLines.filter((timingLine) => timingLine.type === 'sector').length;
-  const hasStartFinish = sessionDetail.timingLines.some((timingLine) => timingLine.type === 'start_finish');
-
-  if (sectorLineCount === 0) {
-    return 0;
-  }
-
-  return sectorLineCount + (hasStartFinish ? 1 : 0);
+  return getSectorCountFromTimingLines(sessionDetail.timingLines);
 }
 
 export function getValidTimedLaps(sessionDetail: SessionDetail | null) {

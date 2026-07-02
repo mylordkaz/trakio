@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { syncSessionTestSeeds } from '@/db/sessions';
+import { recoverStaleRecordingSessions, syncSessionTestSeeds } from '@/db/sessions';
 import { syncTrackSeeds } from '@/db/tracks';
 
 type Migration = {
@@ -523,6 +523,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
     }
   }
 
+  await recoverStaleRecordingSessions(db);
   await syncTrackSeeds(db);
   await syncSessionTestSeeds(db);
 }

@@ -515,6 +515,37 @@ export async function syncSessionTestSeeds(db: SQLiteDatabase) {
   });
 }
 
+// A session left in 'recording' can only mean the app died mid-session
+// (recovery runs at startup, before any new recording can begin). Close it
+// out as aborted and backfill the summary stats from what was persisted.
+export async function recoverStaleRecordingSessions(db: SQLiteDatabase): Promise<void> {
+  await db.runAsync(
+    `UPDATE sessions
+     SET status = 'aborted',
+         ended_at = COALESCE(
+           ended_at,
+           (SELECT MAX(gp.recorded_at) FROM gps_points gp WHERE gp.session_id = sessions.id),
+           updated_at
+         ),
+         best_lap_ms = COALESCE(
+           best_lap_ms,
+           (SELECT MIN(l.lap_time_ms)
+            FROM laps l
+            WHERE l.session_id = sessions.id
+              AND l.lap_time_ms IS NOT NULL
+              AND l.is_invalid = 0 AND l.is_out_lap = 0 AND l.is_in_lap = 0)
+         ),
+         total_laps = CASE
+           WHEN total_laps > 0 THEN total_laps
+           ELSE (SELECT COUNT(*)
+                 FROM laps l
+                 WHERE l.session_id = sessions.id AND l.lap_time_ms IS NOT NULL)
+         END,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE status = 'recording';`
+  );
+}
+
 export async function listSessions(db: SQLiteDatabase): Promise<SessionListItem[]> {
   const rows = await db.getAllAsync<DbSessionListRow>(
     `SELECT
@@ -602,12 +633,14 @@ export async function getTrackSessionSummary(
 export async function getNextSessionNumber(
   db: SQLiteDatabase
 ): Promise<number> {
-  const row = await db.getFirstAsync<{ session_count: number }>(
-    `SELECT COUNT(*) AS session_count
+  // MAX(rowid) keeps numbering monotonic after deletions, where COUNT(*)
+  // would hand out an already-used session number again.
+  const row = await db.getFirstAsync<{ max_rowid: number | null }>(
+    `SELECT MAX(rowid) AS max_rowid
      FROM sessions;`
   );
 
-  return (row?.session_count ?? 0) + 1;
+  return (row?.max_rowid ?? 0) + 1;
 }
 
 export async function getSessionById(

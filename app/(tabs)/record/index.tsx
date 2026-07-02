@@ -23,6 +23,7 @@ import {
   requestForegroundLocationPermission,
 } from '@/telemetry/location';
 import { formatLapTime } from '@/utils/format';
+import { haversineDistanceMeters } from '@/utils/geo';
 
 type ChecklistItemKey = 'gpsLock' | 'battery' | 'startFinishLineSet';
 
@@ -35,32 +36,6 @@ type ChecklistItem = {
 };
 
 const AUTO_SELECT_MAX_DISTANCE_M = 2000;
-
-function toRadians(value: number) {
-  return (value * Math.PI) / 180;
-}
-
-function getDistanceMeters(
-  aLatitude: number,
-  aLongitude: number,
-  bLatitude: number,
-  bLongitude: number
-) {
-  const earthRadiusM = 6371000;
-  const dLatitude = toRadians(bLatitude - aLatitude);
-  const dLongitude = toRadians(bLongitude - aLongitude);
-  const latitude1 = toRadians(aLatitude);
-  const latitude2 = toRadians(bLatitude);
-
-  const haversine =
-    Math.sin(dLatitude / 2) * Math.sin(dLatitude / 2) +
-    Math.cos(latitude1) *
-      Math.cos(latitude2) *
-      Math.sin(dLongitude / 2) *
-      Math.sin(dLongitude / 2);
-
-  return 2 * earthRadiusM * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
-}
 
 function getChecklistValueClass(status: ChecklistStatus) {
   switch (status) {
@@ -223,7 +198,7 @@ export default function PreSessionScreen() {
             continue;
           }
 
-          const distanceM = getDistanceMeters(
+          const distanceM = haversineDistanceMeters(
             locationSample.lat,
             locationSample.lng,
             circuit.centerLatitude,
@@ -598,7 +573,7 @@ export default function PreSessionScreen() {
                 <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.selectTrack')}</Text>
                 <Ionicons name="chevron-forward" size={16} color="#71717a" />
               </Pressable>
-            ) : !showCircuitPicker ? (
+            ) : selectedCircuit && !showCircuitPicker ? (
               <Pressable onPress={() => setShowCircuitPicker(true)}>
                 <View className="flex-row items-center justify-between">
                   <View className="flex-1">

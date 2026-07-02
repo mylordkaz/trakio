@@ -19,30 +19,41 @@ So the current priority is to improve the telemetry pipeline itself as much as p
 Current implementation already includes:
 
 - high-accuracy location mode via `BestForNavigation`
-- target sampling interval of `200ms` (~5 Hz requested)
-- start/finish and sector crossing detection using segment intersection
+- target sampling interval of `200ms` (~5 Hz requested; the `timeInterval`
+  option is Android-only — iOS delivers ~1 Hz from CoreLocation)
+- start/finish and sector crossing detection using segment intersection in a
+  locally metric projection (longitude scaled by cos latitude), handling
+  multiple crossings per movement segment in travel order
 - interpolated crossing timestamps for lap and sector timing
-- basic sample filtering:
+- minimum-crossing-speed gate so a car parked on a timing line does not arm
+  laps from GPS jitter
+- sample filtering (`telemetry/filters.ts`):
   - reject poor accuracy over threshold
-  - reject impossible jumps
-  - sanitize heading
-  - derive speed when missing
-- light saved-session map cleanup:
-  - ignore very poor accuracy points for display
-  - apply a small 3-point smoothing pass
+  - reject out-of-order timestamps (stored telemetry is strictly monotonic)
+  - positional impossible-jump rejection with an accuracy-scaled bound,
+    applied whether or not the device reports a speed
+  - normalize invalid sentinels (iOS speed/heading `-1`, non-positive accuracy)
+  - derive speed from movement when the device reports none
+- display-only map pipeline (`utils/displayLine.ts`, raw data untouched):
+  - accuracy filter, split at GPS dropouts instead of bridging them
+  - isolated-spike rejection (covers data recorded before the jump-filter fix)
+  - endpoint-preserving weighted smoothing
+  - Douglas-Peucker simplification with a display point budget
+  - centripetal Catmull-Rom densification
+- serialized sample processing (no concurrent crossing detection races)
+- stale `recording` sessions recovered as `aborted` on startup
+- live warnings for GPS loss, accuracy degradation, and app-backgrounding
 
 ## Current Limitations
 
 The current telemetry pipeline is functional, but still limited in these ways:
 
-- phone GPS path still drifts visually on the map
-- saved map lines are only lightly smoothed
-- no advanced outlier rejection
+- foreground-only recording: backgrounding the app pauses capture (warned
+  live and flagged, but not prevented; background location is future work)
 - no Kalman or similar state estimator
 - no heading/speed fusion for path reconstruction
 - no accelerometer/gyroscope fusion
-- no dedicated post-session trajectory reconstruction pass
-- no display-only densification/interpolation of the map path
+- iOS sampling capped at ~1 Hz without external hardware
 
 ## Improvement Priorities
 
