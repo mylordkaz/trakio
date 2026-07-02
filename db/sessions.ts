@@ -681,7 +681,7 @@ export async function getSessionById(
         `SELECT *
          FROM gps_points
          WHERE session_id = ?
-         ORDER BY recorded_at ASC;`,
+         ORDER BY recorded_at ASC, id ASC;`,
         sessionId
       ),
       db.getAllAsync<DbLapRow>(

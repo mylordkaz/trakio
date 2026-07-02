@@ -224,6 +224,7 @@ export default {
     greenStartFinish: 'Green = start / finish',
     purpleFastestLine: 'Purple = fastest line',
     gpsLine: 'GPS Line',
+    allLaps: 'All',
     bestRun: 'Best Run',
     theoreticalBest: 'Theoretical Best',
     gap: '−%{gap} gap',

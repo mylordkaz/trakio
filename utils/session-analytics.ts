@@ -68,17 +68,28 @@ export function getTopSpeedKph(sessionDetail: SessionDetail | null) {
     return null;
   }
 
-  const speedCandidates = [
-    sessionDetail.session.maxSpeedKph,
-    ...sessionDetail.laps.map((lap) => lap.maxSpeedKph),
-    ...sessionDetail.gpsPoints.map((point) => (point.speedMps !== null ? point.speedMps * 3.6 : null)),
-  ].filter((value): value is number => value !== null);
+  // Iterative max: a spread over tens of thousands of GPS points would
+  // overflow the engine's argument limit on long sessions.
+  let topSpeedKph: number | null = sessionDetail.session.maxSpeedKph;
 
-  if (speedCandidates.length === 0) {
-    return null;
+  for (const lap of sessionDetail.laps) {
+    if (lap.maxSpeedKph !== null && (topSpeedKph === null || lap.maxSpeedKph > topSpeedKph)) {
+      topSpeedKph = lap.maxSpeedKph;
+    }
   }
 
-  return Math.max(...speedCandidates);
+  for (const point of sessionDetail.gpsPoints) {
+    if (point.speedMps === null) {
+      continue;
+    }
+
+    const speedKph = point.speedMps * 3.6;
+    if (topSpeedKph === null || speedKph > topSpeedKph) {
+      topSpeedKph = speedKph;
+    }
+  }
+
+  return topSpeedKph;
 }
 
 export function getTheoreticalBestMs(sessionDetail: SessionDetail | null) {

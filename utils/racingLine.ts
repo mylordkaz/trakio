@@ -1,18 +1,21 @@
 import type { SessionDetail } from '@/db';
+import { buildDisplayPolylines, type GeoPoint } from '@/utils/displayLine';
 import { getBestLap } from '@/utils/session-analytics';
 
-export type GeoPoint = { latitude: number; longitude: number };
+export type { GeoPoint } from '@/utils/displayLine';
 
 export function getBestLapRacingLine(sessionDetail: SessionDetail | null): GeoPoint[] {
   if (!sessionDetail) return [];
   const bestLap = getBestLap(sessionDetail);
   if (!bestLap) return [];
-  const points = sessionDetail.gpsPoints
-    .filter((point) => point.lapId === bestLap.id)
-    .map((point) => ({ latitude: point.latitude, longitude: point.longitude }));
+
+  const lapPoints = sessionDetail.gpsPoints.filter((point) => point.lapId === bestLap.id);
+  const points = buildDisplayPolylines(lapPoints, { densifySubdivisions: 2 }).flat();
+
   if (points.length > 2) {
     points.push(points[0]);
   }
+
   return points;
 }
 
