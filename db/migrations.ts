@@ -129,6 +129,11 @@ async function createBaseSchema(db: SQLiteDatabase) {
         UNIQUE(session_id, seq)
       );
 
+      CREATE TABLE IF NOT EXISTS deleted_seed_sessions (
+        session_id TEXT PRIMARY KEY NOT NULL,
+        deleted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE INDEX IF NOT EXISTS idx_timing_lines_track_seq
         ON timing_lines(track_id, seq);
 
@@ -469,6 +474,17 @@ const MIGRATIONS: Migration[] = [
       if (!cols.includes('leaderboard_lap_time_ms')) {
         await db.execAsync('ALTER TABLE tracks ADD COLUMN leaderboard_lap_time_ms INTEGER;');
       }
+    },
+  },
+  {
+    version: 10,
+    up: async (db) => {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS deleted_seed_sessions (
+          session_id TEXT PRIMARY KEY NOT NULL,
+          deleted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
     },
   },
 ];

@@ -16,6 +16,8 @@ import type {
 
 type SessionDisplayStatus = 'Best' | 'Recent' | null;
 
+const SEEDED_SESSION_IDS = new Set(SESSION_TEST_SEEDS.map((seed) => seed.session.id));
+
 type DbSessionListRow = {
   id: string;
   name: string | null;
@@ -302,8 +304,17 @@ function toDisplayStatus(sessionId: string, startedAt: string, bestSessionIds: S
 }
 
 export async function syncSessionTestSeeds(db: SQLiteDatabase) {
+  const deletedSeedRows = await db.getAllAsync<{ session_id: string }>(
+    'SELECT session_id FROM deleted_seed_sessions;'
+  );
+  const deletedSeedIds = new Set(deletedSeedRows.map((row) => row.session_id));
+
   await db.withExclusiveTransactionAsync(async (txn) => {
     for (const seed of SESSION_TEST_SEEDS) {
+      if (deletedSeedIds.has(seed.session.id)) {
+        continue;
+      }
+
       const { session, laps, lapSectors, gpsPoints, notes } = seed;
       const lapIds = laps.map((lap) => lap.id);
       const noteIds = notes.map((note) => note.id);
@@ -805,5 +816,16 @@ export async function deleteSession(
   db: SQLiteDatabase,
   sessionId: string
 ): Promise<void> {
-  await db.runAsync('DELETE FROM sessions WHERE id = ?;', sessionId);
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    if (SEEDED_SESSION_IDS.has(sessionId)) {
+      await txn.runAsync(
+        `INSERT INTO deleted_seed_sessions (session_id)
+         VALUES (?)
+         ON CONFLICT(session_id) DO NOTHING;`,
+        sessionId
+      );
+    }
+
+    await txn.runAsync('DELETE FROM sessions WHERE id = ?;', sessionId);
+  });
 }
