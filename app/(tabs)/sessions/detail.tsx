@@ -32,7 +32,7 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useShareSession } from '@/hooks/useShareSession';
 import { formatLapTime, formatGapSeconds, formatDateTime, formatDuration, formatSpeed } from '@/utils/format';
-import { buildDisplayPolylines } from '@/utils/displayLine';
+import { buildDisplayPolylines, groupPointsIntoLapRuns } from '@/utils/displayLine';
 import { getBestLapRacingLine } from '@/utils/racingLine';
 import {
   getBestLap,
@@ -257,28 +257,34 @@ export default function SessionDetailScreen() {
   const sectorLines = sessionDetail?.timingLines.filter((timingLine) => timingLine.type === 'sector') ?? [];
   const bestLap = getBestLap(sessionDetail);
 
-  const sessionLineSegments = useMemo(
-    () => buildDisplayPolylines(sessionDetail?.gpsPoints ?? []),
-    [sessionDetail]
-  );
+  // Every lap's polylines are built once and stay mounted; selecting a lap
+  // only swaps stroke colors. Mounting/unmounting map children on selection
+  // is a known instability with react-native-maps on the new architecture.
+  const lapLineGroups = useMemo(() => {
+    const points = sessionDetail?.gpsPoints ?? [];
+    if (points.length === 0) {
+      return [];
+    }
+
+    const runs = groupPointsIntoLapRuns(points);
+    const displayPointBudget = Math.max(250, Math.floor(6000 / runs.length));
+
+    return runs.map((run) => ({
+      key: run.key,
+      lapId: run.lapId,
+      segments: buildDisplayPolylines(run.points, { maxDisplayPoints: displayPointBudget }),
+    }));
+  }, [sessionDetail]);
   const lapIdsWithPoints = useMemo(() => {
     const lapIds = new Set<string>();
-    for (const point of sessionDetail?.gpsPoints ?? []) {
-      if (point.lapId !== null) {
-        lapIds.add(point.lapId);
+    for (const group of lapLineGroups) {
+      if (group.lapId !== null && group.segments.length > 0) {
+        lapIds.add(group.lapId);
       }
     }
     return lapIds;
-  }, [sessionDetail]);
+  }, [lapLineGroups]);
   const activeLapId = selectedLapId !== null && lapIdsWithPoints.has(selectedLapId) ? selectedLapId : null;
-  const activeLapSegments = useMemo(() => {
-    if (activeLapId === null || !sessionDetail) {
-      return null;
-    }
-    return buildDisplayPolylines(
-      sessionDetail.gpsPoints.filter((point) => point.lapId === activeLapId)
-    );
-  }, [sessionDetail, activeLapId]);
   const selectableLaps = (sessionDetail?.laps ?? []).filter((lap) => lapIdsWithPoints.has(lap.id));
 
   return (
@@ -348,27 +354,21 @@ export default function SessionDetailScreen() {
                   toolbarEnabled={false}
                   style={{ flex: 1 }}
                 >
-                  {sessionLineSegments.map((segment, index) => {
-                    const traceColor = activeLapId !== null ? 'rgba(245, 158, 11, 0.3)' : '#f59e0b';
-                    return (
+                  {lapLineGroups.map((group) => {
+                    const isVisible = activeLapId === null || group.lapId === activeLapId;
+                    const strokeColor = isVisible ? '#f59e0b' : 'transparent';
+                    const strokeWidth = activeLapId !== null && isVisible ? 3.5 : 3;
+
+                    return group.segments.map((segment, segmentIndex) => (
                       <Polyline
-                        key={`session-line-${index}`}
+                        key={`${group.key}-${segmentIndex}`}
                         coordinates={segment}
-                        strokeColor={traceColor}
-                        strokeColors={Platform.OS === 'ios' ? [traceColor] : undefined}
-                        strokeWidth={activeLapId !== null ? 2 : 3}
+                        strokeColor={strokeColor}
+                        strokeColors={Platform.OS === 'ios' ? [strokeColor] : undefined}
+                        strokeWidth={strokeWidth}
                       />
-                    );
+                    ));
                   })}
-                  {(activeLapSegments ?? []).map((segment, index) => (
-                    <Polyline
-                      key={`lap-line-${index}`}
-                      coordinates={segment}
-                      strokeColor="#f59e0b"
-                      strokeColors={Platform.OS === 'ios' ? ['#f59e0b'] : undefined}
-                      strokeWidth={3.5}
-                    />
-                  ))}
                   {startFinishLine ? (
                     <Polyline
                       coordinates={[startFinishLine.a, startFinishLine.b]}

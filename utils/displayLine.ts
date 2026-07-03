@@ -272,6 +272,41 @@ function densifySegment(points: XY[], subdivisions: number): XY[] {
   return result;
 }
 
+export type LapRunPoint = DisplayLinePoint & { lapId: string | null };
+
+export type LapRun = {
+  key: string;
+  lapId: string | null;
+  points: LapRunPoint[];
+};
+
+// Consecutive points sharing a lap id form a run; each run borrows the next
+// run's first point so the drawn line stays continuous through the
+// start/finish boundary where the lap id changes.
+export function groupPointsIntoLapRuns(points: LapRunPoint[]): LapRun[] {
+  const runs: { lapId: string | null; points: LapRunPoint[] }[] = [];
+
+  for (const point of points) {
+    const currentRun = runs[runs.length - 1];
+
+    if (!currentRun || currentRun.lapId !== point.lapId) {
+      runs.push({ lapId: point.lapId, points: [point] });
+      continue;
+    }
+
+    currentRun.points.push(point);
+  }
+
+  for (let i = 0; i < runs.length - 1; i++) {
+    runs[i].points.push(runs[i + 1].points[0]);
+  }
+
+  return runs.map((run, index) => ({
+    ...run,
+    key: `${run.lapId ?? 'unassigned'}-${index}`,
+  }));
+}
+
 // Display-only pipeline for drawing a recorded trace on the map. Raw stored
 // telemetry is never modified: accuracy-filter -> split at gaps -> smooth ->
 // simplify -> densify, returning one coordinate array per continuous run.
