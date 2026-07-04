@@ -1,4 +1,4 @@
-import { toRadians } from '@/utils/geo';
+import { haversineDistanceMeters, toRadians } from '@/utils/geo';
 
 export type GeoPoint = { latitude: number; longitude: number };
 
@@ -11,22 +11,26 @@ export type DisplayLinePoint = {
 
 export type DisplayLineConfig = {
   maxAccuracyM: number;
+  bridgeAccuracyM: number;
   maxGapMs: number;
   maxGapM: number;
   smoothingPasses: number;
   simplifyToleranceM: number;
   densifySubdivisions: number;
   maxDisplayPoints: number;
+  microSegmentMinLengthM: number;
 };
 
 const DEFAULT_DISPLAY_LINE_CONFIG: DisplayLineConfig = {
   maxAccuracyM: 15,
+  bridgeAccuracyM: 35,
   maxGapMs: 3000,
   maxGapM: 120,
   smoothingPasses: 2,
   simplifyToleranceM: 1.2,
   densifySubdivisions: 4,
   maxDisplayPoints: 4000,
+  microSegmentMinLengthM: 25,
 };
 
 const METERS_PER_DEG_LAT = 111320;
@@ -35,10 +39,19 @@ const DUPLICATE_DISTANCE_M = 0.01;
 type XY = {
   x: number;
   y: number;
+  accuracyM?: number | null;
 };
 
 function distanceM(a: XY, b: XY) {
   return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+function segmentLengthM(points: XY[]) {
+  let length = 0;
+  for (let i = 1; i < points.length; i++) {
+    length += distanceM(points[i - 1], points[i]);
+  }
+  return length;
 }
 
 function lerp(a: XY, b: XY, t: number): XY {
@@ -46,6 +59,53 @@ function lerp(a: XY, b: XY, t: number): XY {
     x: a.x + (b.x - a.x) * t,
     y: a.y + (b.y - a.y) * t,
   };
+}
+
+// Two-tier accuracy selection. Clean sections keep only strict-tier points;
+// where dropping degraded points would tear a hole in the line (a GPS shadow
+// under a gantry or beside pit buildings recurs at the same spot every lap),
+// the best of the degraded points are re-admitted to bridge the shadow. They
+// carry their accuracy so smoothing can conform them harder.
+function selectDisplayPoints(
+  points: DisplayLinePoint[],
+  config: DisplayLineConfig
+): DisplayLinePoint[] {
+  const selected: DisplayLinePoint[] = [];
+  let lastStrictIndex = -1;
+
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i];
+    const isStrict = point.accuracyM === null || point.accuracyM <= config.maxAccuracyM;
+
+    if (!isStrict) {
+      continue;
+    }
+
+    if (lastStrictIndex !== -1 && i > lastStrictIndex + 1) {
+      const previousStrict = points[lastStrictIndex];
+      const gapMs = Date.parse(point.recordedAt) - Date.parse(previousStrict.recordedAt);
+      const gapM = haversineDistanceMeters(
+        previousStrict.latitude,
+        previousStrict.longitude,
+        point.latitude,
+        point.longitude
+      );
+
+      if (gapMs > config.maxGapMs || gapM > config.maxGapM) {
+        for (let j = lastStrictIndex + 1; j < i; j++) {
+          const candidate = points[j];
+          if (candidate.accuracyM !== null && candidate.accuracyM <= config.bridgeAccuracyM) {
+            selected.push(candidate);
+          }
+        }
+      }
+    }
+
+    selected.push(point);
+    lastStrictIndex = i;
+  }
+
+  return selected;
 }
 
 // Splits the usable points into continuous runs: wherever the accuracy filter
@@ -64,6 +124,7 @@ function splitIntoSegments(
     const projected: XY = {
       x: point.longitude * lngScaleM,
       y: point.latitude * METERS_PER_DEG_LAT,
+      accuracyM: point.accuracyM,
     };
     const timeMs = Date.parse(point.recordedAt);
 
@@ -131,9 +192,33 @@ function rejectSpikes(points: XY[]): XY[] {
   return result;
 }
 
-// Endpoint-preserving [1, 2, 1] weighted average; damps per-fix jitter while
-// keeping apexes better than a uniform average.
-function smoothSegment(points: XY[], passes: number): XY[] {
+// Endpoint-preserving smoothing where each point is pulled toward its
+// neighbors' midpoint in proportion to its reported accuracy: trustworthy
+// fixes barely move (keeping apexes crisp) while degraded bridge points are
+// strongly conformed to the path around them.
+const MIN_SMOOTHING_PULL = 0.3;
+const MAX_SMOOTHING_PULL = 0.85;
+const UNKNOWN_ACCURACY_PULL = 0.5;
+const BEST_EXPECTED_ACCURACY_M = 5;
+
+function smoothingPull(accuracyM: number | null | undefined, config: DisplayLineConfig) {
+  if (accuracyM === null || accuracyM === undefined) {
+    return UNKNOWN_ACCURACY_PULL;
+  }
+
+  const span = Math.max(1, config.bridgeAccuracyM - BEST_EXPECTED_ACCURACY_M);
+  const normalized = (accuracyM - BEST_EXPECTED_ACCURACY_M) / span;
+
+  return Math.max(
+    MIN_SMOOTHING_PULL,
+    Math.min(
+      MAX_SMOOTHING_PULL,
+      MIN_SMOOTHING_PULL + (MAX_SMOOTHING_PULL - MIN_SMOOTHING_PULL) * normalized
+    )
+  );
+}
+
+function smoothSegment(points: XY[], passes: number, config: DisplayLineConfig): XY[] {
   let result = points;
 
   for (let pass = 0; pass < passes; pass++) {
@@ -148,10 +233,14 @@ function smoothSegment(points: XY[], passes: number): XY[] {
 
       const prev = all[index - 1];
       const next = all[index + 1];
+      const pull = smoothingPull(point.accuracyM, config);
+      const midX = (prev.x + next.x) / 2;
+      const midY = (prev.y + next.y) / 2;
 
       return {
-        x: (prev.x + 2 * point.x + next.x) / 4,
-        y: (prev.y + 2 * point.y + next.y) / 4,
+        x: point.x + (midX - point.x) * pull,
+        y: point.y + (midY - point.y) * pull,
+        accuracyM: point.accuracyM,
       };
     });
   }
@@ -316,9 +405,7 @@ export function buildDisplayPolylines(
 ): GeoPoint[][] {
   const mergedConfig = { ...DEFAULT_DISPLAY_LINE_CONFIG, ...config };
 
-  const usablePoints = points.filter(
-    (point) => point.accuracyM === null || point.accuracyM <= mergedConfig.maxAccuracyM
-  );
+  const usablePoints = selectDisplayPoints(points, mergedConfig);
 
   if (usablePoints.length < 2) {
     return [];
@@ -334,12 +421,15 @@ export function buildDisplayPolylines(
 
   const segments = splitIntoSegments(usablePoints, lngScaleM, mergedConfig);
 
-  const simplified = segments.map((segment) =>
-    simplifySegment(
-      smoothSegment(rejectSpikes(segment), mergedConfig.smoothingPasses),
-      mergedConfig.simplifyToleranceM
+  const simplified = segments
+    .map((segment) =>
+      simplifySegment(
+        smoothSegment(rejectSpikes(segment), mergedConfig.smoothingPasses, mergedConfig),
+        mergedConfig.simplifyToleranceM
+      )
     )
-  );
+    // Isolated slivers shorter than this read as debris around GPS shadows.
+    .filter((segment) => segmentLengthM(segment) >= mergedConfig.microSegmentMinLengthM);
 
   const totalPoints = simplified.reduce((sum, segment) => sum + segment.length, 0);
   if (totalPoints === 0) {
