@@ -61,102 +61,59 @@ The current telemetry pipeline is functional, but still limited in these ways:
 - no accelerometer/gyroscope fusion
 - iOS sampling capped at ~1 Hz without external hardware
 
-## Improvement Priorities
+## Implemented (July 2026 telemetry overhaul)
 
-### 1. Maximize Sampling Quality
+The original priority list from this document is now largely done — see
+Current State above for the full inventory. In summary:
 
-Areas to review and tune:
+- validation: positional jump rejection with accuracy-scaled bounds,
+  out-of-order rejection, sentinel normalization (was priority 2)
+- display: accuracy-weighted smoothing, spike suppression, thinning
+  (Douglas-Peucker), densification (Catmull-Rom), per-lap segmentation,
+  GPS-shadow hole joining (was priorities 3 and 4)
+- timing: crossing-quality assessment and Doppler speed/heading re-timing of
+  degraded crossings with per-lap estimated flags (first slice of priority 5's
+  "use GPS speed/heading as a stronger signal")
 
-- requested GPS sampling interval
-- actual delivered sample cadence on device
-- high-accuracy navigation mode behavior on iOS and Android
+Field validation: a 13-lap Tsukuba session against the circuit transponder
+showed clean crossings within ±0.08 s; the ~1 s outliers were traced to the
+start/finish GPS shadow and are what the re-timing fallback addresses.
+
+## Remaining Work
+
+### 1. Sampling-quality experiments
+
+- measure actual delivered cadence per device; test `100ms` vs `200ms` on
+  Android real drives (iOS is capped at ~1 Hz by CoreLocation regardless)
 - battery/performance tradeoffs at higher sample rates
 
-Potential future work:
+### 2. State estimation (Kalman)
 
-- test `100ms` vs `200ms` sampling on real drives
-- compare actual delivered frequency by device
-- tune platform-specific options if needed
+- constant-velocity filter fusing position with Doppler speed/heading
+- feeds detection with stabilized positions through GPS shadows (would reduce
+  how often the re-timing fallback and estimated flags are needed at all)
+- raw stored telemetry stays untouched; the filter output is derived
 
-### 2. Improve Sample Validation
+### 3. Multi-lap consensus
 
-Current validation is basic.
+- many laps of the same track describe the same corridor; a consensus line can
+  correct confident-but-wrong drift that single-lap processing cannot detect
+- also a candidate for a persistent post-session reconstruction pass
 
-Future work:
+### 4. IMU fusion
 
-- tighter dynamic accuracy thresholds
-- stronger impossible-jump detection
-- outlier detection using neighboring points
-- heading sanity improvements
-- stronger speed consistency checks
+- accelerometer/gyroscope input for continuity through corners and shadows
 
-Goal:
+### 5. Background recording
 
-- reject bad points without throwing away useful real track data
+- startLocationUpdatesAsync + TaskManager with AutomotiveNavigation activity
+  type, UIBackgroundModes location, Android foreground service
+- removes the app-backgrounding interruption class entirely
 
-### 3. Improve Display-Only Path Smoothing
+### 6. External hardware
 
-The saved session path should look cleaner than the live path.
-
-Future work:
-
-- better moving average smoothing
-- weighted smoothing instead of simple averaging
-- display-only point thinning
-- display-only path densification between points
-- preserve corners while reducing zigzag noise
-
-Goal:
-
-- improve map readability without altering raw stored telemetry
-
-### 4. Add Stronger Post-Processing
-
-Post-session processing is one of the biggest quality opportunities because it has the full dataset and no live-time constraints.
-
-Future work:
-
-- full-session outlier removal
-- re-run smoothing on the saved dataset
-- reconstruct a cleaner polyline for display
-- detect and suppress isolated spikes
-- segment path cleanup by lap
-
-Goal:
-
-- saved session map should be cleaner and more believable than live rendering
-
-### 5. Add Sensor Fusion
-
-Current pipeline is still GPS-centric.
-
-Future work:
-
-- use heading more intentionally in path cleanup
-- use GPS speed as a stronger signal for continuity
-- add accelerometer input
-- add gyroscope input
-- fuse GPS + speed + heading + IMU for better path stability
-
-Goal:
-
-- improve continuity through corners
-- improve behavior when GPS is weak or jittery
-
-### 6. Prepare for External Hardware
-
-External devices are a later feature, but the pipeline should be built so they plug into a strong processing system.
-
-Future work:
-
-- make telemetry ingestion source-agnostic
-- support higher-rate external GPS streams
-- support better speed/heading signals
-- keep downstream filtering and processing reusable
-
-Goal:
-
-- external hardware should improve an already strong telemetry stack, not compensate for a weak one
+- source-agnostic telemetry ingestion; higher-rate external GPS streams plug
+  into the same filtering/detection/display pipeline
 
 ## Guiding Rule
 
@@ -171,16 +128,15 @@ Improvements should usually happen in:
 
 This keeps the original data available while allowing better rendered results and better future processing.
 
-## Recommended Next Areas After MVP
+## Recommended Next Areas
 
-Highest-value next steps:
+Highest-value next steps, in order:
 
-1. stronger saved-session post-processing
-2. better display-only smoothing for session maps
-3. tighter validation and outlier rejection
-4. sampling-quality experiments at `100ms` vs `200ms`
-5. heading/speed-assisted path cleanup
-6. IMU fusion research and prototype
+1. constant-velocity Kalman filter feeding detection (see Remaining Work 2)
+2. multi-lap consensus line for drift correction
+3. background recording
+4. Android sampling-cadence experiments
+5. IMU fusion research and prototype
 
 ## Summary
 
