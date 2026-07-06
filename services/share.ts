@@ -1,6 +1,7 @@
 import Constants from 'expo-constants';
 import { Linking, Platform } from 'react-native';
 import Share, { Social } from 'react-native-share';
+import { utf8ToBase64 } from '@/utils/base64';
 
 type ShareFailureReason = 'instagram_unavailable' | 'missing_app_id' | 'share_failed';
 
@@ -87,6 +88,48 @@ export async function shareImageWithText(
       message: text,
       type: 'image/png',
     });
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('User did not share')) {
+      return { ok: true };
+    }
+    return { ok: false, reason: 'share_failed', message };
+  }
+}
+
+// Shares a session's full raw telemetry as a JSON file (AirDrop, Files,
+// mail...). This is the raw stored data — none of the display-pipeline
+// processing is applied — so it can be analyzed or archived off-device.
+export async function shareSessionDataExport(sessionDetail: {
+  session: { id: string; name: string | null };
+  track: unknown;
+  timingLines: unknown[];
+  laps: unknown[];
+  gpsPoints: unknown[];
+}): Promise<ShareResult> {
+  try {
+    const payload = {
+      format: 'trakio-session-export',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      session: sessionDetail.session,
+      track: sessionDetail.track,
+      timingLines: sessionDetail.timingLines,
+      laps: sessionDetail.laps,
+      gpsPoints: sessionDetail.gpsPoints,
+    };
+
+    const json = JSON.stringify(payload);
+    const filename = `trakio-session-${sessionDetail.session.id}.json`;
+
+    await Share.open({
+      url: `data:application/json;base64,${utf8ToBase64(json)}`,
+      filename,
+      type: 'application/json',
+      failOnCancel: false,
+    });
+
     return { ok: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

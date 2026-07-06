@@ -2,25 +2,20 @@ import i18n from '@/i18n';
 import type { SessionDetail } from '@/db';
 import type { LapBreakdownItem } from '@/components/LapBreakdown';
 import { formatLapTime, formatSectorTime, formatDeltaMs } from '@/utils/format';
+import { getSectorCount as getSectorCountFromTimingLines } from '@/utils/timing';
 
 export function getSectorCount(sessionDetail: SessionDetail | null) {
   if (!sessionDetail) {
     return 0;
   }
 
-  const sectorLineCount = sessionDetail.timingLines.filter((timingLine) => timingLine.type === 'sector').length;
-  const hasStartFinish = sessionDetail.timingLines.some((timingLine) => timingLine.type === 'start_finish');
-
-  if (sectorLineCount === 0) {
-    return 0;
-  }
-
-  return sectorLineCount + (hasStartFinish ? 1 : 0);
+  return getSectorCountFromTimingLines(sessionDetail.timingLines);
 }
 
 export function getValidTimedLaps(sessionDetail: SessionDetail | null) {
   return (sessionDetail?.laps ?? []).filter(
-    (lap) => lap.lapTimeMs !== null && lap.isInvalid === 0 && lap.isOutLap === 0
+    (lap) =>
+      lap.lapTimeMs !== null && lap.isInvalid === 0 && lap.isOutLap === 0 && lap.isInLap === 0
   );
 }
 
@@ -68,17 +63,28 @@ export function getTopSpeedKph(sessionDetail: SessionDetail | null) {
     return null;
   }
 
-  const speedCandidates = [
-    sessionDetail.session.maxSpeedKph,
-    ...sessionDetail.laps.map((lap) => lap.maxSpeedKph),
-    ...sessionDetail.gpsPoints.map((point) => (point.speedMps !== null ? point.speedMps * 3.6 : null)),
-  ].filter((value): value is number => value !== null);
+  // Iterative max: a spread over tens of thousands of GPS points would
+  // overflow the engine's argument limit on long sessions.
+  let topSpeedKph: number | null = sessionDetail.session.maxSpeedKph;
 
-  if (speedCandidates.length === 0) {
-    return null;
+  for (const lap of sessionDetail.laps) {
+    if (lap.maxSpeedKph !== null && (topSpeedKph === null || lap.maxSpeedKph > topSpeedKph)) {
+      topSpeedKph = lap.maxSpeedKph;
+    }
   }
 
-  return Math.max(...speedCandidates);
+  for (const point of sessionDetail.gpsPoints) {
+    if (point.speedMps === null) {
+      continue;
+    }
+
+    const speedKph = point.speedMps * 3.6;
+    if (topSpeedKph === null || speedKph > topSpeedKph) {
+      topSpeedKph = speedKph;
+    }
+  }
+
+  return topSpeedKph;
 }
 
 export function getTheoreticalBestMs(sessionDetail: SessionDetail | null) {
@@ -138,7 +144,7 @@ export function getLapBreakdownItems(sessionDetail: SessionDetail | null): LapBr
 
     return {
       lap: lap.lapNumber,
-      time: formatLapTime(lap.lapTimeMs),
+      time: `${lap.isTimingEstimated === 1 ? '≈' : ''}${formatLapTime(lap.lapTimeMs)}`,
       timeMs: lap.lapTimeMs ?? 0,
       delta: deltaMs === null ? null : formatDeltaMs(deltaMs),
       sectors: sectorMs.map((value) => formatSectorTime(value)),

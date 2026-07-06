@@ -103,6 +103,8 @@ export type LapRow = {
   endedAt: ISODateString | null;
   lapTimeMs: number | null;
   isOutLap: 0 | 1;
+  isInLap: 0 | 1;
+  isTimingEstimated: 0 | 1;
   isInvalid: 0 | 1;
   maxSpeedKph: number | null;
   createdAt: ISODateString;

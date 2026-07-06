@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, View, Text, ScrollView, Pressable } from 'react-native';
+import { Animated, AppState, View, Text, ScrollView, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -50,9 +50,18 @@ function getGpsSignalPercent(accuracyM: number | null) {
   return Math.max(10, Math.min(100, Math.round(100 - ((accuracyM - 5) / 45) * 90)));
 }
 
-function getGpsSignalLabel(accuracyM: number | null) {
-  return `${getGpsSignalPercent(accuracyM)}%`;
+function getGpsAccuracyLabel(accuracyM: number | null) {
+  if (accuracyM === null) {
+    return i18n.t('telemetry.searching');
+  }
+
+  return i18n.t('telemetry.gpsAccuracy', { meters: Math.round(accuracyM) });
 }
+
+// Accepted samples stop arriving when the app is backgrounded, the GPS signal
+// drops, or every fix is being rejected; the driver needs to know live.
+const GPS_STALE_THRESHOLD_MS = 4000;
+const GPS_DEGRADED_REJECTION_STREAK = 5;
 
 function getBrakePercent(
   previousSample: TelemetrySample | null,
@@ -105,7 +114,20 @@ export default function RecordingScreen() {
   const [isLandscape, setIsLandscape] = useState(false);
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
+  const [wasInterrupted, setWasInterrupted] = useState(false);
   const tabNavigator = useNavigation().getParent();
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'background' && !hasStoppedRef.current) {
+        setWasInterrupted(true);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     void ScreenOrientation.unlockAsync();
@@ -374,12 +396,45 @@ export default function RecordingScreen() {
       : null;
   const recentLaps = (runtimeSnapshot?.completedLaps ?? []).map((lap) => ({
     lap: lap.lapNumber,
-    time: formatLapTime(lap.lapTimeMs),
-    delta:
-      lap.isBest || lap.deltaToBestMs === null
+    time: `${lap.isEstimated ? '≈' : ''}${formatLapTime(lap.lapTimeMs)}`,
+    delta: lap.isExcluded
+      ? 'PIT'
+      : lap.isBest || lap.deltaToBestMs === null
         ? 'Best'
         : `+${(lap.deltaToBestMs / 1000).toFixed(3)}`,
   }));
+
+  const isActivelyRecording =
+    runtimeSnapshot !== null &&
+    runtimeSnapshot.sessionStartedAtMs !== null &&
+    runtimeSnapshot.sessionEndedAtMs === null;
+  const latestSample = runtimeSnapshot?.latestAcceptedSample ?? null;
+  const isGpsLost =
+    isActivelyRecording &&
+    latestSample !== null &&
+    nowMs - latestSample.recordedAt > GPS_STALE_THRESHOLD_MS;
+  const isGpsDegraded =
+    isActivelyRecording &&
+    !isGpsLost &&
+    (runtimeSnapshot?.consecutiveRejectedCount ?? 0) >= GPS_DEGRADED_REJECTION_STREAK;
+  const warningMessage = isGpsLost
+    ? i18n.t('recording.gpsSignalLost')
+    : isGpsDegraded
+      ? i18n.t('recording.gpsDegraded')
+      : wasInterrupted
+        ? i18n.t('recording.recordingInterrupted')
+        : null;
+  const telemetryStatus = isGpsLost
+    ? { text: i18n.t('telemetry.gpsLost'), className: 'text-sm text-red-400' }
+    : isGpsDegraded
+      ? { text: i18n.t('telemetry.gpsDegradedShort'), className: 'text-sm text-amber-400' }
+      : latestSample
+        ? { text: getGpsAccuracyLabel(latestSample.accuracyM), className: 'text-sm text-emerald-400' }
+        : { text: i18n.t('common.tbd'), className: 'text-sm text-zinc-500 dark:text-zinc-400' };
+  const speedPercent =
+    currentSpeedKph !== null && runtimeSnapshot?.maxSpeedKph
+      ? (currentSpeedKph / Math.max(runtimeSnapshot.maxSpeedKph, 1)) * 100
+      : 0;
 
   async function handleEndSession() {
     if (isEndingSession) return;
@@ -462,6 +517,21 @@ export default function RecordingScreen() {
           )}
         </View>
 
+        {warningMessage ? (
+          <View
+            className={`absolute z-10 rounded-full px-4 py-1.5 border ${
+              isGpsLost
+                ? 'bg-red-500/15 border-red-400/30'
+                : 'bg-amber-500/15 border-amber-400/30'
+            }`}
+            style={{ left: insets.left + 8, top: insets.top }}
+          >
+            <Text className={`text-sm ${isGpsLost ? 'text-red-400' : 'text-amber-400'}`}>
+              {warningMessage}
+            </Text>
+          </View>
+        ) : null}
+
         {/* Lower section: Lap count / End button */}
         <View className="flex-row items-end justify-between flex-1">
           <View className="rounded-2xl bg-white/5 border border-white/10 items-center justify-center px-6 py-4">
@@ -525,6 +595,24 @@ export default function RecordingScreen() {
           </View>
         ) : null}
 
+        {warningMessage ? (
+          <View
+            className={`mb-4 rounded-2xl px-3 py-3 border ${
+              isGpsLost
+                ? 'bg-red-500/10 border-red-500/20'
+                : 'bg-amber-500/10 border-amber-500/20'
+            }`}
+          >
+            <Text
+              className={`text-sm ${
+                isGpsLost ? 'text-red-700 dark:text-red-200' : 'text-amber-700 dark:text-amber-200'
+              }`}
+            >
+              {warningMessage}
+            </Text>
+          </View>
+        ) : null}
+
         {/* Current lap card */}
         <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
           <View className="flex-row items-center justify-between mb-2">
@@ -575,8 +663,26 @@ export default function RecordingScreen() {
 
         {/* Pit In + End buttons */}
         <View className="flex-row gap-3 mt-4">
-          <Pressable className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center">
-            <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('session.markPitIn')}</Text>
+          <Pressable
+            onPress={() => {
+              void runtimeRef.current?.markPitIn().then((snapshot) => {
+                setRuntimeSnapshot(snapshot);
+              }).catch(() => undefined);
+            }}
+            disabled={runtimeSnapshot?.pitInMarked ?? false}
+            className={`flex-1 rounded-2xl border py-3.5 items-center ${
+              runtimeSnapshot?.pitInMarked
+                ? 'border-amber-400/40 bg-amber-500/10'
+                : 'border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5'
+            }`}
+          >
+            <Text
+              className={`text-sm font-medium ${
+                runtimeSnapshot?.pitInMarked ? 'text-amber-600 dark:text-amber-300' : 'text-zinc-900 dark:text-white'
+              }`}
+            >
+              {runtimeSnapshot?.pitInMarked ? i18n.t('session.pitInMarked') : i18n.t('session.markPitIn')}
+            </Text>
           </Pressable>
           <Pressable
             onPress={() => {
@@ -600,7 +706,7 @@ export default function RecordingScreen() {
             {[
               [i18n.t('session.bestLap'), formatLapTime(runtimeSnapshot?.bestLapMs ?? null)],
               [i18n.t('session.topSpeed'), formatSpeed(runtimeSnapshot?.maxSpeedKph ?? null)],
-              [i18n.t('session.duration'), formatDuration(runtimeSnapshot?.latestAcceptedSample?.elapsedMs ?? null)],
+              [i18n.t('session.duration'), formatDuration(sessionDurationMs)],
             ].map(([l, v]) => (
               <View key={l} className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{l}</Text>
@@ -616,14 +722,13 @@ export default function RecordingScreen() {
                 <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('telemetry.title')}</Text>
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('telemetry.subtitle')}</Text>
               </View>
-              <Text className="text-sm text-emerald-400">
-                {runtimeSnapshot?.latestAcceptedSample ? i18n.t('telemetry.stable') : i18n.t('common.tbd')}
-              </Text>
+              <Text className={telemetryStatus.className}>{telemetryStatus.text}</Text>
             </View>
             <View className="gap-3">
               <ProgressBar
-                label={i18n.t('telemetry.throttle')}
-                value={`${Math.min(100, Math.round(currentSpeedKph ?? 0))}%`}
+                label={i18n.t('telemetry.speed')}
+                value={formatSpeed(currentSpeedKph)}
+                percent={speedPercent}
               />
               <ProgressBar
                 label={i18n.t('telemetry.brake')}
@@ -631,7 +736,8 @@ export default function RecordingScreen() {
               />
               <ProgressBar
                 label={i18n.t('telemetry.gpsSignal')}
-                value={getGpsSignalLabel(runtimeSnapshot?.latestAcceptedSample?.accuracyM ?? null)}
+                value={getGpsAccuracyLabel(latestSample?.accuracyM ?? null)}
+                percent={getGpsSignalPercent(latestSample?.accuracyM ?? null)}
                 color="bg-emerald-400"
               />
             </View>

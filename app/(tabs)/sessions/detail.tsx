@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -28,20 +28,15 @@ import {
   updateSessionNote,
 } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { shareSessionDataExport } from '@/services/share';
 
-const CONDITION_EMOJI: Record<string, string> = {
-  clear: '☀️',
-  cloudy: '⛅️',
-  fog: '🌫️',
-  rain: '🌧️',
-  snow: '❄️',
-  storm: '⛈️',
-};
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useShareSession } from '@/hooks/useShareSession';
 import { formatLapTime, formatGapSeconds, formatDateTime, formatDuration, formatSpeed } from '@/utils/format';
+import { buildDisplayPolylines, groupPointsIntoLapRuns } from '@/utils/displayLine';
 import { getBestLapRacingLine } from '@/utils/racingLine';
 import {
+  getBestLap,
   getBestLapMs,
   getTopSpeedKph,
   getTheoreticalBestMs,
@@ -51,57 +46,21 @@ import {
   getTrendBars,
 } from '@/utils/session-analytics';
 
+const CONDITION_EMOJI: Record<string, string> = {
+  clear: '☀️',
+  cloudy: '⛅️',
+  fog: '🌫️',
+  rain: '🌧️',
+  snow: '❄️',
+  storm: '⛈️',
+};
+
 function getMapLatitudeDelta(lengthMeters: number | null) {
   if (!lengthMeters) {
     return 0.0035;
   }
 
   return Math.min(Math.max(lengthMeters / 450000, 0.0015), 0.0055);
-}
-
-function smoothGpsPoints(
-  points: { latitude: number; longitude: number }[],
-  passes: number
-): { latitude: number; longitude: number }[] {
-  let result = points;
-
-  for (let pass = 0; pass < passes; pass++) {
-    if (result.length <= 2) break;
-
-    result = result.map((point, index, pts) => {
-      if (index === 0 || index === pts.length - 1) return point;
-
-      const prev = pts[index - 1];
-      const next = pts[index + 1];
-
-      return {
-        latitude: (prev.latitude + point.latitude + next.latitude) / 3,
-        longitude: (prev.longitude + point.longitude + next.longitude) / 3,
-      };
-    });
-  }
-
-  return result;
-}
-
-function getDisplayGpsLine(sessionDetail: SessionDetail | null) {
-  const gpsPoints = (sessionDetail?.gpsPoints ?? []).filter(
-    (point) => point.accuracyM === null || point.accuracyM <= 10
-  );
-
-  if (gpsPoints.length <= 2) {
-    return gpsPoints.map((point) => ({
-      latitude: point.latitude,
-      longitude: point.longitude,
-    }));
-  }
-
-  const raw = gpsPoints.map((point) => ({
-    latitude: point.latitude,
-    longitude: point.longitude,
-  }));
-
-  return raw;
 }
 
 function getMapRegion(sessionDetail: SessionDetail | null) {
@@ -127,12 +86,16 @@ function getMapRegion(sessionDetail: SessionDetail | null) {
     return null;
   }
 
-  const latitudes = sessionDetail.gpsPoints.map((point) => point.latitude);
-  const longitudes = sessionDetail.gpsPoints.map((point) => point.longitude);
-  const minLat = Math.min(...latitudes);
-  const maxLat = Math.max(...latitudes);
-  const minLng = Math.min(...longitudes);
-  const maxLng = Math.max(...longitudes);
+  let minLat = sessionDetail.gpsPoints[0].latitude;
+  let maxLat = minLat;
+  let minLng = sessionDetail.gpsPoints[0].longitude;
+  let maxLng = minLng;
+  for (const point of sessionDetail.gpsPoints) {
+    if (point.latitude < minLat) minLat = point.latitude;
+    if (point.latitude > maxLat) maxLat = point.latitude;
+    if (point.longitude < minLng) minLng = point.longitude;
+    if (point.longitude > maxLng) maxLng = point.longitude;
+  }
 
   return {
     latitude: (minLat + maxLat) / 2,
@@ -160,6 +123,7 @@ export default function SessionDetailScreen() {
   const [editingNoteText, setEditingNoteText] = useState('');
   const [isEditingCar, setIsEditingCar] = useState(false);
   const [carText, setCarText] = useState('');
+  const [selectedLapId, setSelectedLapId] = useState<string | null>(null);
   const share = useShareSession(sessionDetail);
 
   const loadSession = useCallback(async () => {
@@ -292,7 +256,37 @@ export default function SessionDetailScreen() {
   const startFinishLine =
     sessionDetail?.timingLines.find((timingLine) => timingLine.type === 'start_finish') ?? null;
   const sectorLines = sessionDetail?.timingLines.filter((timingLine) => timingLine.type === 'sector') ?? [];
-  const gpsLine = getDisplayGpsLine(sessionDetail);
+  const bestLap = getBestLap(sessionDetail);
+
+  // Every lap's polylines are built once and stay mounted; selecting a lap
+  // only swaps stroke colors. Mounting/unmounting map children on selection
+  // is a known instability with react-native-maps on the new architecture.
+  const lapLineGroups = useMemo(() => {
+    const points = sessionDetail?.gpsPoints ?? [];
+    if (points.length === 0) {
+      return [];
+    }
+
+    const runs = groupPointsIntoLapRuns(points);
+    const displayPointBudget = Math.max(250, Math.floor(6000 / runs.length));
+
+    return runs.map((run) => ({
+      key: run.key,
+      lapId: run.lapId,
+      segments: buildDisplayPolylines(run.points, { maxDisplayPoints: displayPointBudget }),
+    }));
+  }, [sessionDetail]);
+  const lapIdsWithPoints = useMemo(() => {
+    const lapIds = new Set<string>();
+    for (const group of lapLineGroups) {
+      if (group.lapId !== null && group.segments.length > 0) {
+        lapIds.add(group.lapId);
+      }
+    }
+    return lapIds;
+  }, [lapLineGroups]);
+  const activeLapId = selectedLapId !== null && lapIdsWithPoints.has(selectedLapId) ? selectedLapId : null;
+  const selectableLaps = (sessionDetail?.laps ?? []).filter((lap) => lapIdsWithPoints.has(lap.id));
 
   return (
     <KeyboardAvoidingView
@@ -361,16 +355,21 @@ export default function SessionDetailScreen() {
                   toolbarEnabled={false}
                   style={{ flex: 1 }}
                 >
-                  {gpsLine.length > 1 ? (
-                    <Polyline
-                      coordinates={gpsLine}
-                      strokeColor="#f59e0b"
-                      strokeColors={
-                        Platform.OS === 'ios' ? ['#f59e0b'] : undefined
-                      }
-                      strokeWidth={3}
-                    />
-                  ) : null}
+                  {lapLineGroups.map((group) => {
+                    const isVisible = activeLapId === null || group.lapId === activeLapId;
+                    const strokeColor = isVisible ? '#f59e0b' : 'transparent';
+                    const strokeWidth = activeLapId !== null && isVisible ? 3.5 : 3;
+
+                    return group.segments.map((segment, segmentIndex) => (
+                      <Polyline
+                        key={`${group.key}-${segmentIndex}`}
+                        coordinates={segment}
+                        strokeColor={strokeColor}
+                        strokeColors={Platform.OS === 'ios' ? [strokeColor] : undefined}
+                        strokeWidth={strokeWidth}
+                      />
+                    ));
+                  })}
                   {startFinishLine ? (
                     <Polyline
                       coordinates={[startFinishLine.a, startFinishLine.b]}
@@ -399,6 +398,50 @@ export default function SessionDetailScreen() {
                 </View>
               )}
             </View>
+            {selectableLaps.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                className="mb-3"
+                contentContainerStyle={{ gap: 8 }}
+              >
+                <Pressable
+                  onPress={() => setSelectedLapId(null)}
+                  className={`rounded-full px-3.5 py-1.5 border ${
+                    activeLapId === null
+                      ? 'bg-violet-500 border-violet-500'
+                      : 'bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10'
+                  }`}
+                >
+                  <Text
+                    className={`text-xs font-medium ${
+                      activeLapId === null ? 'text-white' : 'text-zinc-600 dark:text-zinc-300'
+                    }`}
+                  >
+                    {i18n.t('sessions.allLaps')}
+                  </Text>
+                </Pressable>
+                {selectableLaps.map((lap) => (
+                  <Pressable
+                    key={lap.id}
+                    onPress={() => setSelectedLapId(lap.id)}
+                    className={`rounded-full px-3.5 py-1.5 border ${
+                      activeLapId === lap.id
+                        ? 'bg-violet-500 border-violet-500'
+                        : 'bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10'
+                    }`}
+                  >
+                    <Text
+                      className={`text-xs font-medium ${
+                        activeLapId === lap.id ? 'text-white' : 'text-zinc-600 dark:text-zinc-300'
+                      }`}
+                    >
+                      {`L${lap.lapNumber}${bestLap?.id === lap.id ? ' ★' : ''}`}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : null}
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center gap-1.5">
                 <View className="h-0.5 w-3 rounded-full bg-red-500" />
@@ -699,11 +742,17 @@ export default function SessionDetailScreen() {
         </View>
 
         <View className="px-5 pb-5 pt-1 flex-row gap-3">
-          {/* TODO: Export not yet implemented
-          <Pressable className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center">
+          <Pressable
+            onPress={() => {
+              if (sessionDetail) {
+                void shareSessionDataExport(sessionDetail);
+              }
+            }}
+            disabled={!sessionDetail}
+            className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center"
+          >
             <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('sessions.exportData')}</Text>
           </Pressable>
-          */}
           <Pressable
             onPress={share.openShareSheet}
             disabled={share.isSharing || !sessionDetail}
