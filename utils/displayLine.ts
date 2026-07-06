@@ -14,6 +14,8 @@ export type DisplayLineConfig = {
   bridgeAccuracyM: number;
   maxGapMs: number;
   maxGapM: number;
+  maxJoinGapM: number;
+  maxJoinGapMs: number;
   smoothingPasses: number;
   simplifyToleranceM: number;
   densifySubdivisions: number;
@@ -23,9 +25,11 @@ export type DisplayLineConfig = {
 
 const DEFAULT_DISPLAY_LINE_CONFIG: DisplayLineConfig = {
   maxAccuracyM: 15,
-  bridgeAccuracyM: 35,
+  bridgeAccuracyM: 40,
   maxGapMs: 3000,
   maxGapM: 120,
+  maxJoinGapM: 250,
+  maxJoinGapMs: 15000,
   smoothingPasses: 2,
   simplifyToleranceM: 1.2,
   densifySubdivisions: 4,
@@ -40,6 +44,7 @@ type XY = {
   x: number;
   y: number;
   accuracyM?: number | null;
+  timeMs?: number;
 };
 
 function distanceM(a: XY, b: XY) {
@@ -121,12 +126,13 @@ function splitIntoSegments(
   let previous: (XY & { timeMs: number }) | null = null;
 
   for (const point of points) {
+    const timeMs = Date.parse(point.recordedAt);
     const projected: XY = {
       x: point.longitude * lngScaleM,
       y: point.latitude * METERS_PER_DEG_LAT,
       accuracyM: point.accuracyM,
+      timeMs,
     };
-    const timeMs = Date.parse(point.recordedAt);
 
     if (previous) {
       const gapM = distanceM(previous, projected);
@@ -246,6 +252,72 @@ function smoothSegment(points: XY[], passes: number, config: DisplayLineConfig):
   }
 
   return result;
+}
+
+// A hole with real data on both sides (GPS shadow under a gantry) is filled
+// with a spline span anchored on the surrounding measured points: the car
+// cannot teleport, and on near-straight track this is physically near-exact.
+// Long or slow holes (pit stops) are never joined.
+const JOIN_POINT_SPACING_M = 15;
+const MAX_JOIN_POINTS = 16;
+
+function buildJoinSpan(before: XY[], after: XY[]): XY[] {
+  const p1 = before[before.length - 1];
+  const p2 = after[0];
+  const gapM = distanceM(p1, p2);
+
+  if (gapM < 1) {
+    return [];
+  }
+
+  const p0 = before.length >= 2 ? before[before.length - 2] : reflect(p1, p2);
+  const p3 = after.length >= 2 ? after[1] : reflect(p2, p1);
+
+  const t0 = 0;
+  const t1 = t0 + Math.sqrt(distanceM(p0, p1));
+  const t2 = t1 + Math.sqrt(gapM);
+  const t3 = t2 + Math.sqrt(distanceM(p2, p3));
+
+  if (t1 === t2 || t0 === t1 || t2 === t3) {
+    return [];
+  }
+
+  const steps = Math.max(2, Math.min(MAX_JOIN_POINTS, Math.round(gapM / JOIN_POINT_SPACING_M)));
+  const span: XY[] = [];
+
+  for (let step = 1; step < steps; step++) {
+    const t = t1 + ((t2 - t1) * step) / steps;
+    span.push(catmullRomPoint(p0, p1, p2, p3, t0, t1, t2, t3, t));
+  }
+
+  return span;
+}
+
+function joinSegmentsAcrossGaps(segments: XY[][], config: DisplayLineConfig): XY[][] {
+  const joined: XY[][] = [];
+
+  for (const segment of segments) {
+    const previous = joined[joined.length - 1];
+
+    if (previous && previous.length >= 2 && segment.length >= 2) {
+      const tail = previous[previous.length - 1];
+      const head = segment[0];
+      const gapM = distanceM(tail, head);
+      const gapMs =
+        tail.timeMs !== undefined && head.timeMs !== undefined
+          ? head.timeMs - tail.timeMs
+          : null;
+
+      if (gapM <= config.maxJoinGapM && gapMs !== null && gapMs <= config.maxJoinGapMs) {
+        previous.push(...buildJoinSpan(previous, segment), ...segment);
+        continue;
+      }
+    }
+
+    joined.push([...segment]);
+  }
+
+  return joined;
 }
 
 function perpendicularDistanceM(point: XY, lineStart: XY, lineEnd: XY) {
@@ -369,9 +441,12 @@ export type LapRun = {
   points: LapRunPoint[];
 };
 
-// Consecutive points sharing a lap id form a run; each run borrows the next
-// run's first point so the drawn line stays continuous through the
-// start/finish boundary where the lap id changes.
+// Consecutive points sharing a lap id form a run; each run borrows a few
+// boundary points from its neighbors so the drawn line stays continuous
+// through the start/finish area — including when a GPS shadow there leaves a
+// hole that the spline join has to close from both sides.
+const BOUNDARY_BORROW_POINTS = 3;
+
 export function groupPointsIntoLapRuns(points: LapRunPoint[]): LapRun[] {
   const runs: { lapId: string | null; points: LapRunPoint[] }[] = [];
 
@@ -386,14 +461,18 @@ export function groupPointsIntoLapRuns(points: LapRunPoint[]): LapRun[] {
     currentRun.points.push(point);
   }
 
-  for (let i = 0; i < runs.length - 1; i++) {
-    runs[i].points.push(runs[i + 1].points[0]);
-  }
+  return runs.map((run, index) => {
+    const previousTail =
+      index > 0 ? runs[index - 1].points.slice(-BOUNDARY_BORROW_POINTS) : [];
+    const nextHead =
+      index < runs.length - 1 ? runs[index + 1].points.slice(0, BOUNDARY_BORROW_POINTS) : [];
 
-  return runs.map((run, index) => ({
-    ...run,
-    key: `${run.lapId ?? 'unassigned'}-${index}`,
-  }));
+    return {
+      lapId: run.lapId,
+      points: [...previousTail, ...run.points, ...nextHead],
+      key: `${run.lapId ?? 'unassigned'}-${index}`,
+    };
+  });
 }
 
 // Display-only pipeline for drawing a recorded trace on the map. Raw stored
@@ -431,7 +510,9 @@ export function buildDisplayPolylines(
     // Isolated slivers shorter than this read as debris around GPS shadows.
     .filter((segment) => segmentLengthM(segment) >= mergedConfig.microSegmentMinLengthM);
 
-  const totalPoints = simplified.reduce((sum, segment) => sum + segment.length, 0);
+  const joined = joinSegmentsAcrossGaps(simplified, mergedConfig);
+
+  const totalPoints = joined.reduce((sum, segment) => sum + segment.length, 0);
   if (totalPoints === 0) {
     return [];
   }
@@ -446,7 +527,7 @@ export function buildDisplayPolylines(
     )
   );
 
-  return simplified.map((segment) =>
+  return joined.map((segment) =>
     densifySegment(segment, subdivisions).map((point) => ({
       latitude: point.y / METERS_PER_DEG_LAT,
       longitude: point.x / lngScaleM,

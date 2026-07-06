@@ -396,7 +396,7 @@ export default function RecordingScreen() {
       : null;
   const recentLaps = (runtimeSnapshot?.completedLaps ?? []).map((lap) => ({
     lap: lap.lapNumber,
-    time: formatLapTime(lap.lapTimeMs),
+    time: `${lap.isEstimated ? '≈' : ''}${formatLapTime(lap.lapTimeMs)}`,
     delta: lap.isExcluded
       ? 'PIT'
       : lap.isBest || lap.deltaToBestMs === null

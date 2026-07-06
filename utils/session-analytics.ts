@@ -144,7 +144,7 @@ export function getLapBreakdownItems(sessionDetail: SessionDetail | null): LapBr
 
     return {
       lap: lap.lapNumber,
-      time: formatLapTime(lap.lapTimeMs),
+      time: `${lap.isTimingEstimated === 1 ? '≈' : ''}${formatLapTime(lap.lapTimeMs)}`,
       timeMs: lap.lapTimeMs ?? 0,
       delta: deltaMs === null ? null : formatDeltaMs(deltaMs),
       sectors: sectorMs.map((value) => formatSectorTime(value)),

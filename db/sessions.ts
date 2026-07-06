@@ -91,6 +91,7 @@ type DbLapRow = {
   lap_time_ms: number | null;
   is_out_lap: 0 | 1;
   is_in_lap: 0 | 1;
+  is_timing_estimated: 0 | 1;
   is_invalid: 0 | 1;
   max_speed_kph: number | null;
   created_at: ISODateString;
@@ -228,6 +229,7 @@ function mapLapRow(row: DbLapRow): LapRow {
     lapTimeMs: row.lap_time_ms,
     isOutLap: row.is_out_lap,
     isInLap: row.is_in_lap,
+    isTimingEstimated: row.is_timing_estimated,
     isInvalid: row.is_invalid,
     maxSpeedKph: row.max_speed_kph,
     createdAt: row.created_at,

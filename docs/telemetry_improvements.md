@@ -40,6 +40,12 @@ Current implementation already includes:
   - endpoint-preserving weighted smoothing
   - Douglas-Peucker simplification with a display point budget
   - centripetal Catmull-Rom densification
+- crossing-quality assessment (segment duration, anchor accuracy, chord vs
+  Doppler speed mismatch); degraded crossings are re-timed by projecting from
+  the newest trustworthy fix along Doppler speed/heading, and affected laps
+  are flagged (`laps.is_timing_estimated`, shown as a leading tilde)
+- display line joins short no-data holes (GPS shadows) with a spline anchored
+  on measured points both sides; pit-stop-length holes stay split
 - serialized sample processing (no concurrent crossing detection races)
 - stale `recording` sessions recovered as `aborted` on startup
 - live warnings for GPS loss, accuracy degradation, and app-backgrounding

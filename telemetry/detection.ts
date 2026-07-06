@@ -1,5 +1,6 @@
 import type { TimingLineRow } from '@/db/types';
 import type {
+  CrossingQuality,
   DetectionState,
   TelemetryDetectionConfig,
   TelemetryDetectionEvent,
@@ -146,11 +147,62 @@ function satisfiesMinLapTime(
   return event.sampleElapsedMs - state.currentLapStartedElapsedMs >= config.minLapTimeMs;
 }
 
+// A crossing timestamp is only as good as the movement segment it was
+// interpolated on: a long inter-fix gap or a multipath-displaced anchor (the
+// chord speed disagreeing with Doppler speed) shifts it by up to a second.
+const DEGRADED_SEGMENT_DT_MS = 2500;
+const DEGRADED_ANCHOR_ACCURACY_M = 20;
+const DEGRADED_SPEED_MISMATCH_RATIO = 0.2;
+const SPEED_MISMATCH_MIN_DOPPLER_MPS = 3;
+
+function assessSegmentQuality(
+  previousSample: TelemetrySample,
+  currentSample: TelemetrySample
+): CrossingQuality {
+  const segmentDtMs = currentSample.recordedAt - previousSample.recordedAt;
+  if (segmentDtMs > DEGRADED_SEGMENT_DT_MS) {
+    return 'degraded';
+  }
+
+  if (
+    (previousSample.accuracyM !== null && previousSample.accuracyM > DEGRADED_ANCHOR_ACCURACY_M) ||
+    (currentSample.accuracyM !== null && currentSample.accuracyM > DEGRADED_ANCHOR_ACCURACY_M)
+  ) {
+    return 'degraded';
+  }
+
+  const dopplerSpeeds = [previousSample.speedMps, currentSample.speedMps].filter(
+    (speed): speed is number => speed !== null && speed > 0
+  );
+
+  if (dopplerSpeeds.length > 0 && segmentDtMs > 0) {
+    const meanDopplerMps = dopplerSpeeds.reduce((sum, s) => sum + s, 0) / dopplerSpeeds.length;
+
+    if (meanDopplerMps >= SPEED_MISMATCH_MIN_DOPPLER_MPS) {
+      const chordSpeedMps =
+        haversineDistanceMeters(
+          previousSample.lat,
+          previousSample.lng,
+          currentSample.lat,
+          currentSample.lng
+        ) /
+        (segmentDtMs / 1000);
+
+      if (Math.abs(chordSpeedMps - meanDopplerMps) / meanDopplerMps > DEGRADED_SPEED_MISMATCH_RATIO) {
+        return 'degraded';
+      }
+    }
+  }
+
+  return 'good';
+}
+
 function toDetectionEvent(
   timingLine: TimingLineRow,
   previousSample: TelemetrySample,
   currentSample: TelemetrySample,
-  movementFraction: number
+  movementFraction: number,
+  quality: CrossingQuality
 ): TelemetryDetectionEvent {
   const interpolatedRecordedAt =
     previousSample.recordedAt +
@@ -165,6 +217,7 @@ function toDetectionEvent(
     seq: timingLine.seq,
     sampleRecordedAt: Math.round(interpolatedRecordedAt),
     sampleElapsedMs: Math.round(interpolatedElapsedMs),
+    quality,
   };
 }
 
@@ -228,6 +281,7 @@ export function detectTimingLineCrossings(
 
   candidates.sort((a, b) => a.movementFraction - b.movementFraction);
 
+  const segmentQuality = assessSegmentQuality(previousSample, currentSample);
   const localState: DetectionState = { ...state };
   const events: TelemetryDetectionEvent[] = [];
 
@@ -236,7 +290,8 @@ export function detectTimingLineCrossings(
       candidate.timingLine,
       previousSample,
       currentSample,
-      candidate.movementFraction
+      candidate.movementFraction,
+      segmentQuality
     );
 
     if (isDebounced(localState, event, candidate.timingLine.id, mergedConfig)) {

@@ -51,11 +51,14 @@ export type TelemetryDetectionConfig = {
   minCrossingSpeedMps: number;
 };
 
+export type CrossingQuality = 'good' | 'degraded';
+
 export type TelemetryDetectionEvent = {
   type: DetectionEventType;
   timingLineId: string;
   seq: number;
   sampleRecordedAt: number;
   sampleElapsedMs: number;
+  quality: CrossingQuality;
 };
 
