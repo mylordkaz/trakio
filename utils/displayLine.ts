@@ -14,6 +14,7 @@ export type DisplayLineConfig = {
   bridgeAccuracyM: number;
   maxGapMs: number;
   maxGapM: number;
+  shortJoinGapM: number;
   maxJoinGapM: number;
   maxJoinGapMs: number;
   smoothingPasses: number;
@@ -21,20 +22,26 @@ export type DisplayLineConfig = {
   densifySubdivisions: number;
   maxDisplayPoints: number;
   microSegmentMinLengthM: number;
+  dropDanglingEdgeFragments: boolean;
 };
 
+// A drawn join is a guess; a wrong line is worse than an honest gap. Joins are
+// therefore anchored only on trusted points, kept short by default, and only
+// stretch further when the geometry is provably straight-through.
 const DEFAULT_DISPLAY_LINE_CONFIG: DisplayLineConfig = {
   maxAccuracyM: 15,
-  bridgeAccuracyM: 40,
+  bridgeAccuracyM: 25,
   maxGapMs: 3000,
   maxGapM: 120,
-  maxJoinGapM: 250,
-  maxJoinGapMs: 15000,
+  shortJoinGapM: 80,
+  maxJoinGapM: 220,
+  maxJoinGapMs: 8000,
   smoothingPasses: 2,
   simplifyToleranceM: 1.2,
   densifySubdivisions: 4,
   maxDisplayPoints: 4000,
   microSegmentMinLengthM: 25,
+  dropDanglingEdgeFragments: false,
 };
 
 const METERS_PER_DEG_LAT = 111320;
@@ -247,6 +254,7 @@ function smoothSegment(points: XY[], passes: number, config: DisplayLineConfig):
         x: point.x + (midX - point.x) * pull,
         y: point.y + (midY - point.y) * pull,
         accuracyM: point.accuracyM,
+        timeMs: point.timeMs,
       };
     });
   }
@@ -260,6 +268,80 @@ function smoothSegment(points: XY[], passes: number, config: DisplayLineConfig):
 // Long or slow holes (pit stops) are never joined.
 const JOIN_POINT_SPACING_M = 15;
 const MAX_JOIN_POINTS = 16;
+// Degraded points may not anchor a join — a displaced anchor paints the whole
+// guessed span offset from the real track.
+const MAX_ANCHOR_TRIM_POINTS = 5;
+// Long joins are only drawn when both trusted tangents agree with the chord:
+// straight-through blackouts qualify, anything ambiguous stays an honest gap.
+const LONG_JOIN_ALIGNMENT_COS = Math.cos(toRadians(20));
+
+type JoinableSegment = {
+  points: XY[];
+  wasJoined: boolean;
+};
+
+function isTrustedPoint(point: XY, config: DisplayLineConfig) {
+  return point.accuracyM === null || point.accuracyM === undefined || point.accuracyM <= config.maxAccuracyM;
+}
+
+// Returns the segment with degraded edge points removed on the given side, so
+// the join anchors on a trusted fix; null when no trusted anchor sits close
+// enough to the edge.
+function trimToTrustedAnchor(
+  points: XY[],
+  side: 'head' | 'tail',
+  config: DisplayLineConfig
+): XY[] | null {
+  for (let offset = 0; offset < MAX_ANCHOR_TRIM_POINTS; offset++) {
+    const index = side === 'tail' ? points.length - 1 - offset : offset;
+    if (index < 0 || index >= points.length) {
+      return null;
+    }
+
+    if (isTrustedPoint(points[index], config)) {
+      const trimmed = side === 'tail' ? points.slice(0, index + 1) : points.slice(index);
+      return trimmed.length >= 2 ? trimmed : null;
+    }
+  }
+
+  return null;
+}
+
+// Degraded points are only safe in a segment's interior, where smoothing can
+// conform them; at the edges they are exempt from smoothing and draw at full
+// displacement. Segments therefore always start and end on trusted fixes, and
+// a segment with no trusted core at all is dropped.
+function trimDegradedEdges(points: XY[], config: DisplayLineConfig): XY[] | null {
+  const tailTrimmed = trimToTrustedAnchor(points, 'tail', config);
+  if (!tailTrimmed) {
+    return null;
+  }
+
+  return trimToTrustedAnchor(tailTrimmed, 'head', config);
+}
+
+function unitVector(from: XY, to: XY): XY | null {
+  const length = distanceM(from, to);
+  if (length < DUPLICATE_DISTANCE_M) {
+    return null;
+  }
+  return { x: (to.x - from.x) / length, y: (to.y - from.y) / length };
+}
+
+function isStraightThroughGap(before: XY[], after: XY[]): boolean {
+  const tangentIn = unitVector(before[before.length - 2], before[before.length - 1]);
+  const tangentOut = unitVector(after[0], after[1]);
+  const chord = unitVector(before[before.length - 1], after[0]);
+
+  if (!tangentIn || !tangentOut || !chord) {
+    return false;
+  }
+
+  return (
+    tangentIn.x * chord.x + tangentIn.y * chord.y >= LONG_JOIN_ALIGNMENT_COS &&
+    tangentOut.x * chord.x + tangentOut.y * chord.y >= LONG_JOIN_ALIGNMENT_COS
+  );
+}
 
 function buildJoinSpan(before: XY[], after: XY[]): XY[] {
   const p1 = before[before.length - 1];
@@ -293,31 +375,72 @@ function buildJoinSpan(before: XY[], after: XY[]): XY[] {
   return span;
 }
 
-function joinSegmentsAcrossGaps(segments: XY[][], config: DisplayLineConfig): XY[][] {
-  const joined: XY[][] = [];
+function joinSegmentsAcrossGaps(segments: XY[][], config: DisplayLineConfig): JoinableSegment[] {
+  const joined: JoinableSegment[] = [];
 
   for (const segment of segments) {
     const previous = joined[joined.length - 1];
 
-    if (previous && previous.length >= 2 && segment.length >= 2) {
-      const tail = previous[previous.length - 1];
-      const head = segment[0];
-      const gapM = distanceM(tail, head);
-      const gapMs =
-        tail.timeMs !== undefined && head.timeMs !== undefined
-          ? head.timeMs - tail.timeMs
-          : null;
+    if (previous && previous.points.length >= 2 && segment.length >= 2) {
+      const trimmedTail = trimToTrustedAnchor(previous.points, 'tail', config);
+      const trimmedHead = trimToTrustedAnchor(segment, 'head', config);
 
-      if (gapM <= config.maxJoinGapM && gapMs !== null && gapMs <= config.maxJoinGapMs) {
-        previous.push(...buildJoinSpan(previous, segment), ...segment);
-        continue;
+      if (trimmedTail && trimmedHead) {
+        const tailAnchor = trimmedTail[trimmedTail.length - 1];
+        const headAnchor = trimmedHead[0];
+        const gapM = distanceM(tailAnchor, headAnchor);
+        const gapMs =
+          tailAnchor.timeMs !== undefined && headAnchor.timeMs !== undefined
+            ? headAnchor.timeMs - tailAnchor.timeMs
+            : null;
+
+        const withinTime = gapMs !== null && gapMs <= config.maxJoinGapMs;
+        const shortJoin = gapM <= config.shortJoinGapM;
+        const alignedLongJoin =
+          gapM <= config.maxJoinGapM && isStraightThroughGap(trimmedTail, trimmedHead);
+
+        if (withinTime && (shortJoin || alignedLongJoin)) {
+          previous.points = [
+            ...trimmedTail,
+            ...buildJoinSpan(trimmedTail, trimmedHead),
+            ...trimmedHead,
+          ];
+          previous.wasJoined = true;
+          continue;
+        }
       }
     }
 
-    joined.push([...segment]);
+    joined.push({ points: [...segment], wasJoined: false });
   }
 
   return joined;
+}
+
+// Borrowed lap-boundary points that failed to join anything are display
+// debris: a short floating dash beside the start/finish area.
+function dropDanglingEdgeFragments(segments: JoinableSegment[]): JoinableSegment[] {
+  const result = [...segments];
+
+  while (result.length > 1) {
+    const first = result[0];
+    if (!first.wasJoined && first.points.length <= MAX_ANCHOR_TRIM_POINTS) {
+      result.shift();
+      continue;
+    }
+    break;
+  }
+
+  while (result.length > 1) {
+    const last = result[result.length - 1];
+    if (!last.wasJoined && last.points.length <= MAX_ANCHOR_TRIM_POINTS) {
+      result.pop();
+      continue;
+    }
+    break;
+  }
+
+  return result;
 }
 
 function perpendicularDistanceM(point: XY, lineStart: XY, lineEnd: XY) {
@@ -498,7 +621,9 @@ export function buildDisplayPolylines(
   }
   const lngScaleM = Math.cos(toRadians((minLat + maxLat) / 2)) * METERS_PER_DEG_LAT;
 
-  const segments = splitIntoSegments(usablePoints, lngScaleM, mergedConfig);
+  const segments = splitIntoSegments(usablePoints, lngScaleM, mergedConfig)
+    .map((segment) => trimDegradedEdges(segment, mergedConfig))
+    .filter((segment): segment is XY[] => segment !== null);
 
   const simplified = segments
     .map((segment) =>
@@ -510,9 +635,12 @@ export function buildDisplayPolylines(
     // Isolated slivers shorter than this read as debris around GPS shadows.
     .filter((segment) => segmentLengthM(segment) >= mergedConfig.microSegmentMinLengthM);
 
-  const joined = joinSegmentsAcrossGaps(simplified, mergedConfig);
+  let joined = joinSegmentsAcrossGaps(simplified, mergedConfig);
+  if (mergedConfig.dropDanglingEdgeFragments) {
+    joined = dropDanglingEdgeFragments(joined);
+  }
 
-  const totalPoints = joined.reduce((sum, segment) => sum + segment.length, 0);
+  const totalPoints = joined.reduce((sum, segment) => sum + segment.points.length, 0);
   if (totalPoints === 0) {
     return [];
   }
@@ -528,7 +656,7 @@ export function buildDisplayPolylines(
   );
 
   return joined.map((segment) =>
-    densifySegment(segment, subdivisions).map((point) => ({
+    densifySegment(segment.points, subdivisions).map((point) => ({
       latitude: point.y / METERS_PER_DEG_LAT,
       longitude: point.x / lngScaleM,
     }))
