@@ -41,11 +41,12 @@ Current implementation already includes:
   - Douglas-Peucker simplification with a display point budget
   - centripetal Catmull-Rom densification
 - crossing-quality assessment (segment duration, anchor accuracy, chord vs
-  Doppler speed mismatch); degraded crossings are re-timed by projecting from
-  the newest trustworthy fix along Doppler speed/heading, and affected laps
-  are flagged (`laps.is_timing_estimated`, shown as a leading tilde)
-- display line joins short no-data holes (GPS shadows) with a spline anchored
-  on measured points both sides; pit-stop-length holes stay split
+  Doppler speed mismatch); laps bounded by a degraded crossing are flagged
+  (`laps.is_timing_estimated`, shown as a leading tilde). A Doppler
+  re-timing fallback was built and then removed: validated against circuit
+  transponder times, constant-speed projection made dropout-lap errors worse
+  (corner-exit acceleration breaks the assumption) — naive interpolation plus
+  an honest flag wins until a proper state estimator exists
 - serialized sample processing (no concurrent crossing detection races)
 - stale `recording` sessions recovered as `aborted` on startup
 - live warnings for GPS loss, accuracy degradation, and app-backgrounding
@@ -68,16 +69,16 @@ Current State above for the full inventory. In summary:
 
 - validation: positional jump rejection with accuracy-scaled bounds,
   out-of-order rejection, sentinel normalization (was priority 2)
-- display: accuracy-weighted smoothing, spike suppression, thinning
-  (Douglas-Peucker), densification (Catmull-Rom), per-lap segmentation,
-  GPS-shadow hole joining (was priorities 3 and 4)
-- timing: crossing-quality assessment and Doppler speed/heading re-timing of
-  degraded crossings with per-lap estimated flags (first slice of priority 5's
-  "use GPS speed/heading as a stronger signal")
+- display: smoothing, spike suppression, thinning (Douglas-Peucker),
+  densification (Catmull-Rom), per-lap segmentation with honest gaps at
+  dropouts (was priorities 3 and 4)
+- timing: crossing-quality assessment with per-lap estimated flags
 
 Field validation: a 13-lap Tsukuba session against the circuit transponder
-showed clean crossings within ±0.08 s; the ~1 s outliers were traced to the
-start/finish GPS shadow and are what the re-timing fallback addresses.
+showed clean crossings within ±0.08 s. The ~1 s outliers come from 5-11 s
+total GPS delivery dropouts at the start/finish gantry (hard fix loss with
+perfect accuracy on both sides — not accuracy degradation); those laps are
+flagged, and the real fix is the state estimator below.
 
 ## Remaining Work
 
@@ -90,8 +91,8 @@ start/finish GPS shadow and are what the re-timing fallback addresses.
 ### 2. State estimation (Kalman)
 
 - constant-velocity filter fusing position with Doppler speed/heading
-- feeds detection with stabilized positions through GPS shadows (would reduce
-  how often the re-timing fallback and estimated flags are needed at all)
+- feeds detection with stabilized positions through GPS dropouts (would reduce
+  how often laps need the estimated flag at all)
 - raw stored telemetry stays untouched; the filter output is derived
 
 ### 3. Multi-lap consensus

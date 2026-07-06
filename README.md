@@ -9,7 +9,7 @@ Designed to work fully offline — most race tracks have limited network coverag
 ### Core Recording
 - **Track Database** — predefined circuits with ordered timing lines stored locally
 - **GPS Telemetry Recording** — continuous capture of location, speed, timestamp, and accuracy (up to ~5 Hz on Android; iOS delivers ~1 Hz), with outlier and out-of-order sample rejection
-- **Automatic Lap Detection** — start/finish crossing detection with debounce, minimum lap time, and minimum crossing speed safeguards; interpolated crossing timestamps with a Doppler-based re-timing fallback when the GPS segment at the line is degraded (affected laps flagged as estimated)
+- **Automatic Lap Detection** — start/finish crossing detection with debounce, minimum lap time, and minimum crossing speed safeguards; interpolated crossing timestamps, with laps flagged as estimated when the GPS segment at the line is degraded
 - **Sector Timing** — split times calculated as sector lines are crossed
 - **Live Session Display** — current lap timer, last lap, best lap, sector splits, and lap count in a large, glanceable UI
 - **Pre-Session Setup** — checklist (GPS lock, battery, start/finish line), weather conditions, car selection

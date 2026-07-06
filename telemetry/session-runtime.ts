@@ -9,7 +9,6 @@ import type {
   TelemetrySample,
   TelemetrySampleRejectionReason,
 } from '@/telemetry/types';
-import { toRadians } from '@/utils/geo';
 import { getSectorCount, getSectorLineCount } from '@/utils/timing';
 
 type SessionRecorder = ReturnType<typeof createSessionRecorder>;
@@ -28,17 +27,6 @@ type SessionRuntimeConfig = {
 // A pause in accepted samples longer than this is surfaced as a recording
 // interruption (backgrounded app, GPS dropout, phone call).
 const SAMPLE_GAP_THRESHOLD_MS = 3000;
-
-// Fallback re-timing for crossings detected on a degraded movement segment:
-// project from the newest trustworthy fix to the timing line using Doppler
-// speed and heading, which stay honest in multipath when position does not.
-const SAMPLE_HISTORY_LIMIT = 15;
-const RETIME_ANCHOR_ACCURACY_M = 15;
-const RETIME_MIN_SPEED_MPS = 3;
-const RETIME_MIN_APPROACH_COS = 0.35;
-const RETIME_MAX_LOOKBACK_MS = 10000;
-const RETIME_MAX_SHIFT_MS = 3000;
-const METERS_PER_DEG_LAT = 111320;
 
 type SessionRuntimeSnapshot = {
   status: RuntimeStatus;
@@ -151,11 +139,8 @@ export function createSessionRuntime(args: {
   // best-lap and delta stats, matching how the saved queries treat them.
   let currentLapIsInLap = false;
   let currentLapIsOutLap = false;
-  // Recent accepted samples, oldest first, for crossing re-timing.
-  let sampleHistory: TelemetrySample[] = [];
   // Whether the crossing that started the current lap was an estimate.
   let currentLapStartIsEstimated = false;
-  const timingLineById = new Map(timingLines.map((timingLine) => [timingLine.id, timingLine]));
 
   function enqueue<T>(work: () => Promise<T>): Promise<T> {
     const run = processingQueue.then(work);
@@ -175,94 +160,6 @@ export function createSessionRuntime(args: {
     };
   }
 
-  function findRetimeAnchor(beforeMs: number): TelemetrySample | null {
-    for (let i = sampleHistory.length - 1; i >= 0; i--) {
-      const candidate = sampleHistory[i];
-
-      if (candidate.recordedAt > beforeMs) {
-        continue;
-      }
-
-      if (beforeMs - candidate.recordedAt > RETIME_MAX_LOOKBACK_MS) {
-        return null;
-      }
-
-      if (
-        candidate.accuracyM !== null &&
-        candidate.accuracyM <= RETIME_ANCHOR_ACCURACY_M &&
-        candidate.speedMps !== null &&
-        candidate.speedMps >= RETIME_MIN_SPEED_MPS
-      ) {
-        return candidate;
-      }
-    }
-
-    return null;
-  }
-
-  // Interpolation on a degraded segment inherits its anchors' position error
-  // (30 m at racing speed is most of a second). Doppler speed and heading stay
-  // honest in multipath, so the crossing is re-timed by projecting from the
-  // newest trustworthy fix to the timing line along the direction of travel.
-  function retimeDegradedEvent(event: TelemetryDetectionEvent): TelemetryDetectionEvent {
-    const timingLine = timingLineById.get(event.timingLineId);
-    const anchor = findRetimeAnchor(event.sampleRecordedAt);
-
-    if (!timingLine || !anchor || anchor.speedMps === null || anchor.headingDeg === null) {
-      return event;
-    }
-
-    const lngScaleM = Math.cos(toRadians(anchor.lat)) * METERS_PER_DEG_LAT;
-    const anchorX = anchor.lng * lngScaleM;
-    const anchorY = anchor.lat * METERS_PER_DEG_LAT;
-    const lineAX = timingLine.a.longitude * lngScaleM;
-    const lineAY = timingLine.a.latitude * METERS_PER_DEG_LAT;
-    const lineBX = timingLine.b.longitude * lngScaleM;
-    const lineBY = timingLine.b.latitude * METERS_PER_DEG_LAT;
-
-    const lineDirX = lineBX - lineAX;
-    const lineDirY = lineBY - lineAY;
-    const lineLength = Math.hypot(lineDirX, lineDirY);
-    if (lineLength === 0) {
-      return event;
-    }
-
-    const normalX = -lineDirY / lineLength;
-    const normalY = lineDirX / lineLength;
-    const signedDistanceM = (anchorX - lineAX) * normalX + (anchorY - lineAY) * normalY;
-
-    // Heading is measured clockwise from north: x is the east component.
-    const headingRad = toRadians(anchor.headingDeg);
-    const approachRate = Math.sin(headingRad) * normalX + Math.cos(headingRad) * normalY;
-
-    // The anchor must actually be moving toward the line, and not so obliquely
-    // that a heading wobble dominates the estimate.
-    if (
-      Math.abs(approachRate) < RETIME_MIN_APPROACH_COS ||
-      Math.sign(approachRate) === Math.sign(signedDistanceM)
-    ) {
-      return event;
-    }
-
-    const timeToLineMs =
-      (Math.abs(signedDistanceM) / (anchor.speedMps * Math.abs(approachRate))) * 1000;
-    if (timeToLineMs > RETIME_MAX_LOOKBACK_MS) {
-      return event;
-    }
-
-    const retimedRecordedAt = anchor.recordedAt + timeToLineMs;
-    const shiftMs = retimedRecordedAt - event.sampleRecordedAt;
-    if (Math.abs(shiftMs) > RETIME_MAX_SHIFT_MS) {
-      return event;
-    }
-
-    return {
-      ...event,
-      sampleRecordedAt: Math.round(retimedRecordedAt),
-      sampleElapsedMs: Math.round(event.sampleElapsedMs + shiftMs),
-    };
-  }
-
   async function start() {
     return enqueue(async () => {
       if (snapshot.status !== 'idle' && snapshot.status !== 'stopped') {
@@ -273,7 +170,6 @@ export function createSessionRuntime(args: {
       currentLapIsInLap = false;
       currentLapIsOutLap = false;
       currentLapStartIsEstimated = false;
-      sampleHistory = [];
 
       const sessionId = generateId();
       const sessionStartedAtMs = Date.now();
@@ -519,7 +415,7 @@ export function createSessionRuntime(args: {
       timingLines,
       toDetectionState(),
       config?.detectionConfig
-    ).map((event) => (event.quality === 'degraded' ? retimeDegradedEvent(event) : event));
+    );
 
     for (const event of events) {
       if (event.type === 'start_finish_crossed') {
@@ -543,11 +439,6 @@ export function createSessionRuntime(args: {
       sample,
       isTimingCrossing: events.length > 0 ? 1 : 0,
     });
-
-    sampleHistory.push(sample);
-    if (sampleHistory.length > SAMPLE_HISTORY_LIMIT) {
-      sampleHistory = sampleHistory.slice(-SAMPLE_HISTORY_LIMIT);
-    }
 
     const sampleSpeedKph = sample.speedMps !== null ? sample.speedMps * 3.6 : null;
 
