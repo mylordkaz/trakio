@@ -273,10 +273,7 @@ export default function SessionDetailScreen() {
     return runs.map((run) => ({
       key: run.key,
       lapId: run.lapId,
-      segments: buildDisplayPolylines(run.points, {
-        maxDisplayPoints: displayPointBudget,
-        dropDanglingEdgeFragments: true,
-      }),
+      segments: buildDisplayPolylines(run.points, { maxDisplayPoints: displayPointBudget }),
     }));
   }, [sessionDetail]);
   const lapIdsWithPoints = useMemo(() => {
