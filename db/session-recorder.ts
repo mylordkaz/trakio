@@ -33,6 +33,12 @@ type FinishLapInput = {
   lapTimeMs: number | null;
   isInvalid?: 0 | 1;
   maxSpeedKph?: number | null;
+  isTimingEstimated?: 0 | 1;
+};
+
+type SetLapInLapInput = {
+  lapId: string;
+  isInLap: 0 | 1;
 };
 
 type InsertLapSectorInput = {
@@ -137,12 +143,24 @@ export function createSessionRecorder(db: SQLiteDatabase, config: RecorderConfig
        SET ended_at = ?,
            lap_time_ms = ?,
            is_invalid = ?,
-           max_speed_kph = ?
+           max_speed_kph = ?,
+           is_timing_estimated = ?
        WHERE id = ?;`,
       input.endedAt,
       input.lapTimeMs,
       input.isInvalid ?? 0,
       input.maxSpeedKph ?? null,
+      input.isTimingEstimated ?? 0,
+      input.lapId
+    );
+  }
+
+  async function setLapInLap(input: SetLapInLapInput): Promise<void> {
+    await db.runAsync(
+      `UPDATE laps
+       SET is_in_lap = ?
+       WHERE id = ?;`,
+      input.isInLap,
       input.lapId
     );
   }
@@ -303,6 +321,7 @@ export function createSessionRecorder(db: SQLiteDatabase, config: RecorderConfig
     createSession,
     startLap,
     finishLap,
+    setLapInLap,
     insertLapSector,
     appendGpsSample,
     flushGpsBuffer,

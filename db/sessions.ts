@@ -16,6 +16,8 @@ import type {
 
 type SessionDisplayStatus = 'Best' | 'Recent' | null;
 
+const SEEDED_SESSION_IDS = new Set(SESSION_TEST_SEEDS.map((seed) => seed.session.id));
+
 type DbSessionListRow = {
   id: string;
   name: string | null;
@@ -111,6 +113,8 @@ type DbLapRow = {
   ended_at: ISODateString | null;
   lap_time_ms: number | null;
   is_out_lap: 0 | 1;
+  is_in_lap: 0 | 1;
+  is_timing_estimated: 0 | 1;
   is_invalid: 0 | 1;
   max_speed_kph: number | null;
   created_at: ISODateString;
@@ -270,6 +274,8 @@ function mapLapRow(row: DbLapRow): LapRow {
     endedAt: row.ended_at,
     lapTimeMs: row.lap_time_ms,
     isOutLap: row.is_out_lap,
+    isInLap: row.is_in_lap,
+    isTimingEstimated: row.is_timing_estimated,
     isInvalid: row.is_invalid,
     maxSpeedKph: row.max_speed_kph,
     createdAt: row.created_at,
@@ -308,7 +314,7 @@ async function getBestSessionIdPerTrack(db: SQLiteDatabase): Promise<Set<string>
           s.best_lap_ms,
           MIN(
             CASE
-              WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0
+              WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0 AND l.is_in_lap = 0
                 THEN l.lap_time_ms
             END
           )
@@ -325,7 +331,7 @@ async function getBestSessionIdPerTrack(db: SQLiteDatabase): Promise<Set<string>
         MIN(
           COALESCE(
             s.best_lap_ms,
-            (SELECT MIN(l2.lap_time_ms) FROM laps l2 WHERE l2.session_id = s.id AND l2.is_invalid = 0 AND l2.is_out_lap = 0 AND l2.lap_time_ms IS NOT NULL)
+            (SELECT MIN(l2.lap_time_ms) FROM laps l2 WHERE l2.session_id = s.id AND l2.is_invalid = 0 AND l2.is_out_lap = 0 AND l2.is_in_lap = 0 AND l2.lap_time_ms IS NOT NULL)
           )
         ) AS track_best_ms
       FROM sessions s
@@ -348,8 +354,17 @@ function toDisplayStatus(sessionId: string, startedAt: string, bestSessionIds: S
 }
 
 export async function syncSessionTestSeeds(db: SQLiteDatabase) {
+  const deletedSeedRows = await db.getAllAsync<{ session_id: string }>(
+    'SELECT session_id FROM deleted_seed_sessions;'
+  );
+  const deletedSeedIds = new Set(deletedSeedRows.map((row) => row.session_id));
+
   await db.withExclusiveTransactionAsync(async (txn) => {
     for (const seed of SESSION_TEST_SEEDS) {
+      if (deletedSeedIds.has(seed.session.id)) {
+        continue;
+      }
+
       const { session, laps, lapSectors, gpsPoints, notes } = seed;
       const lapIds = laps.map((lap) => lap.id);
       const noteIds = notes.map((note) => note.id);
@@ -595,6 +610,37 @@ export async function syncSessionTestSeeds(db: SQLiteDatabase) {
   });
 }
 
+// A session left in 'recording' can only mean the app died mid-session
+// (recovery runs at startup, before any new recording can begin). Close it
+// out as aborted and backfill the summary stats from what was persisted.
+export async function recoverStaleRecordingSessions(db: SQLiteDatabase): Promise<void> {
+  await db.runAsync(
+    `UPDATE sessions
+     SET status = 'aborted',
+         ended_at = COALESCE(
+           ended_at,
+           (SELECT MAX(gp.recorded_at) FROM gps_points gp WHERE gp.session_id = sessions.id),
+           updated_at
+         ),
+         best_lap_ms = COALESCE(
+           best_lap_ms,
+           (SELECT MIN(l.lap_time_ms)
+            FROM laps l
+            WHERE l.session_id = sessions.id
+              AND l.lap_time_ms IS NOT NULL
+              AND l.is_invalid = 0 AND l.is_out_lap = 0 AND l.is_in_lap = 0)
+         ),
+         total_laps = CASE
+           WHEN total_laps > 0 THEN total_laps
+           ELSE (SELECT COUNT(*)
+                 FROM laps l
+                 WHERE l.session_id = sessions.id AND l.lap_time_ms IS NOT NULL)
+         END,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE status = 'recording';`
+  );
+}
+
 export async function listSessions(db: SQLiteDatabase): Promise<SessionListItem[]> {
   const rows = await db.getAllAsync<DbSessionListRow>(
     `SELECT
@@ -615,7 +661,7 @@ export async function listSessions(db: SQLiteDatabase): Promise<SessionListItem[
         s.best_lap_ms,
         MIN(
           CASE
-            WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0
+            WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0 AND l.is_in_lap = 0
               THEN l.lap_time_ms
           END
         )
@@ -662,7 +708,7 @@ export async function getTrackSessionSummary(
       MAX(s.started_at) AS last_visit,
       MIN(
         CASE
-          WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0
+          WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0 AND l.is_in_lap = 0
             THEN l.lap_time_ms
         END
       ) AS best_lap_ms
@@ -682,12 +728,14 @@ export async function getTrackSessionSummary(
 export async function getNextSessionNumber(
   db: SQLiteDatabase
 ): Promise<number> {
-  const row = await db.getFirstAsync<{ session_count: number }>(
-    `SELECT COUNT(*) AS session_count
+  // MAX(rowid) keeps numbering monotonic after deletions, where COUNT(*)
+  // would hand out an already-used session number again.
+  const row = await db.getFirstAsync<{ max_rowid: number | null }>(
+    `SELECT MAX(rowid) AS max_rowid
      FROM sessions;`
   );
 
-  return (row?.session_count ?? 0) + 1;
+  return (row?.max_rowid ?? 0) + 1;
 }
 
 export async function getSessionById(
@@ -716,7 +764,7 @@ export async function getSessionById(
         s.best_lap_ms,
         MIN(
           CASE
-            WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0
+            WHEN l.lap_time_ms IS NOT NULL AND l.is_invalid = 0 AND l.is_out_lap = 0 AND l.is_in_lap = 0
               THEN l.lap_time_ms
           END
         )
@@ -763,7 +811,7 @@ export async function getSessionById(
         `SELECT *
          FROM gps_points
          WHERE session_id = ?
-         ORDER BY recorded_at ASC;`,
+         ORDER BY recorded_at ASC, id ASC;`,
         sessionId
       ),
       db.getAllAsync<DbLapRow>(
@@ -898,5 +946,16 @@ export async function deleteSession(
   db: SQLiteDatabase,
   sessionId: string
 ): Promise<void> {
-  await db.runAsync('DELETE FROM sessions WHERE id = ?;', sessionId);
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    if (SEEDED_SESSION_IDS.has(sessionId)) {
+      await txn.runAsync(
+        `INSERT INTO deleted_seed_sessions (session_id)
+         VALUES (?)
+         ON CONFLICT(session_id) DO NOTHING;`,
+        sessionId
+      );
+    }
+
+    await txn.runAsync('DELETE FROM sessions WHERE id = ?;', sessionId);
+  });
 }

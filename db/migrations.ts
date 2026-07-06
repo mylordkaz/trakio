@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { syncSessionTestSeeds } from '@/db/sessions';
+import { recoverStaleRecordingSessions, syncSessionTestSeeds } from '@/db/sessions';
 import { syncTrackSeeds } from '@/db/tracks';
 
 type Migration = {
@@ -78,6 +78,8 @@ async function createBaseSchema(db: SQLiteDatabase) {
         ended_at TEXT,
         lap_time_ms INTEGER,
         is_out_lap INTEGER NOT NULL DEFAULT 0 CHECK (is_out_lap IN (0, 1)),
+        is_in_lap INTEGER NOT NULL DEFAULT 0 CHECK (is_in_lap IN (0, 1)),
+        is_timing_estimated INTEGER NOT NULL DEFAULT 0 CHECK (is_timing_estimated IN (0, 1)),
         is_invalid INTEGER NOT NULL DEFAULT 0 CHECK (is_invalid IN (0, 1)),
         max_speed_kph REAL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -150,6 +152,11 @@ async function createBaseSchema(db: SQLiteDatabase) {
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(session_id, seq)
+      );
+
+      CREATE TABLE IF NOT EXISTS deleted_seed_sessions (
+        session_id TEXT PRIMARY KEY NOT NULL,
+        deleted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE INDEX IF NOT EXISTS idx_timing_lines_track_seq
@@ -497,6 +504,41 @@ const MIGRATIONS: Migration[] = [
   {
     version: 10,
     up: async (db) => {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS deleted_seed_sessions (
+          session_id TEXT PRIMARY KEY NOT NULL,
+          deleted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+    },
+  },
+  {
+    version: 11,
+    up: async (db) => {
+      const lapColumns = await getColumnNames(db, 'laps');
+
+      if (!lapColumns.includes('is_in_lap')) {
+        await db.execAsync(
+          'ALTER TABLE laps ADD COLUMN is_in_lap INTEGER NOT NULL DEFAULT 0 CHECK (is_in_lap IN (0, 1));'
+        );
+      }
+    },
+  },
+  {
+    version: 12,
+    up: async (db) => {
+      const lapColumns = await getColumnNames(db, 'laps');
+
+      if (!lapColumns.includes('is_timing_estimated')) {
+        await db.execAsync(
+          'ALTER TABLE laps ADD COLUMN is_timing_estimated INTEGER NOT NULL DEFAULT 0 CHECK (is_timing_estimated IN (0, 1));'
+        );
+      }
+    },
+  },
+  {
+    version: 13,
+    up: async (db) => {
       const cols = await getColumnNames(db, 'gps_points');
       const newColumns: { name: string; sql: string }[] = [
         { name: 'source', sql: 'ALTER TABLE gps_points ADD COLUMN source TEXT;' },
@@ -553,6 +595,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
     }
   }
 
+  await recoverStaleRecordingSessions(db);
   await syncTrackSeeds(db);
   await syncSessionTestSeeds(db);
 }

@@ -2,6 +2,7 @@ import type {
   TelemetrySample,
   TelemetrySampleValidationResult,
 } from '@/telemetry/types';
+import { haversineDistanceMeters } from '@/utils/geo';
 
 export type TelemetryFilterConfig = {
   maxAccuracyM: number;
@@ -15,52 +16,68 @@ const DEFAULT_FILTER_CONFIG: TelemetryFilterConfig = {
   maxHeadingDeg: 359.999,
 };
 
-function toRadians(value: number) {
-  return (value * Math.PI) / 180;
-}
+// How far a fix may land from where the reported speed says the car can be
+// before the fix is treated as a multipath teleport. Deliberately generous:
+// rejecting a real point hurts more than keeping a mildly noisy one.
+const JUMP_ACCURACY_SLACK_FACTOR = 2;
+const JUMP_BASE_SLACK_M = 5;
 
-function calculateDistanceMeters(
-  startLat: number,
-  startLng: number,
-  endLat: number,
-  endLng: number
-) {
-  const earthRadiusM = 6371000;
-  const deltaLat = toRadians(endLat - startLat);
-  const deltaLng = toRadians(endLng - startLng);
-  const a =
-    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
-    Math.cos(toRadians(startLat)) *
-      Math.cos(toRadians(endLat)) *
-      Math.sin(deltaLng / 2) *
-      Math.sin(deltaLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return earthRadiusM * c;
-}
+type Movement = {
+  distanceMeters: number;
+  elapsedSeconds: number;
+  speedMps: number;
+};
 
 function isHeadingValid(value: number | null, maxHeadingDeg: number) {
   return value !== null && value >= 0 && value <= maxHeadingDeg;
 }
 
-function deriveSpeedMps(previousSample: TelemetrySample | null, sample: TelemetrySample) {
-  if (!previousSample) {
-    return sample.speedMps;
-  }
-
-  const elapsedSeconds = (sample.elapsedMs - previousSample.elapsedMs) / 1000;
+function computeMovement(
+  previousSample: TelemetrySample,
+  sample: TelemetrySample
+): Movement | null {
+  const elapsedSeconds = (sample.recordedAt - previousSample.recordedAt) / 1000;
   if (!Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) {
-    return sample.speedMps;
+    return null;
   }
 
-  const distanceMeters = calculateDistanceMeters(
+  const distanceMeters = haversineDistanceMeters(
     previousSample.lat,
     previousSample.lng,
     sample.lat,
     sample.lng
   );
 
-  return distanceMeters / elapsedSeconds;
+  return {
+    distanceMeters,
+    elapsedSeconds,
+    speedMps: distanceMeters / elapsedSeconds,
+  };
+}
+
+function isImpossibleJump(
+  previousSample: TelemetrySample,
+  sample: TelemetrySample,
+  movement: Movement,
+  config: TelemetryFilterConfig
+) {
+  if (movement.speedMps > config.maxSpeedMps) {
+    return true;
+  }
+
+  const hasReportedSpeed = previousSample.speedMps !== null || sample.speedMps !== null;
+  if (!hasReportedSpeed) {
+    return false;
+  }
+
+  const referenceSpeedMps = Math.max(previousSample.speedMps ?? 0, sample.speedMps ?? 0);
+  const slackM =
+    JUMP_ACCURACY_SLACK_FACTOR *
+      ((previousSample.accuracyM ?? config.maxAccuracyM) +
+        (sample.accuracyM ?? config.maxAccuracyM)) +
+    JUMP_BASE_SLACK_M;
+
+  return movement.distanceMeters > referenceSpeedMps * movement.elapsedSeconds + slackM;
 }
 
 export function filterTelemetrySample(
@@ -70,6 +87,13 @@ export function filterTelemetrySample(
 ): TelemetrySampleValidationResult {
   const mergedConfig = { ...DEFAULT_FILTER_CONFIG, ...config };
 
+  if (previousSample && sample.recordedAt <= previousSample.recordedAt) {
+    return {
+      accepted: false,
+      reason: 'out_of_order',
+    };
+  }
+
   if (sample.accuracyM !== null && sample.accuracyM > mergedConfig.maxAccuracyM) {
     return {
       accepted: false,
@@ -77,26 +101,32 @@ export function filterTelemetrySample(
     };
   }
 
-  const sanitizedHeading = isHeadingValid(sample.headingDeg, mergedConfig.maxHeadingDeg)
-    ? sample.headingDeg
-    : null;
-
-  const speedMps = sample.speedMps ?? deriveSpeedMps(previousSample, sample);
-
-  if (speedMps !== null && speedMps > mergedConfig.maxSpeedMps) {
+  if (sample.speedMps !== null && sample.speedMps > mergedConfig.maxSpeedMps) {
     return {
       accepted: false,
       reason: 'impossible_jump',
     };
   }
 
+  const movement = previousSample ? computeMovement(previousSample, sample) : null;
+
+  if (previousSample && movement && isImpossibleJump(previousSample, sample, movement, mergedConfig)) {
+    return {
+      accepted: false,
+      reason: 'impossible_jump',
+    };
+  }
+
+  const sanitizedHeading = isHeadingValid(sample.headingDeg, mergedConfig.maxHeadingDeg)
+    ? sample.headingDeg
+    : null;
+
   return {
     accepted: true,
     sample: {
       ...sample,
-      speedMps,
+      speedMps: sample.speedMps ?? movement?.speedMps ?? null,
       headingDeg: sanitizedHeading,
     },
   };
 }
-

@@ -8,15 +8,17 @@ Designed to work fully offline — most race tracks have limited network coverag
 
 ### Core Recording
 - **Track Database** — predefined circuits with ordered timing lines stored locally
-- **GPS Telemetry Recording** — continuous capture of location, speed, timestamp, and accuracy at ~5 Hz
-- **Automatic Lap Detection** — start/finish line crossing detection with debounce and minimum lap time safeguards
+- **GPS Telemetry Recording** — continuous capture of location, speed, timestamp, and accuracy (up to ~5 Hz on Android; iOS delivers ~1 Hz), with outlier and out-of-order sample rejection
+- **Automatic Lap Detection** — start/finish crossing detection with debounce, minimum lap time, and minimum crossing speed safeguards; interpolated crossing timestamps, with laps flagged as estimated when the GPS segment at the line is degraded
 - **Sector Timing** — split times calculated as sector lines are crossed
 - **Live Session Display** — current lap timer, last lap, best lap, sector splits, and lap count in a large, glanceable UI
 - **Pre-Session Setup** — checklist (GPS lock, battery, start/finish line), weather conditions, car selection
+- **Pit In Marking** — flags the current lap as in-lap and the next as out-lap; both excluded from best/consistency stats
+- **Live GPS Health Warnings** — signal loss, accuracy degradation, and app-backgrounding alerts while recording
 
 ### Session Review
 - **Session Library** — browse past sessions by track, date, best lap, and lap count
-- **Lap Path Map** — display saved GPS traces over Google Maps satellite imagery
+- **Lap Path Map** — saved GPS traces over Google Maps satellite imagery, per lap or whole session, cleaned by a display-only pipeline (spike rejection, accuracy-weighted smoothing, simplification, spline densification, and spline joining of short GPS-shadow holes)
 - **Session Analytics** — consistency score, theoretical best, lap delta trends, sector breakdowns
 - **Session Notes** — per-session driver notes
 - **Track Notes** — per-circuit driver notes
@@ -72,7 +74,7 @@ SQLite tables:
 - `tracks` — name, country, location, layout, length, corners, direction, center point
 - `timing_lines` — ordered gate segments with type, seq, and a/b endpoints
 - `sessions` — track reference, status, best lap, top speed, car, weather condition/temperature
-- `laps` — lap number, time, out-lap/invalid flags, max speed
+- `laps` — lap number, lap time, out-lap/in-lap/invalid flags, timing-estimated flag, max speed
 - `lap_sectors` — sector index and split time per lap
 - `gps_points` — full telemetry samples with lap linkage and elapsed time
 - `track_notes` — per-track driver notes

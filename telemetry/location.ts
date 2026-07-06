@@ -42,6 +42,24 @@ function normalizeHeading(value: number | null | undefined) {
   return value;
 }
 
+// iOS reports -1 for speed/heading when no valid reading is available.
+function normalizeSpeed(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return null;
+  }
+
+  return value;
+}
+
+// Some Android devices report 0 or negative accuracy when it is unknown.
+function normalizeAccuracy(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return value;
+}
+
 function normalizeLocationSample(
   location: LocationObject,
   resolveElapsedMs: TelemetryElapsedMsResolver
@@ -62,14 +80,8 @@ function normalizeLocationSample(
     elapsedMs: resolveElapsedMs(recordedAt),
     lat: latitude,
     lng: longitude,
-    speedMps:
-      typeof location.coords.speed === 'number' && Number.isFinite(location.coords.speed)
-        ? location.coords.speed
-        : null,
-    accuracyM:
-      typeof location.coords.accuracy === 'number' && Number.isFinite(location.coords.accuracy)
-        ? location.coords.accuracy
-        : null,
+    speedMps: normalizeSpeed(location.coords.speed),
+    accuracyM: normalizeAccuracy(location.coords.accuracy),
     headingDeg: normalizeHeading(location.coords.heading),
     altitudeM:
       typeof location.coords.altitude === 'number' && Number.isFinite(location.coords.altitude)

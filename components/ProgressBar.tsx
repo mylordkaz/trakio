@@ -3,13 +3,16 @@ import { View, Text } from 'react-native';
 export default function ProgressBar({
   label,
   value,
+  percent,
   color = 'bg-white',
 }: {
   label: string;
   value: string;
+  percent?: number;
   color?: string;
 }) {
-  const numericValue = parseInt(value, 10);
+  const numericValue = percent ?? parseInt(value, 10);
+  const clampedPercent = Math.max(0, Math.min(100, Number.isFinite(numericValue) ? numericValue : 0));
 
   return (
     <View>
@@ -20,7 +23,7 @@ export default function ProgressBar({
       <View className="h-2 rounded-full bg-zinc-200 dark:bg-white/10 overflow-hidden">
         <View
           className={`h-full rounded-full ${color}`}
-          style={{ width: `${numericValue}%` }}
+          style={{ width: `${clampedPercent}%` }}
         />
       </View>
     </View>
