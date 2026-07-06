@@ -28,6 +28,7 @@ import {
   updateSessionNote,
 } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { shareSessionDataExport } from '@/services/share';
 
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useShareSession } from '@/hooks/useShareSession';
@@ -744,11 +745,17 @@ export default function SessionDetailScreen() {
         </View>
 
         <View className="px-5 pb-5 pt-1 flex-row gap-3">
-          {/* TODO: Export not yet implemented
-          <Pressable className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center">
+          <Pressable
+            onPress={() => {
+              if (sessionDetail) {
+                void shareSessionDataExport(sessionDetail);
+              }
+            }}
+            disabled={!sessionDetail}
+            className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center"
+          >
             <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('sessions.exportData')}</Text>
           </Pressable>
-          */}
           <Pressable
             onPress={share.openShareSheet}
             disabled={share.isSharing || !sessionDetail}

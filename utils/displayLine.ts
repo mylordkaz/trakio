@@ -564,12 +564,12 @@ export type LapRun = {
   points: LapRunPoint[];
 };
 
-// Consecutive points sharing a lap id form a run; each run borrows a few
-// boundary points from its neighbors so the drawn line stays continuous
-// through the start/finish area — including when a GPS shadow there leaves a
-// hole that the spline join has to close from both sides.
-const BOUNDARY_BORROW_POINTS = 3;
-
+// Consecutive points sharing a lap id form a run. A run contains only its own
+// lap's points plus the single point where the next run begins (so the
+// all-laps view stays continuous through the crossing). Never more: drawing a
+// neighboring pass's points renders a second, offset line beside the selected
+// lap, and an overlapping line is worse than the small gap this rule leaves
+// when the crossing area has no data.
 export function groupPointsIntoLapRuns(points: LapRunPoint[]): LapRun[] {
   const runs: { lapId: string | null; points: LapRunPoint[] }[] = [];
 
@@ -585,14 +585,11 @@ export function groupPointsIntoLapRuns(points: LapRunPoint[]): LapRun[] {
   }
 
   return runs.map((run, index) => {
-    const previousTail =
-      index > 0 ? runs[index - 1].points.slice(-BOUNDARY_BORROW_POINTS) : [];
-    const nextHead =
-      index < runs.length - 1 ? runs[index + 1].points.slice(0, BOUNDARY_BORROW_POINTS) : [];
+    const stitchPoint = index < runs.length - 1 ? [runs[index + 1].points[0]] : [];
 
     return {
       lapId: run.lapId,
-      points: [...previousTail, ...run.points, ...nextHead],
+      points: [...run.points, ...stitchPoint],
       key: `${run.lapId ?? 'unassigned'}-${index}`,
     };
   });
