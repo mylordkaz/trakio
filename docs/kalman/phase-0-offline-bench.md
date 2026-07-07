@@ -82,7 +82,9 @@ Pvv ← Pvv                     + σa²·dt²
 R_p = (kR · max(accuracyM, 3))²          // reported accuracy treated as ~1σ, scale kR tunable
 y   = z_p − p
 S   = Ppp + R_p
-gate: if y² / S > G²  → skip update (count it), keep predicting
+gate (joint over both axes, since a displaced fix moves the whole position):
+      if  yx²/Sx + yy²/Sy > G²  → skip the position update on both axes
+      (count it), keep predicting
 Kp  = Ppp / S ;  Kv = Ppv / S
 p  += Kp·y ;  v += Kv·y
 Ppp ← (1−Kp)·Ppp
@@ -232,7 +234,53 @@ and `telemetry/kalman.ts` remain in the repo as a regression harness and as
 the starting skeleton for Phase 2, and the README status table is updated to
 record the outcome and the numbers.
 
-## 10. Estimated size
+## 10. Outcome (2026-07-07) — kill criterion fired
+
+Executed as specified; Phase 1 is **cancelled** on the evidence below.
+
+**Result:** 0 of 57 swept configurations valid. Both arms, at every setting,
+either lose laps or degrade every metric with no compensating win.
+
+| Metric | Naive (ships today) | Best filtered config found |
+| --- | --- | --- |
+| July clean-lap mean \|err\| vs transponder | **77 ms** | 85.6 ms (most configs 200+ ms) |
+| July laps detected | 13/13 | 11/13 at default tuning (two lost) |
+| April lap-time stability | 2 ms | ≥ 49 ms (limit 30) |
+| April sector-split stability | 2 ms | up to 1691 ms |
+
+**Root cause (the finding that matters):** timing gates are finite segments
+(~35 m at Tsukuba; the racing line crosses ~10 m from one end). Any causal
+filter at 1 Hz lags cornering by meters (transiently 5–19 m here — worst
+right after corners, which is exactly where gates live). Lateral displacement
+slides the crossing point *along* the gate — and near an edge, *off* it:
+crossings at gate-fractions −0.24 and −0.28 in the real data. Filtering
+trades time-noise for lateral bias; for gate detection, **unbiased-but-noisy
+beats smooth-but-biased**. There is also nothing to win: naive clean-lap
+error (77 ms) is the GPS/transponder noise floor, not filterable error.
+
+**Spec deviations, recorded:** the six-scenario synthetic suite (§7) was
+superseded — the real-data verdict arrived first and is the stronger evidence
+class. One synthetic was built instead: `bench/synthetic.ts` reproduces the
+gate-edge lap loss in a controlled scene (corner exit, gate crossed 8 m from
+its end; naive detects the lap, the filter loses it), keeping the finding
+runnable without the gitignored personal data. The unit tests
+(`telemetry/__tests__/kalman.test.ts`, 10 passing, including a joint-gate
+threshold bug they caught) validate the filter mechanics themselves.
+
+**Standing artifacts:** `telemetry/kalman.ts` (validated, unused by the app),
+`bench/run.ts` (+ `--sweep`), `bench/replay.ts` (production-topology replay,
+±2 ms vs live-recorded times), `bench/synthetic.ts` (mandatory pre-check for
+any future estimator touching detection), `bench/out/report.md` (generated).
+
+**Implication for Phase 2:** this does not weaken IMU fusion — it sharpens
+its requirement. The lag mechanism is the CV model *guessing* acceleration;
+an IMU *measures* it, removing the lag at its source. Any Phase 2 estimator
+must pass `bench/synthetic.ts` and the full §6 checklist (now including
+lap-count check #0) before touching detection. Higher-rate sources (25 Hz
+RaceBox) also shrink CV lag by dt² and may deserve a narrow re-evaluation —
+with this bench, that costs an afternoon, not a build.
+
+## 11. Estimated size
 
 `kalman.ts` ~150 lines; bench ~300 lines total (mostly consolidation of the
 existing prototype replay/render scripts); unit tests ~100 lines. Zero new

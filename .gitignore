@@ -44,3 +44,7 @@ yarn-error.*
 
 # AI 
 .claude
+
+# Kalman bench: personal session data + generated reports
+bench/data/
+bench/out/

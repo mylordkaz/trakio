@@ -10,9 +10,18 @@ work can stop and resume months later without re-deriving anything.
 
 | Phase | Doc | Scope | Status |
 | --- | --- | --- | --- |
-| 0 | [phase-0-offline-bench.md](phase-0-offline-bench.md) | Filter module + offline bench on real data. **No app changes.** | Approved, not started |
-| 1 | [phase-1-app-integration.md](phase-1-app-integration.md) | Wire filter into detection behind a feature flag | Blocked on Phase 0 pass |
-| 2 | [phase-2-imu-fusion.md](phase-2-imu-fusion.md) | IMU fusion (RaceBox IMU first, phone CoreMotion second) | Future |
+| 0 | [phase-0-offline-bench.md](phase-0-offline-bench.md) | Filter module + offline bench on real data. **No app changes.** | **Complete 2026-07-07 — kill criterion fired** (see Outcome in the phase doc) |
+| 1 | [phase-1-app-integration.md](phase-1-app-integration.md) | Wire filter into detection behind a feature flag | **Cancelled** — 0/57 configs valid; filtering loses laps (gate-edge slip) |
+| 2 | [phase-2-imu-fusion.md](phase-2-imu-fusion.md) | IMU fusion (RaceBox IMU first, phone CoreMotion second) | Future — unaffected, and strengthened by the Phase 0 finding |
+
+**Phase 0 verdict in one line:** on real 1 Hz data, GPS-only filtering for
+detection improved nothing (clean laps are already at the GPS-vs-transponder
+noise floor) and introduced a categorical regression — corner lag displaces
+the path laterally by 5–19 m, which slides crossings along the *finite*
+timing gates and, near a gate's edge, off it entirely: **lost laps**. The
+filter and bench remain in the repo (`telemetry/kalman.ts`, `bench/`) as the
+regression harness and skeleton for Phase 2, where measured IMU acceleration
+removes the lag mechanism itself.
 
 Phases are gated: each one starts only after the previous one's acceptance
 criteria pass **and** the results have been reviewed and approved. Every phase

@@ -18,6 +18,15 @@ Why this is credible where GPS-only was not: the re-timer failed because the
 car accelerated 101→150 km/h during the silence and nothing measured it. An
 IMU measures exactly that, at 25–100 Hz, throughout.
 
+Phase 0's kill finding strengthens this argument rather than weakening it:
+GPS-only filtering failed because the constant-velocity model *guesses*
+acceleration and therefore lags corners, displacing the path laterally into
+the finite timing gates (lost laps at gate edges). An IMU-driven predict
+replaces the guess with a measurement, removing the lag at its source.
+**Hard requirement:** any Phase 2 estimator must pass `bench/synthetic.ts`
+(the gate-edge slip reproduction) and the full Phase 0 §6 checklist —
+including lap-count check #0 — before it is allowed anywhere near detection.
+
 ## 2. Two hardware paths — RaceBox first
 
 ### Path A (preferred): RaceBox on-board IMU
