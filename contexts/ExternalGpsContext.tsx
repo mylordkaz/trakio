@@ -5,6 +5,7 @@ import {
   requestBlePermissions,
   scanForDevices,
 } from '@/telemetry/sources/ble-transport';
+import { EXTERNAL_GPS_ENABLED } from '@/constants/featureFlags';
 
 const LAST_DEVICE_KEY = 'external_gps_last_device_id';
 
@@ -46,6 +47,12 @@ export function ExternalGpsProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const startScan = useCallback(async () => {
+    // Defense in depth: the pairing UI is hidden while disabled, but never let
+    // a scan (and thus the BLE stack) spin up either.
+    if (!EXTERNAL_GPS_ENABLED) {
+      return;
+    }
+
     const permitted = await requestBlePermissions();
     if (!permitted) {
       return;

@@ -23,6 +23,7 @@ import i18n from "@/i18n";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useMenu } from "@/contexts/MenuContext";
 import ExternalGpsSection from "@/components/ExternalGpsSection";
+import { EXTERNAL_GPS_ENABLED } from "@/constants/featureFlags";
 import { getUserProfile } from "@/db";
 import type { UserRow } from "@/db";
 
@@ -243,9 +244,13 @@ export default function MenuDrawer() {
             </View>
           </Pressable>
 
-          {/* External GPS */}
-          <SectionHeader title={t("menu.externalGps")} />
-          <ExternalGpsSection />
+          {/* External GPS — gated until validated on hardware (EXTERNAL_GPS_ENABLED). */}
+          {EXTERNAL_GPS_ENABLED && (
+            <>
+              <SectionHeader title={t("menu.externalGps")} />
+              <ExternalGpsSection />
+            </>
+          )}
 
           {/* Preferences */}
           <SectionHeader title={t("menu.preferences")} />
