@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { SessionStatus } from '@/db/types';
-import type { TelemetrySample } from '@/telemetry/types';
+import type { TelemetrySample, ExtendedTelemetrySample } from '@/telemetry/types';
 
 type RecorderConfig = {
   flushPointCount?: number;
@@ -67,6 +67,10 @@ type BufferedGpsPoint = {
 
 function toIsoString(timestampMs: number) {
   return new Date(timestampMs).toISOString();
+}
+
+function asExtended(sample: TelemetrySample): ExtendedTelemetrySample {
+  return sample as ExtendedTelemetrySample;
 }
 
 export function createSessionRecorder(db: SQLiteDatabase, config: RecorderConfig = {}) {
@@ -190,21 +194,20 @@ export function createSessionRecorder(db: SQLiteDatabase, config: RecorderConfig
 
     await db.withExclusiveTransactionAsync(async (txn) => {
       for (const point of pendingPoints) {
+        const ext = asExtended(point.sample);
         await txn.runAsync(
           `INSERT INTO gps_points (
-            id,
-            session_id,
-            lap_id,
-            recorded_at,
-            elapsed_ms,
-            latitude,
-            longitude,
-            speed_mps,
-            accuracy_m,
-            altitude_m,
-            heading_deg,
-            is_timing_crossing
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            id, session_id, lap_id, recorded_at, elapsed_ms,
+            latitude, longitude, speed_mps, accuracy_m, altitude_m, heading_deg,
+            is_timing_crossing, source,
+            i_tow, time_accuracy_ns, nanosecond,
+            g_force_x, g_force_y, g_force_z,
+            rotation_rate_x, rotation_rate_y, rotation_rate_z,
+            vertical_accuracy_m, speed_accuracy_mps, heading_accuracy_deg,
+            pdop, satellite_count, fix_type, fix_flags,
+            validity_flags, date_time_flags, lat_lon_flags,
+            battery_level, is_charging, input_voltage_v
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             session_id = excluded.session_id,
             lap_id = excluded.lap_id,
@@ -216,7 +219,30 @@ export function createSessionRecorder(db: SQLiteDatabase, config: RecorderConfig
             accuracy_m = excluded.accuracy_m,
             altitude_m = excluded.altitude_m,
             heading_deg = excluded.heading_deg,
-            is_timing_crossing = excluded.is_timing_crossing;`,
+            is_timing_crossing = excluded.is_timing_crossing,
+            source = excluded.source,
+            i_tow = excluded.i_tow,
+            time_accuracy_ns = excluded.time_accuracy_ns,
+            nanosecond = excluded.nanosecond,
+            g_force_x = excluded.g_force_x,
+            g_force_y = excluded.g_force_y,
+            g_force_z = excluded.g_force_z,
+            rotation_rate_x = excluded.rotation_rate_x,
+            rotation_rate_y = excluded.rotation_rate_y,
+            rotation_rate_z = excluded.rotation_rate_z,
+            vertical_accuracy_m = excluded.vertical_accuracy_m,
+            speed_accuracy_mps = excluded.speed_accuracy_mps,
+            heading_accuracy_deg = excluded.heading_accuracy_deg,
+            pdop = excluded.pdop,
+            satellite_count = excluded.satellite_count,
+            fix_type = excluded.fix_type,
+            fix_flags = excluded.fix_flags,
+            validity_flags = excluded.validity_flags,
+            date_time_flags = excluded.date_time_flags,
+            lat_lon_flags = excluded.lat_lon_flags,
+            battery_level = excluded.battery_level,
+            is_charging = excluded.is_charging,
+            input_voltage_v = excluded.input_voltage_v;`,
           point.id,
           point.sessionId,
           point.lapId,
@@ -228,7 +254,30 @@ export function createSessionRecorder(db: SQLiteDatabase, config: RecorderConfig
           point.sample.accuracyM,
           point.sample.altitudeM,
           point.sample.headingDeg,
-          point.isTimingCrossing
+          point.isTimingCrossing,
+          point.sample.source ?? null,
+          ext.iTOW ?? null,
+          ext.timeAccuracyNs ?? null,
+          ext.nanosecond ?? null,
+          ext.gForceX ?? null,
+          ext.gForceY ?? null,
+          ext.gForceZ ?? null,
+          ext.rotationRateX ?? null,
+          ext.rotationRateY ?? null,
+          ext.rotationRateZ ?? null,
+          ext.verticalAccuracyM ?? null,
+          ext.speedAccuracyMps ?? null,
+          ext.headingAccuracyDeg ?? null,
+          ext.pdop ?? null,
+          ext.satelliteCount ?? null,
+          ext.fixType ?? null,
+          ext.fixFlags ?? null,
+          ext.validityFlags ?? null,
+          ext.dateTimeFlags ?? null,
+          ext.latLonFlags ?? null,
+          ext.batteryLevel ?? null,
+          ext.isCharging === undefined ? null : ext.isCharging ? 1 : 0,
+          ext.inputVoltageV ?? null
         );
       }
     });

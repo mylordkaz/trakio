@@ -3,10 +3,10 @@ import { Animated, AppState, View, Text, ScrollView, Pressable } from 'react-nat
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { useSQLiteContext } from 'expo-sqlite';
-import type { LocationSubscription } from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useKeepAwake } from 'expo-keep-awake';
+import * as Haptics from 'expo-haptics';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import i18n from '@/i18n';
 import Card from '@/components/Card';
@@ -15,14 +15,12 @@ import ProgressBar from '@/components/ProgressBar';
 import { createSessionRecorder, getOrCreateDefaultUserProfile, getTrackById } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
-import {
-  requestForegroundLocationPermission,
-  startLocationSubscription,
-  stopLocationSubscription,
-} from '@/telemetry/location';
+import { requestForegroundLocationPermission } from '@/telemetry/location';
+import { createConnectionLifecycle } from '@/telemetry/sources/connection-lifecycle';
+import { useExternalGps } from '@/contexts/ExternalGpsContext';
 import { createSessionRuntime } from '@/telemetry/session-runtime';
 import type { TrackDetail } from '@/db';
-import type { TelemetrySample } from '@/telemetry/types';
+import type { TelemetrySample, ExtendedTelemetrySample } from '@/telemetry/types';
 import { formatLapTime, formatDurationMs as formatDuration, formatSpeed } from '@/utils/format';
 
 function formatSectorTime(elapsedMs: number | null) {
@@ -91,6 +89,8 @@ function getBrakePercent(
   return Math.max(0, Math.min(100, percent));
 }
 
+const TELEMETRY_DISPLAY_REFRESH_MS = 100;
+
 export default function RecordingScreen() {
   useKeepAwake();
   const router = useRouter();
@@ -100,6 +100,9 @@ export default function RecordingScreen() {
   const isDark = colorScheme === 'dark';
   const params = useLocalSearchParams<{ trackId?: string; sessionName?: string; condition?: string; temperatureC?: string }>();
   const gradientColors = useHeaderGradient('red');
+  const { selectedDevice } = useExternalGps();
+  const selectedDeviceRef = useRef(selectedDevice);
+  selectedDeviceRef.current = selectedDevice;
   const [track, setTrack] = useState<TrackDetail | null>(null);
   const [isLoadingTrack, setIsLoadingTrack] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -107,10 +110,12 @@ export default function RecordingScreen() {
   const [brakePercent, setBrakePercent] = useState(0);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ReturnType<ReturnType<typeof createSessionRuntime>['getSnapshot']> | null>(null);
   const runtimeRef = useRef<ReturnType<typeof createSessionRuntime> | null>(null);
-  const locationSubscriptionRef = useRef<LocationSubscription | null>(null);
+  const lifecycleRef = useRef<ReturnType<typeof createConnectionLifecycle> | null>(null);
   const hasStoppedRef = useRef(false);
   const pulseOpacity = useRef(new Animated.Value(1)).current;
   const previousAcceptedSampleRef = useRef<TelemetrySample | null>(null);
+  const lastRenderMsRef = useRef(0);
+  const lastRenderedStatusRef = useRef<string | null>(null);
   const [isLandscape, setIsLandscape] = useState(false);
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
@@ -259,9 +264,13 @@ export default function RecordingScreen() {
 
       setRuntimeSnapshot(startedSnapshot);
 
-      locationSubscriptionRef.current = await startLocationSubscription({
-        resolveElapsedMs: (recordedAt) =>
-          Math.max(0, recordedAt - (startedSnapshot.sessionStartedAtMs ?? recordedAt)),
+      const lifecycle = createConnectionLifecycle({
+        onResetContinuity: () => runtimeRef.current?.resetContinuity(),
+      });
+      lifecycleRef.current = lifecycle;
+
+      await lifecycle.start(
+        {
         onSample: (sample) => {
           const activeRuntime = runtimeRef.current;
 
@@ -274,7 +283,19 @@ export default function RecordingScreen() {
               return;
             }
 
-            setRuntimeSnapshot(result.snapshot);
+            // The runtime persists every sample; only the on-screen snapshot is
+            // coalesced. Flush immediately on a lap/sector/status change,
+            // otherwise cap the refresh so 25 Hz doesn't drive 25 renders/sec.
+            const now = Date.now();
+            const isStructural =
+              (result.accepted && result.events.length > 0) ||
+              result.snapshot.status !== lastRenderedStatusRef.current;
+
+            if (isStructural || now - lastRenderMsRef.current >= TELEMETRY_DISPLAY_REFRESH_MS) {
+              lastRenderMsRef.current = now;
+              lastRenderedStatusRef.current = result.snapshot.status;
+              setRuntimeSnapshot(result.snapshot);
+            }
           }).catch(() => {
             if (!isMounted) {
               return;
@@ -290,22 +311,35 @@ export default function RecordingScreen() {
 
           setLoadError('Location subscription error.');
         },
-      });
+        onActiveSourceChange: () => {},
+        onExternalDeviceStateChange: (state) => {
+          if (!isMounted || !selectedDeviceRef.current) return;
+          if (state === 'connected') {
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } else if (state === 'disconnected') {
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          } else if (state === 'reconnecting') {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }
+        },
+        },
+        selectedDeviceRef.current ?? undefined
+      );
     }
 
     void startRecordingSession();
 
     return () => {
       isMounted = false;
-      stopLocationSubscription(locationSubscriptionRef.current);
-      locationSubscriptionRef.current = null;
+      void lifecycleRef.current?.stop();
+      lifecycleRef.current = null;
 
       const activeRuntime = runtimeRef.current;
       if (activeRuntime && !hasStoppedRef.current) {
         void activeRuntime.stop().catch(() => undefined);
       }
     };
-  }, [db, params.sessionName, track]);
+  }, [db, params.sessionName, params.condition, params.temperatureC, track]);
 
   useEffect(() => {
     const sessionStartedAtMs = runtimeSnapshot?.sessionStartedAtMs;
@@ -367,12 +401,8 @@ export default function RecordingScreen() {
       : null;
   const currentElapsedMs =
     runtimeSnapshot?.status === 'lap_in_progress' &&
-    runtimeSnapshot.currentLapStartedElapsedMs !== null &&
-    runtimeSnapshot.sessionStartedAtMs !== null
-      ? Math.max(
-          0,
-          nowMs - (runtimeSnapshot.sessionStartedAtMs + runtimeSnapshot.currentLapStartedElapsedMs)
-        )
+    runtimeSnapshot.currentLapStartedWallClockMs !== null
+      ? Math.max(0, nowMs - runtimeSnapshot.currentLapStartedWallClockMs)
       : null;
   const currentLapLabel =
     runtimeSnapshot?.status === 'lap_in_progress'
@@ -380,19 +410,10 @@ export default function RecordingScreen() {
       : runtimeSnapshot?.status === 'armed'
         ? 1
         : 0;
-  const currentSpeedKph =
-    runtimeSnapshot?.latestAcceptedSample?.speedMps !== null &&
-    runtimeSnapshot?.latestAcceptedSample?.speedMps !== undefined
-      ? runtimeSnapshot.latestAcceptedSample.speedMps * 3.6
-      : null;
   const currentSectorElapsedMs =
     runtimeSnapshot?.status === 'lap_in_progress' &&
-    runtimeSnapshot.currentSectorStartedElapsedMs !== null &&
-    runtimeSnapshot.sessionStartedAtMs !== null
-      ? Math.max(
-          0,
-          nowMs - (runtimeSnapshot.sessionStartedAtMs + runtimeSnapshot.currentSectorStartedElapsedMs)
-        )
+    runtimeSnapshot.currentSectorStartedWallClockMs !== null
+      ? Math.max(0, nowMs - runtimeSnapshot.currentSectorStartedWallClockMs)
       : null;
   const recentLaps = (runtimeSnapshot?.completedLaps ?? []).map((lap) => ({
     lap: lap.lapNumber,
@@ -431,6 +452,10 @@ export default function RecordingScreen() {
       : latestSample
         ? { text: getGpsAccuracyLabel(latestSample.accuracyM), className: 'text-sm text-emerald-400' }
         : { text: i18n.t('common.tbd'), className: 'text-sm text-zinc-500 dark:text-zinc-400' };
+  const currentSpeedKph =
+    latestSample?.speedMps !== null && latestSample?.speedMps !== undefined
+      ? latestSample.speedMps * 3.6
+      : null;
   const speedPercent =
     currentSpeedKph !== null && runtimeSnapshot?.maxSpeedKph
       ? (currentSpeedKph / Math.max(runtimeSnapshot.maxSpeedKph, 1)) * 100
@@ -443,8 +468,8 @@ export default function RecordingScreen() {
     try {
       // Stop telemetry
       const activeRuntime = runtimeRef.current;
-      stopLocationSubscription(locationSubscriptionRef.current);
-      locationSubscriptionRef.current = null;
+      void lifecycleRef.current?.stop();
+      lifecycleRef.current = null;
 
       let sessionId = '';
       if (activeRuntime && !hasStoppedRef.current) {
@@ -720,11 +745,20 @@ export default function RecordingScreen() {
             <View className="flex-row items-center justify-between mb-3">
               <View>
                 <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('telemetry.title')}</Text>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('telemetry.subtitle')}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {selectedDeviceRef.current
+                    ? i18n.t('telemetry.subtitleDevice', { name: selectedDeviceRef.current.name })
+                    : i18n.t('telemetry.subtitle')}
+                </Text>
               </View>
               <Text className={telemetryStatus.className}>{telemetryStatus.text}</Text>
             </View>
             <View className="gap-3">
+              <ProgressBar
+                label={i18n.t('telemetry.gpsSource')}
+                value={selectedDeviceRef.current ? selectedDeviceRef.current.name : i18n.t('telemetry.phoneGps')}
+                color="bg-emerald-400"
+              />
               <ProgressBar
                 label={i18n.t('telemetry.speed')}
                 value={formatSpeed(currentSpeedKph)}
@@ -740,6 +774,26 @@ export default function RecordingScreen() {
                 percent={getGpsSignalPercent(latestSample?.accuracyM ?? null)}
                 color="bg-emerald-400"
               />
+              {(() => {
+                const ext = runtimeSnapshot?.latestAcceptedSample as ExtendedTelemetrySample | undefined;
+                if (!ext?.satelliteCount) return null;
+                return (
+                  <>
+                    <ProgressBar
+                      label={i18n.t('telemetry.satellites')}
+                      value={`${ext.satelliteCount}`}
+                      color="bg-sky-400"
+                    />
+                    {ext.batteryLevel != null && (
+                      <ProgressBar
+                        label={i18n.t('telemetry.deviceBattery')}
+                        value={`${ext.batteryLevel}%`}
+                        color="bg-amber-400"
+                      />
+                    )}
+                  </>
+                );
+              })()}
             </View>
           </Card>
 

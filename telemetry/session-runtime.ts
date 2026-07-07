@@ -38,6 +38,10 @@ type SessionRuntimeSnapshot = {
   currentLapNumber: number;
   currentLapStartedElapsedMs: number | null;
   currentSectorStartedElapsedMs: number | null;
+  // Wall-clock (Date.now) instants of the current lap/sector start, used only to
+  // tick the live timers smoothly. Stored lap/sector times use elapsedMs deltas.
+  currentLapStartedWallClockMs: number | null;
+  currentSectorStartedWallClockMs: number | null;
   lastCrossedSectorSeq: number | null;
   lastCrossedTimingLineId: string | null;
   lastCrossingElapsedMs: number | null;
@@ -108,6 +112,8 @@ export function createSessionRuntime(args: {
     currentLapNumber: 0,
     currentLapStartedElapsedMs: null,
     currentSectorStartedElapsedMs: null,
+    currentLapStartedWallClockMs: null,
+    currentSectorStartedWallClockMs: null,
     lastCrossedSectorSeq: null,
     lastCrossedTimingLineId: null,
     lastCrossingElapsedMs: null,
@@ -196,6 +202,8 @@ export function createSessionRuntime(args: {
         currentLapNumber: 0,
         currentLapStartedElapsedMs: null,
         currentSectorStartedElapsedMs: null,
+        currentLapStartedWallClockMs: null,
+        currentSectorStartedWallClockMs: null,
         lastCrossedSectorSeq: null,
         lastCrossedTimingLineId: null,
         lastCrossingElapsedMs: null,
@@ -222,6 +230,8 @@ export function createSessionRuntime(args: {
       return;
     }
 
+    const crossedAtWallClockMs = Date.now();
+
     if (snapshot.status === 'armed') {
       const lapId = generateId();
 
@@ -244,6 +254,8 @@ export function createSessionRuntime(args: {
         currentLapNumber: 1,
         currentLapStartedElapsedMs: event.sampleElapsedMs,
         currentSectorStartedElapsedMs: event.sampleElapsedMs,
+        currentLapStartedWallClockMs: crossedAtWallClockMs,
+        currentSectorStartedWallClockMs: crossedAtWallClockMs,
         lastCrossedSectorSeq: null,
         lastCrossedTimingLineId: event.timingLineId,
         lastCrossingElapsedMs: event.sampleElapsedMs,
@@ -332,6 +344,8 @@ export function createSessionRuntime(args: {
       currentLapNumber: nextLapNumber,
       currentLapStartedElapsedMs: event.sampleElapsedMs,
       currentSectorStartedElapsedMs: event.sampleElapsedMs,
+      currentLapStartedWallClockMs: crossedAtWallClockMs,
+      currentSectorStartedWallClockMs: crossedAtWallClockMs,
       lastCrossedSectorSeq: null,
       lastCrossedTimingLineId: event.timingLineId,
       lastCrossingElapsedMs: event.sampleElapsedMs,
@@ -354,6 +368,8 @@ export function createSessionRuntime(args: {
     ) {
       return;
     }
+
+    const crossedAtWallClockMs = Date.now();
 
     const expectedSectorSeq = (snapshot.lastCrossedSectorSeq ?? 0) + 1;
     const splitTimeMs = Math.max(
@@ -380,6 +396,7 @@ export function createSessionRuntime(args: {
       lastCrossedTimingLineId: event.timingLineId,
       lastCrossingElapsedMs: event.sampleElapsedMs,
       currentSectorStartedElapsedMs: event.sampleElapsedMs,
+      currentSectorStartedWallClockMs: crossedAtWallClockMs,
       latestEvent: event,
       currentLapSectorSplitsMs: isExpectedSector
         ? {
@@ -555,11 +572,16 @@ export function createSessionRuntime(args: {
     return { ...snapshot };
   }
 
+  function resetContinuity(): void {
+    snapshot = { ...snapshot, latestAcceptedSample: null };
+  }
+
   return {
     start,
     stop,
     handleSample,
     markPitIn,
     getSnapshot,
+    resetContinuity,
   };
 }
