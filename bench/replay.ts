@@ -1,0 +1,140 @@
+import * as fs from 'fs';
+import type { PositionEstimator } from '@/telemetry/kalman';
+import { filterTelemetrySample } from '@/telemetry/filters';
+import { createSessionRuntime } from '@/telemetry/session-runtime';
+import type { TelemetrySample } from '@/telemetry/types';
+
+// Replays an exported session through the PRODUCTION runtime with Phase 1's
+// exact topology: raw samples pass the production validation filter, accepted
+// samples flow through the arm's estimator, and detection sees the estimated
+// positions. Storage/display are irrelevant here (mock recorder).
+
+export type ExportedLap = {
+  id: string;
+  lapNumber: number;
+  lapTimeMs: number | null;
+  isTimingEstimated?: 0 | 1;
+  sectors?: { sectorIndex: number; splitTimeMs: number }[];
+};
+
+export type SessionExport = {
+  session: { id: string; name: string | null };
+  track: { id: string };
+  timingLines: unknown[];
+  laps: ExportedLap[];
+  gpsPoints: {
+    recordedAt: string;
+    elapsedMs: number | null;
+    latitude: number;
+    longitude: number;
+    speedMps: number | null;
+    accuracyM: number | null;
+    headingDeg: number | null;
+    altitudeM: number | null;
+  }[];
+};
+
+export function loadSessionExport(path: string): SessionExport {
+  return JSON.parse(fs.readFileSync(path, 'utf8'));
+}
+
+export function toSamples(data: SessionExport): TelemetrySample[] {
+  return data.gpsPoints.map((p) => ({
+    recordedAt: Date.parse(p.recordedAt),
+    elapsedMs: p.elapsedMs ?? 0,
+    lat: p.latitude,
+    lng: p.longitude,
+    speedMps: p.speedMps,
+    accuracyM: p.accuracyM,
+    headingDeg: p.headingDeg,
+    altitudeM: p.altitudeM,
+    source: 'gps' as const,
+  }));
+}
+
+export type ReplayedLap = {
+  lapNumber: number;
+  lapTimeMs: number;
+  isEstimated: boolean;
+  sectorSplitsMs: number[];
+};
+
+export type ReplayResult = {
+  laps: ReplayedLap[];
+};
+
+function createMockRecorder() {
+  const sectorsByLapId = new Map<string, { sectorIndex: number; splitTimeMs: number }[]>();
+  const lapIdByNumber = new Map<number, string>();
+
+  const recorder = {
+    createSession: async () => {},
+    startLap: async (input: { id: string; lapNumber: number }) => {
+      lapIdByNumber.set(input.lapNumber, input.id);
+    },
+    finishLap: async () => {},
+    setLapInLap: async () => {},
+    insertLapSector: async (input: { lapId: string; sectorIndex: number; splitTimeMs: number }) => {
+      const existing = sectorsByLapId.get(input.lapId) ?? [];
+      existing.push({ sectorIndex: input.sectorIndex, splitTimeMs: input.splitTimeMs });
+      sectorsByLapId.set(input.lapId, existing);
+    },
+    appendGpsSample: async () => {},
+    flushGpsBuffer: async () => {},
+    finalizeSession: async () => {},
+    getBufferedPointCount: () => 0,
+  };
+
+  return {
+    recorder,
+    sectorSplitsForLap(lapNumber: number): number[] {
+      const lapId = lapIdByNumber.get(lapNumber);
+      const sectors = lapId ? (sectorsByLapId.get(lapId) ?? []) : [];
+      return [...sectors].sort((a, b) => a.sectorIndex - b.sectorIndex).map((s) => s.splitTimeMs);
+    },
+  };
+}
+
+export async function replaySession(
+  data: SessionExport,
+  estimator: PositionEstimator | null
+): Promise<ReplayResult> {
+  const mock = createMockRecorder();
+  const runtime = createSessionRuntime({
+    track: { id: data.track.id } as never,
+    timingLines: data.timingLines as never,
+    recorder: mock.recorder as never,
+  });
+
+  await runtime.start();
+
+  let previousAccepted: TelemetrySample | null = null;
+
+  for (const raw of toSamples(data)) {
+    const validation = filterTelemetrySample(previousAccepted, raw);
+
+    if (!validation.accepted) {
+      // The runtime re-rejects internally; feeding it keeps rejection/gap
+      // bookkeeping identical to production. The estimator never sees it.
+      await runtime.handleSample(raw).catch(() => {});
+      continue;
+    }
+
+    previousAccepted = validation.sample;
+    const position = estimator ? estimator.step(validation.sample) : null;
+    const sample = position ? { ...validation.sample, lat: position.lat, lng: position.lng } : validation.sample;
+    await runtime.handleSample(sample).catch(() => {});
+  }
+
+  const snapshot = runtime.getSnapshot();
+  await runtime.stop();
+
+  return {
+    laps: snapshot.completedLaps.map((lap) => ({
+      lapNumber: lap.lapNumber,
+      lapTimeMs: lap.lapTimeMs,
+      isEstimated: lap.isEstimated,
+      sectorSplitsMs: mock.sectorSplitsForLap(lap.lapNumber),
+    })),
+  };
+}

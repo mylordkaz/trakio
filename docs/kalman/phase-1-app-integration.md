@@ -1,5 +1,11 @@
 # Phase 1 — App Integration (Detection Only, Behind a Flag)
 
+> **CANCELLED (2026-07-07).** Phase 0's kill criterion fired: 0/57
+> configurations valid; GPS-only filtering loses laps via gate-edge slip and
+> improves nothing (see Phase 0 doc, Outcome). This spec is retained because
+> its integration design (single hook, feature flag, validation protocol)
+> is the template a passing Phase 2 estimator would use.
+
 **Precondition:** Phase 0 acceptance criteria passed, winning arm chosen
 (alpha-beta or adaptive KF), report reviewed and approved by Kevin.
 
