@@ -1,5 +1,5 @@
 import { Platform, PermissionsAndroid } from 'react-native';
-import { BleManager, Device, type Subscription, State } from 'react-native-ble-plx';
+import { BleManager, Device, ConnectionPriority, State } from 'react-native-ble-plx';
 import { classifyDevice } from '@/telemetry/sources/device-classifier';
 import type { DiscoveredDevice } from '@/telemetry/sources/types';
 
@@ -118,6 +118,17 @@ export async function connectToDevice(deviceId: string): Promise<Device> {
     requestMTU: 247,
   });
   await device.discoverAllServicesAndCharacteristics();
+
+  // The device streams up to 25 Hz; a high-priority (low-interval) connection
+  // keeps up with it. Android-only — iOS negotiates the interval itself.
+  if (Platform.OS === 'android') {
+    try {
+      await device.requestConnectionPriority(ConnectionPriority.High);
+    } catch {
+      // Non-fatal: fall back to the default connection interval.
+    }
+  }
+
   return device;
 }
 
@@ -172,6 +183,41 @@ export function subscribeToDisconnect(
   return { remove: () => sub.remove() };
 }
 
+export async function writeCharacteristic(
+  device: Device,
+  serviceUUID: string,
+  characteristicUUID: string,
+  bytes: Uint8Array
+): Promise<void> {
+  await device.writeCharacteristicWithResponseForService(
+    serviceUUID,
+    characteristicUUID,
+    bytesToBase64(bytes)
+  );
+}
+
+export async function readCharacteristicString(
+  device: Device,
+  serviceUUID: string,
+  characteristicUUID: string
+): Promise<string | null> {
+  const characteristic = await device.readCharacteristicForService(
+    serviceUUID,
+    characteristicUUID
+  );
+  if (!characteristic.value) {
+    return null;
+  }
+
+  const bytes = base64ToBytes(characteristic.value);
+  let result = '';
+  for (let i = 0; i < bytes.length; i++) {
+    result += String.fromCharCode(bytes[i]);
+  }
+  // Device Info strings are sometimes null-padded.
+  return result.replace(/\0+$/, '');
+}
+
 export async function disconnectDevice(deviceId: string): Promise<void> {
   const bleManager = getManager();
   try {
@@ -188,13 +234,16 @@ export function destroyManager(): void {
   }
 }
 
-function base64ToBytes(base64: string): Uint8Array {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  const lookup = new Uint8Array(128);
-  for (let i = 0; i < chars.length; i++) {
-    lookup[chars.charCodeAt(i)] = i;
+const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const BASE64_LOOKUP = (() => {
+  const table = new Uint8Array(128);
+  for (let i = 0; i < BASE64_CHARS.length; i++) {
+    table[BASE64_CHARS.charCodeAt(i)] = i;
   }
+  return table;
+})();
 
+function base64ToBytes(base64: string): Uint8Array {
   const len = base64.length;
   let padding = 0;
   if (base64[len - 1] === '=') padding++;
@@ -205,10 +254,10 @@ function base64ToBytes(base64: string): Uint8Array {
 
   let p = 0;
   for (let i = 0; i < len; i += 4) {
-    const a = lookup[base64.charCodeAt(i)];
-    const b = lookup[base64.charCodeAt(i + 1)];
-    const c = lookup[base64.charCodeAt(i + 2)];
-    const d = lookup[base64.charCodeAt(i + 3)];
+    const a = BASE64_LOOKUP[base64.charCodeAt(i)];
+    const b = BASE64_LOOKUP[base64.charCodeAt(i + 1)];
+    const c = BASE64_LOOKUP[base64.charCodeAt(i + 2)];
+    const d = BASE64_LOOKUP[base64.charCodeAt(i + 3)];
 
     bytes[p++] = (a << 2) | (b >> 4);
     if (p < byteLength) bytes[p++] = ((b & 0x0f) << 4) | (c >> 2);
@@ -216,4 +265,19 @@ function base64ToBytes(base64: string): Uint8Array {
   }
 
   return bytes;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let result = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const b0 = bytes[i];
+    const b1 = i + 1 < bytes.length ? bytes[i + 1] : 0;
+    const b2 = i + 2 < bytes.length ? bytes[i + 2] : 0;
+
+    result += BASE64_CHARS[b0 >> 2];
+    result += BASE64_CHARS[((b0 & 0x03) << 4) | (b1 >> 4)];
+    result += i + 1 < bytes.length ? BASE64_CHARS[((b1 & 0x0f) << 2) | (b2 >> 6)] : '=';
+    result += i + 2 < bytes.length ? BASE64_CHARS[b2 & 0x3f] : '=';
+  }
+  return result;
 }

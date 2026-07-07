@@ -1,5 +1,6 @@
-import type { TelemetrySampleSource } from '@/telemetry/types';
 import type { DeviceClassification } from '@/telemetry/sources/types';
+
+export type RaceBoxModel = 'mini' | 'micro';
 
 type DeviceRule = {
   namePrefix: string;
@@ -30,6 +31,27 @@ export function classifyDevice(name: string): DeviceClassification | null {
   return null;
 }
 
-export function getSupportedNamePrefixes(): string[] {
-  return DEVICE_RULES.map((rule) => rule.namePrefix);
+// Prefers the Device Info "Model" string (read after connecting) and falls back
+// to the advertised name. Only the Micro reports battery as an input voltage;
+// Mini and Mini S share the charge-percentage encoding, so they collapse to 'mini'.
+export function resolveRaceBoxModel(
+  modelString: string | null,
+  deviceName: string
+): RaceBoxModel {
+  const identity = modelString ?? deviceName;
+  return identity.includes('Micro') ? 'micro' : 'mini';
+}
+
+// The Firmware Revision characteristic is a "major.minor" string, e.g. "3.3".
+export function parseFirmwareRevision(
+  revision: string | null
+): { major: number; minor: number } | null {
+  if (!revision) {
+    return null;
+  }
+  const match = revision.match(/(\d+)\.(\d+)/);
+  if (!match) {
+    return null;
+  }
+  return { major: Number(match[1]), minor: Number(match[2]) };
 }
