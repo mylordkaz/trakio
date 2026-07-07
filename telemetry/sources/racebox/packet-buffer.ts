@@ -51,7 +51,10 @@ export function createPacketBuffer(callbacks: PacketBufferCallbacks) {
     while (buffer.length >= HEADER_LENGTH) {
       const syncOffset = findSyncOffset(buffer, 0);
       if (syncOffset < 0) {
-        buffer = new Uint8Array(0);
+        // A lone trailing sync byte may be the first half of a frame start that
+        // was split across notifications; keep it so the next append can match.
+        const lastByte = buffer[buffer.length - 1];
+        buffer = lastByte === SYNC_BYTE_1 ? buffer.slice(buffer.length - 1) : new Uint8Array(0);
         return;
       }
 

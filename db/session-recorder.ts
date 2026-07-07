@@ -276,7 +276,7 @@ export function createSessionRecorder(db: SQLiteDatabase, config: RecorderConfig
           ext.dateTimeFlags ?? null,
           ext.latLonFlags ?? null,
           ext.batteryLevel ?? null,
-          ext.isCharging ? 1 : null,
+          ext.isCharging === undefined ? null : ext.isCharging ? 1 : 0,
           ext.inputVoltageV ?? null
         );
       }

@@ -89,6 +89,8 @@ function getBrakePercent(
   return Math.max(0, Math.min(100, percent));
 }
 
+const TELEMETRY_DISPLAY_REFRESH_MS = 100;
+
 export default function RecordingScreen() {
   useKeepAwake();
   const router = useRouter();
@@ -112,6 +114,8 @@ export default function RecordingScreen() {
   const hasStoppedRef = useRef(false);
   const pulseOpacity = useRef(new Animated.Value(1)).current;
   const previousAcceptedSampleRef = useRef<TelemetrySample | null>(null);
+  const lastRenderMsRef = useRef(0);
+  const lastRenderedStatusRef = useRef<string | null>(null);
   const [isLandscape, setIsLandscape] = useState(false);
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
@@ -267,8 +271,6 @@ export default function RecordingScreen() {
 
       await lifecycle.start(
         {
-        resolveElapsedMs: (recordedAt) =>
-          Math.max(0, recordedAt - (startedSnapshot.sessionStartedAtMs ?? recordedAt)),
         onSample: (sample) => {
           const activeRuntime = runtimeRef.current;
 
@@ -281,7 +283,19 @@ export default function RecordingScreen() {
               return;
             }
 
-            setRuntimeSnapshot(result.snapshot);
+            // The runtime persists every sample; only the on-screen snapshot is
+            // coalesced. Flush immediately on a lap/sector/status change,
+            // otherwise cap the refresh so 25 Hz doesn't drive 25 renders/sec.
+            const now = Date.now();
+            const isStructural =
+              (result.accepted && result.events.length > 0) ||
+              result.snapshot.status !== lastRenderedStatusRef.current;
+
+            if (isStructural || now - lastRenderMsRef.current >= TELEMETRY_DISPLAY_REFRESH_MS) {
+              lastRenderMsRef.current = now;
+              lastRenderedStatusRef.current = result.snapshot.status;
+              setRuntimeSnapshot(result.snapshot);
+            }
           }).catch(() => {
             if (!isMounted) {
               return;
@@ -387,12 +401,8 @@ export default function RecordingScreen() {
       : null;
   const currentElapsedMs =
     runtimeSnapshot?.status === 'lap_in_progress' &&
-    runtimeSnapshot.currentLapStartedElapsedMs !== null &&
-    runtimeSnapshot.sessionStartedAtMs !== null
-      ? Math.max(
-          0,
-          nowMs - (runtimeSnapshot.sessionStartedAtMs + runtimeSnapshot.currentLapStartedElapsedMs)
-        )
+    runtimeSnapshot.currentLapStartedWallClockMs !== null
+      ? Math.max(0, nowMs - runtimeSnapshot.currentLapStartedWallClockMs)
       : null;
   const currentLapLabel =
     runtimeSnapshot?.status === 'lap_in_progress'
@@ -402,12 +412,8 @@ export default function RecordingScreen() {
         : 0;
   const currentSectorElapsedMs =
     runtimeSnapshot?.status === 'lap_in_progress' &&
-    runtimeSnapshot.currentSectorStartedElapsedMs !== null &&
-    runtimeSnapshot.sessionStartedAtMs !== null
-      ? Math.max(
-          0,
-          nowMs - (runtimeSnapshot.sessionStartedAtMs + runtimeSnapshot.currentSectorStartedElapsedMs)
-        )
+    runtimeSnapshot.currentSectorStartedWallClockMs !== null
+      ? Math.max(0, nowMs - runtimeSnapshot.currentSectorStartedWallClockMs)
       : null;
   const recentLaps = (runtimeSnapshot?.completedLaps ?? []).map((lap) => ({
     lap: lap.lapNumber,
@@ -788,10 +794,6 @@ export default function RecordingScreen() {
                   </>
                 );
               })()}
-              <ProgressBar
-                label={i18n.t('telemetry.brake')}
-                value={`${brakePercent}%`}
-              />
             </View>
           </Card>
 
