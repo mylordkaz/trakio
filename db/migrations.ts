@@ -159,6 +159,19 @@ async function createBaseSchema(db: SQLiteDatabase) {
         deleted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS imu_samples (
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        recorded_at INTEGER NOT NULL,
+        interval_ms REAL,
+        accel_x REAL, accel_y REAL, accel_z REAL,
+        accel_incl_gravity_x REAL, accel_incl_gravity_y REAL, accel_incl_gravity_z REAL,
+        rotation_alpha REAL, rotation_beta REAL, rotation_gamma REAL,
+        rotation_rate_alpha REAL, rotation_rate_beta REAL, rotation_rate_gamma REAL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_imu_samples_session_recorded_at
+        ON imu_samples(session_id, recorded_at);
+
       CREATE INDEX IF NOT EXISTS idx_timing_lines_track_seq
         ON timing_lines(track_id, seq);
 
@@ -570,6 +583,25 @@ const MIGRATIONS: Migration[] = [
           await db.execAsync(col.sql);
         }
       }
+    },
+  },
+  {
+    version: 14,
+    up: async (db) => {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS imu_samples (
+          session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          recorded_at INTEGER NOT NULL,
+          interval_ms REAL,
+          accel_x REAL, accel_y REAL, accel_z REAL,
+          accel_incl_gravity_x REAL, accel_incl_gravity_y REAL, accel_incl_gravity_z REAL,
+          rotation_alpha REAL, rotation_beta REAL, rotation_gamma REAL,
+          rotation_rate_alpha REAL, rotation_rate_beta REAL, rotation_rate_gamma REAL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_imu_samples_session_recorded_at
+          ON imu_samples(session_id, recorded_at);
+      `);
     },
   },
 ];

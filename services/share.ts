@@ -101,23 +101,28 @@ export async function shareImageWithText(
 // Shares a session's full raw telemetry as a JSON file (AirDrop, Files,
 // mail...). This is the raw stored data — none of the display-pipeline
 // processing is applied — so it can be analyzed or archived off-device.
-export async function shareSessionDataExport(sessionDetail: {
-  session: { id: string; name: string | null };
-  track: unknown;
-  timingLines: unknown[];
-  laps: unknown[];
-  gpsPoints: unknown[];
-}): Promise<ShareResult> {
+export async function shareSessionDataExport(
+  sessionDetail: {
+    session: { id: string; name: string | null };
+    track: unknown;
+    timingLines: unknown[];
+    laps: unknown[];
+    gpsPoints: unknown[];
+  },
+  imuSamples: unknown[] = []
+): Promise<ShareResult> {
   try {
     const payload = {
       format: 'trakio-session-export',
-      version: 1,
+      // v2 adds imuSamples (Phase 2a raw DeviceMotion capture) when present.
+      version: imuSamples.length > 0 ? 2 : 1,
       exportedAt: new Date().toISOString(),
       session: sessionDetail.session,
       track: sessionDetail.track,
       timingLines: sessionDetail.timingLines,
       laps: sessionDetail.laps,
       gpsPoints: sessionDetail.gpsPoints,
+      ...(imuSamples.length > 0 ? { imuSamples } : {}),
     };
 
     const json = JSON.stringify(payload);

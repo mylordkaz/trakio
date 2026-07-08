@@ -17,6 +17,8 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { requestForegroundLocationPermission } from '@/telemetry/location';
 import { createConnectionLifecycle } from '@/telemetry/sources/connection-lifecycle';
+import { createImuCapture } from '@/telemetry/imu-capture';
+import { IMU_CAPTURE_ENABLED } from '@/constants/featureFlags';
 import { useExternalGps } from '@/contexts/ExternalGpsContext';
 import { createSessionRuntime } from '@/telemetry/session-runtime';
 import type { TrackDetail } from '@/db';
@@ -111,6 +113,7 @@ export default function RecordingScreen() {
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ReturnType<ReturnType<typeof createSessionRuntime>['getSnapshot']> | null>(null);
   const runtimeRef = useRef<ReturnType<typeof createSessionRuntime> | null>(null);
   const lifecycleRef = useRef<ReturnType<typeof createConnectionLifecycle> | null>(null);
+  const imuCaptureRef = useRef<ReturnType<typeof createImuCapture> | null>(null);
   const hasStoppedRef = useRef(false);
   const pulseOpacity = useRef(new Animated.Value(1)).current;
   const previousAcceptedSampleRef = useRef<TelemetrySample | null>(null);
@@ -264,6 +267,13 @@ export default function RecordingScreen() {
 
       setRuntimeSnapshot(startedSnapshot);
 
+      if (IMU_CAPTURE_ENABLED && startedSnapshot.sessionId) {
+        const imuCapture = createImuCapture(db, startedSnapshot.sessionId);
+        imuCaptureRef.current = imuCapture;
+        // Best-effort: capture never blocks or fails the recording flow.
+        void imuCapture.start();
+      }
+
       const lifecycle = createConnectionLifecycle({
         onResetContinuity: () => runtimeRef.current?.resetContinuity(),
       });
@@ -333,6 +343,8 @@ export default function RecordingScreen() {
       isMounted = false;
       void lifecycleRef.current?.stop();
       lifecycleRef.current = null;
+      void imuCaptureRef.current?.stop().catch(() => undefined);
+      imuCaptureRef.current = null;
 
       const activeRuntime = runtimeRef.current;
       if (activeRuntime && !hasStoppedRef.current) {
@@ -470,6 +482,8 @@ export default function RecordingScreen() {
       const activeRuntime = runtimeRef.current;
       void lifecycleRef.current?.stop();
       lifecycleRef.current = null;
+      void imuCaptureRef.current?.stop().catch(() => undefined);
+      imuCaptureRef.current = null;
 
       let sessionId = '';
       if (activeRuntime && !hasStoppedRef.current) {
