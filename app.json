@@ -16,7 +16,10 @@
         "NSLocationWhenInUseUsageDescription": "Trakio uses your location to record lap times and GPS traces on track.",
         "NSBluetoothAlwaysUsageDescription": "Trakio connects to external GPS devices for high-precision lap timing.",
         "ITSAppUsesNonExemptEncryption": false,
-        "LSApplicationQueriesSchemes": ["instagram", "instagram-stories"],
+        "LSApplicationQueriesSchemes": [
+          "instagram",
+          "instagram-stories"
+        ],
         "NSPhotoLibraryUsageDescription": "Trakio may need access to your photo library to save or share session content.",
         "NSPhotoLibraryAddUsageDescription": "Trakio needs permission to save story images to your photo library."
       }
@@ -56,15 +59,31 @@
       "expo-media-library",
       "expo-image-picker",
       "expo-sqlite",
-      ["expo-screen-orientation", { "initialOrientation": "PORTRAIT" }],
+      [
+        "expo-screen-orientation",
+        {
+          "initialOrientation": "PORTRAIT"
+        }
+      ],
       [
         "react-native-share",
         {
-          "ios": ["instagram", "instagram-stories"],
-          "android": ["com.instagram.android"]
+          "ios": [
+            "instagram",
+            "instagram-stories"
+          ],
+          "android": [
+            "com.instagram.android"
+          ]
         }
       ],
-      "react-native-ble-plx"
+      "react-native-ble-plx",
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Trakio uses motion sensors to improve lap timing accuracy."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

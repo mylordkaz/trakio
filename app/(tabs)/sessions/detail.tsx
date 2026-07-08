@@ -21,6 +21,7 @@ import type { SessionDetail, SessionNoteRow } from '@/db';
 import {
   addSessionNote,
   deleteSession,
+  getImuSamplesForSession,
   deleteSessionNote,
   getSessionById,
   updateSessionCar,
@@ -745,7 +746,9 @@ export default function SessionDetailScreen() {
           <Pressable
             onPress={() => {
               if (sessionDetail) {
-                void shareSessionDataExport(sessionDetail);
+                void getImuSamplesForSession(db, sessionDetail.session.id)
+                  .catch(() => [])
+                  .then((imuSamples) => shareSessionDataExport(sessionDetail, imuSamples));
               }
             }}
             disabled={!sessionDetail}

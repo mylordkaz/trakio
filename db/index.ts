@@ -1,3 +1,4 @@
+export * from './imu-samples';
 export * from './migrations';
 export * from './provider';
 export * from './session-recorder';

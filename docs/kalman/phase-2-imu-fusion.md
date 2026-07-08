@@ -114,11 +114,18 @@ against.
   the extended fields for the session export (dev-gated if size is a
   concern; ~25 Hz × 30 min ≈ 45k rows — likely a separate export payload
   rather than `gps_points` rows).
-- Phone path: a capture module sampling `DeviceMotion` at 50 Hz into a
-  session-scoped buffer, exported alongside. Foreground-only, recording
-  screen only, feature-flagged.
+- Phone path: **built 2026-07-08** (branch `feat/imu-capture`) —
+  `telemetry/imu-capture.ts` samples `DeviceMotion` at ~50 Hz behind
+  `IMU_CAPTURE_ENABLED` (off by default) into the `imu_samples` table
+  (migration v14, raw as-delivered values, session-scoped, cascade delete),
+  batched inserts every ~2 s, best-effort by design (any failure degrades to
+  "no IMU data", never to a recording error). Export becomes
+  `trakio-session-export` v2 with an `imuSamples` payload (values rounded to
+  6 decimals for size; far below sensor noise). RaceBox path deferred until
+  hardware is available for testing (`EXTERNAL_GPS_ENABLED` remains off).
 - Deliverable: ≥1 real Tsukuba session with synchronized GPS+IMU export —
-  ideally one that includes a natural gantry dropout.
+  ideally one that includes a natural gantry dropout. Battery cost of the
+  50 Hz capture to be observed on that session and recorded here.
 
 ### 2b — Bench (the decisive step, no app changes)
 
