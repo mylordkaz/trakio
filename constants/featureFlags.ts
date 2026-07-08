@@ -9,6 +9,8 @@ export const EXTERNAL_GPS_ENABLED: boolean = false;
 
 // Phase 2a IMU capture (docs/kalman/phase-2-imu-fusion.md): records raw phone
 // DeviceMotion samples at ~50 Hz into imu_samples during recording sessions,
-// for offline fusion benching only. No app behavior consumes them. Off until
-// the capture path is validated on device; costs battery when on.
-export const IMU_CAPTURE_ENABLED: boolean = false;
+// for offline fusion benching only. No app behavior consumes them. ON for the
+// Phase 2b capture campaign (street-drive validation, then Tsukuba): expect
+// roughly 10 MB of rows per 30 recorded minutes and an unmeasured battery
+// cost — measuring it is part of the campaign.
+export const IMU_CAPTURE_ENABLED: boolean = true;
