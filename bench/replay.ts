@@ -17,7 +17,18 @@ export type ExportedLap = {
   sectors?: { sectorIndex: number; splitTimeMs: number }[];
 };
 
+export type ExportedImuSample = {
+  recordedAt: number;
+  intervalMs: number | null;
+  accel: [number | null, number | null, number | null];
+  accelInclGravity: [number | null, number | null, number | null];
+  rotation: [number | null, number | null, number | null];
+  rotationRate: [number | null, number | null, number | null];
+};
+
 export type SessionExport = {
+  format?: string;
+  version?: number;
   session: { id: string; name: string | null };
   track: { id: string };
   timingLines: unknown[];
@@ -32,6 +43,8 @@ export type SessionExport = {
     headingDeg: number | null;
     altitudeM: number | null;
   }[];
+  // Present from export v2 when Phase 2a capture ran during the session.
+  imuSamples?: ExportedImuSample[];
 };
 
 export function loadSessionExport(path: string): SessionExport {
@@ -59,8 +72,15 @@ export type ReplayedLap = {
   sectorSplitsMs: number[];
 };
 
+export type ReplayedCrossing = {
+  type: 'start_finish_crossed' | 'sector_crossed';
+  elapsedMs: number;
+  quality: 'good' | 'degraded';
+};
+
 export type ReplayResult = {
   laps: ReplayedLap[];
+  crossings: ReplayedCrossing[];
 };
 
 function createMockRecorder() {
@@ -109,6 +129,7 @@ export async function replaySession(
   await runtime.start();
 
   let previousAccepted: TelemetrySample | null = null;
+  const crossings: ReplayedCrossing[] = [];
 
   for (const raw of toSamples(data)) {
     const validation = filterTelemetrySample(previousAccepted, raw);
@@ -123,13 +144,24 @@ export async function replaySession(
     previousAccepted = validation.sample;
     const position = estimator ? estimator.step(validation.sample) : null;
     const sample = position ? { ...validation.sample, lat: position.lat, lng: position.lng } : validation.sample;
-    await runtime.handleSample(sample).catch(() => {});
+    const result = await runtime.handleSample(sample).catch(() => null);
+
+    if (result?.accepted) {
+      for (const event of result.events) {
+        crossings.push({
+          type: event.type,
+          elapsedMs: event.sampleElapsedMs,
+          quality: event.quality,
+        });
+      }
+    }
   }
 
   const snapshot = runtime.getSnapshot();
   await runtime.stop();
 
   return {
+    crossings,
     laps: snapshot.completedLaps.map((lap) => ({
       lapNumber: lap.lapNumber,
       lapTimeMs: lap.lapTimeMs,
