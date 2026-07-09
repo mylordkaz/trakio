@@ -41,6 +41,13 @@ type SetLapInLapInput = {
   isInLap: 0 | 1;
 };
 
+type RecordRejectedSampleInput = {
+  id: string;
+  sessionId: string;
+  sample: TelemetrySample;
+  reason: string;
+};
+
 type InsertLapSectorInput = {
   id: string;
   lapId: string;
@@ -153,6 +160,34 @@ export function createSessionRecorder(db: SQLiteDatabase, config: RecorderConfig
       input.isTimingEstimated ?? 0,
       input.lapId
     );
+  }
+
+  // Capture-everything principle: fixes the validation filter rejects are
+  // quarantined here, tagged, and never read by the app — they exist so
+  // offline analysis can distinguish 'GPS went silent' from 'we discarded
+  // what it delivered'. A diagnostics write must never break recording.
+  async function recordRejectedSample(input: RecordRejectedSampleInput): Promise<void> {
+    try {
+      await db.runAsync(
+        `INSERT INTO rejected_gps_points (
+          id, session_id, recorded_at, elapsed_ms, latitude, longitude,
+          speed_mps, accuracy_m, altitude_m, heading_deg, rejection_reason
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        input.id,
+        input.sessionId,
+        toIsoString(input.sample.recordedAt),
+        Math.round(input.sample.elapsedMs),
+        input.sample.lat,
+        input.sample.lng,
+        input.sample.speedMps,
+        input.sample.accuracyM,
+        input.sample.altitudeM,
+        input.sample.headingDeg,
+        input.reason
+      );
+    } catch {
+      // Losing one diagnostic row is acceptable; failing the sample path is not.
+    }
   }
 
   async function setLapInLap(input: SetLapInLapInput): Promise<void> {
@@ -322,6 +357,7 @@ export function createSessionRecorder(db: SQLiteDatabase, config: RecorderConfig
     startLap,
     finishLap,
     setLapInLap,
+    recordRejectedSample,
     insertLapSector,
     appendGpsSample,
     flushGpsBuffer,

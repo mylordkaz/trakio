@@ -496,6 +496,15 @@ export function createSessionRuntime(args: {
     );
 
     if (!validation.accepted) {
+      if (snapshot.sessionId) {
+        await recorder.recordRejectedSample({
+          id: generateId(),
+          sessionId: snapshot.sessionId,
+          sample,
+          reason: validation.reason,
+        });
+      }
+
       snapshot = {
         ...snapshot,
         consecutiveRejectedCount: snapshot.consecutiveRejectedCount + 1,

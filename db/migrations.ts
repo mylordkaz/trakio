@@ -172,6 +172,24 @@ async function createBaseSchema(db: SQLiteDatabase) {
       CREATE INDEX IF NOT EXISTS idx_imu_samples_session_recorded_at
         ON imu_samples(session_id, recorded_at);
 
+      CREATE TABLE IF NOT EXISTS rejected_gps_points (
+        id TEXT PRIMARY KEY NOT NULL,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        recorded_at TEXT NOT NULL,
+        elapsed_ms INTEGER,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        speed_mps REAL,
+        accuracy_m REAL,
+        altitude_m REAL,
+        heading_deg REAL,
+        rejection_reason TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_rejected_gps_points_session
+        ON rejected_gps_points(session_id, recorded_at);
+
       CREATE INDEX IF NOT EXISTS idx_timing_lines_track_seq
         ON timing_lines(track_id, seq);
 
@@ -601,6 +619,30 @@ const MIGRATIONS: Migration[] = [
 
         CREATE INDEX IF NOT EXISTS idx_imu_samples_session_recorded_at
           ON imu_samples(session_id, recorded_at);
+      `);
+    },
+  },
+  {
+    version: 15,
+    up: async (db) => {
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS rejected_gps_points (
+          id TEXT PRIMARY KEY NOT NULL,
+          session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          recorded_at TEXT NOT NULL,
+          elapsed_ms INTEGER,
+          latitude REAL NOT NULL,
+          longitude REAL NOT NULL,
+          speed_mps REAL,
+          accuracy_m REAL,
+          altitude_m REAL,
+          heading_deg REAL,
+          rejection_reason TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_rejected_gps_points_session
+          ON rejected_gps_points(session_id, recorded_at);
       `);
     },
   },

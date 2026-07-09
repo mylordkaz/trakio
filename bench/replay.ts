@@ -45,6 +45,18 @@ export type SessionExport = {
   }[];
   // Present from export v2 when Phase 2a capture ran during the session.
   imuSamples?: ExportedImuSample[];
+  // Present from export v3: fixes the capture filter rejected (quarantine).
+  rejectedGpsPoints?: {
+    recordedAt: string;
+    elapsedMs: number | null;
+    latitude: number;
+    longitude: number;
+    speedMps: number | null;
+    accuracyM: number | null;
+    altitudeM: number | null;
+    headingDeg: number | null;
+    rejectionReason: string;
+  }[];
 };
 
 export function loadSessionExport(path: string): SessionExport {

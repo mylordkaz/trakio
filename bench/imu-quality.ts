@@ -42,6 +42,36 @@ function main() {
   console.log(`points: ${gps.length} | duration: ${((gps.at(-1)!.recordedAt - gps[0].recordedAt) / 60000).toFixed(1)} min`);
   console.log(`dt median ${fmt(percentile(gpsDts, 50), 0)} ms | p95 ${fmt(percentile(gpsDts, 95), 0)} ms | gaps >1.5s: ${gpsDts.filter((d) => d > 1500).length}`);
 
+  // The decisive question for line continuity: during each hole in the
+  // ACCEPTED stream, did the phone deliver fixes we rejected (self-inflicted
+  // hole, bridgeable with real data) or nothing at all (true silence)?
+  const rejected = data.rejectedGpsPoints ?? [];
+  console.log('\n## Rejected fixes (capture quarantine)');
+  if (rejected.length === 0) {
+    console.log('none in this export (pre-v3 capture, or nothing was rejected).');
+  } else {
+    const byReason = new Map<string, number>();
+    for (const r of rejected) byReason.set(r.rejectionReason, (byReason.get(r.rejectionReason) ?? 0) + 1);
+    console.log(`count: ${rejected.length} |`, [...byReason.entries()].map(([k, v]) => `${k}: ${v}`).join(', '));
+
+    console.log('\naccepted-stream holes (>1.5 s) vs rejected fixes inside them:');
+    for (let i = 0; i < gps.length - 1; i++) {
+      const holeMs = gps[i + 1].recordedAt - gps[i].recordedAt;
+      if (holeMs <= 1500) continue;
+      const inside = rejected.filter((r) => {
+        const t = Date.parse(r.recordedAt);
+        return t > gps[i].recordedAt && t < gps[i + 1].recordedAt;
+      });
+      const accs = inside.map((r) => (r.accuracyM === null ? '?' : r.accuracyM.toFixed(0))).join(',');
+      console.log(
+        `  t=${((gps[i].recordedAt - gps[0].recordedAt) / 1000).toFixed(0).padStart(5)}s hole ${(holeMs / 1000).toFixed(1).padStart(5)}s -> ` +
+          (inside.length === 0
+            ? 'TRUE SILENCE (nothing delivered)'
+            : `${inside.length} rejected fixes inside (accuracies: ${accs} m) — SELF-INFLICTED, bridgeable`)
+      );
+    }
+  }
+
   const imu = data.imuSamples ?? [];
   console.log('\n## IMU');
   if (imu.length === 0) {
