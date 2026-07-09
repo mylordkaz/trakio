@@ -133,6 +133,38 @@ against.
 built and the fusion prototype passes all mechanics checks. Waiting on real
 captured data (street drive first, then track).
 
+**Path B verdict (2026-07-09) — phone bridging NOT viable; killed on real
+evidence.** First street capture (12 min city drive, 35,800 IMU samples):
+
+- Capture pipeline: excellent. 49.5 Hz delivered (dt median 20 ms, p95
+  30 ms), 100% field coverage, clocks in one domain, ~8 MB export.
+- Attitude: good — 0.55 m/s² horizontal gravity residual under the W3C
+  rotation (convention verified best among 6 candidates, on data).
+- Online yaw alignment: correct — converged to −85.4°, and a brute-force
+  sweep of fixed offsets confirms the global optimum at −85° (mount yaw).
+- **The blocker:** effective world-frame acceleration error is
+  ~0.87 m/s (per 1 s interval) with IMU-integrated Δv magnitudes only
+  ~78% of GPS Δv. Masked reconstructions on real driving: fused error
+  57 m (5 s), 62 m (8 s), 65–131 m (11 s) — versus a ≤12 m requirement
+  for 0.3 s crossings and versus the naive chord's 2–7 m on street.
+  Deriving user-acceleration ourselves (R·accelInclGravity − constant g)
+  is bit-identical to iOS's — CoreMotion computes both from one filter,
+  which absorbs *sustained* acceleration into its gravity estimate; the
+  signal we need is filtered away at the source, and track dynamics would
+  make that worse, not better. This is a platform limitation, not a
+  tuning or code gap (the prototype passes all mechanics checks with
+  clean IMU signals).
+
+Consequences: shipping behavior stays naive + `≈` flags. Phone IMU capture
+remains (cheap; builds the research dataset and the future RaceBox A/B).
+**Path A (RaceBox on-board IMU) is now the only credible bridging path** —
+its gForce is raw MEMS output on the GNSS clock, immune to the CoreMotion
+absorption problem. A raw-`Accelerometer`+GPS-aided own-attitude filter
+remains a documented research option, out of scope for now.
+Tools added: `bench/reconstruct.ts` (masked reconstruction on any v2
+capture) — the RaceBox capture, when hardware arrives, gets judged by the
+same command.
+
 - `bench/imu-quality.ts` — stream-quality report for any capture (rate,
   jitter, gaps, field coverage, stationary-window accelerometer bias).
 - `bench/mask.ts` — masked-GPS naive baseline, locked on the April session
