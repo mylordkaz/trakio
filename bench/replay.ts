@@ -129,13 +129,15 @@ function createMockRecorder() {
 
 export async function replaySession(
   data: SessionExport,
-  estimator: PositionEstimator | null
+  estimator: PositionEstimator | null,
+  detectionConfig?: Record<string, unknown>
 ): Promise<ReplayResult> {
   const mock = createMockRecorder();
   const runtime = createSessionRuntime({
     track: { id: data.track.id } as never,
     timingLines: data.timingLines as never,
     recorder: mock.recorder as never,
+    ...(detectionConfig ? { config: { detectionConfig } as never } : {}),
   });
 
   await runtime.start();

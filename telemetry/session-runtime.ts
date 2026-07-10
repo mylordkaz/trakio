@@ -9,6 +9,7 @@ import type {
   TelemetrySample,
   TelemetrySampleRejectionReason,
 } from '@/telemetry/types';
+import { CROSSING_RECOVERY_ENABLED } from '@/constants/featureFlags';
 import { getSectorCount, getSectorLineCount } from '@/utils/timing';
 
 type SessionRecorder = ReturnType<typeof createSessionRecorder>;
@@ -431,7 +432,7 @@ export function createSessionRuntime(args: {
       sample,
       timingLines,
       toDetectionState(),
-      config?.detectionConfig
+      { recoveryEnabled: CROSSING_RECOVERY_ENABLED, ...config?.detectionConfig }
     );
 
     for (const event of events) {

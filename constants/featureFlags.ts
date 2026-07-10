@@ -14,3 +14,11 @@ export const EXTERNAL_GPS_ENABLED: boolean = false;
 // roughly 10 MB of rows per 30 recorded minutes and an unmeasured battery
 // cost — measuring it is part of the campaign.
 export const IMU_CAPTURE_ENABLED: boolean = true;
+
+// Crossing recovery: when a GPS hole spans a timing line and the chord
+// between the surviving fixes crosses the line's extension just past the
+// finite gate, the crossing physically happened (the car cannot teleport
+// around a gate spanning the track) and is recovered, chord-timed, and
+// flagged ≈ via the existing degraded-quality path. Bench-proven to fire
+// zero times on all clean recorded sessions.
+export const CROSSING_RECOVERY_ENABLED: boolean = true;
