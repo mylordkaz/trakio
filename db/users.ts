@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { ISODateString, UserRow } from '@/db/types';
+import { resolveProfileAvatarUri } from '@/services/profile-avatar';
 
 const LOCAL_USER_PROFILE_ID = 'local-user';
 const DEFAULT_USERNAME = 'Driver';
@@ -27,7 +28,7 @@ function mapUserRow(row: DbUserRow): UserRow {
     username: row.username,
     car: row.car,
     countryCode: row.country_code,
-    avatarUri: row.avatar_uri,
+    avatarUri: resolveProfileAvatarUri(row.avatar_uri),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
