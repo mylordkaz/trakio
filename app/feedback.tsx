@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -12,14 +11,15 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import i18n from '@/i18n';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { getOrCreateDefaultUserProfile } from '@/db';
-
-const FEEDBACK_EMAIL = 'kev.tim@protonmail.com';
+import { submitFeedback } from '@/services/feedback';
+import { getOrCreatePublisherIdSync } from '@/services/publisher-id';
 
 export default function FeedbackScreen() {
   const insets = useSafeAreaInsets();
@@ -53,19 +53,22 @@ export default function FeedbackScreen() {
       return;
     }
 
-    setIsSending(true);
-
-    const subject = encodeURIComponent(`[trakio] Feedback from ${trimmedName}`);
-    const body = encodeURIComponent(`From: ${trimmedName}\n\n${trimmedMessage}`);
-    const url = `mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=${body}`;
-
     try {
-      const canOpen = await Linking.canOpenURL(url);
-      if (!canOpen) {
-        Alert.alert(i18n.t('feedback.noMailApp'), i18n.t('feedback.noMailAppMessage'));
-        return;
-      }
-      await Linking.openURL(url);
+      setIsSending(true);
+      await submitFeedback({
+        name: trimmedName,
+        message: trimmedMessage,
+        publisherId: getOrCreatePublisherIdSync(),
+        appVersion: Constants.expoConfig?.version ?? null,
+        locale: i18n.locale,
+      });
+      Alert.alert(
+        i18n.t('feedback.successTitle'),
+        i18n.t('feedback.successMessage'),
+        [{ text: i18n.t('common.done'), onPress: () => router.back() }],
+      );
+    } catch {
+      Alert.alert(i18n.t('feedback.failedTitle'), i18n.t('feedback.failedMessage'));
     } finally {
       setIsSending(false);
     }

@@ -12,6 +12,7 @@ import { listTracks, listRecentTracks } from "@/db";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useHeaderGradient } from "@/hooks/useHeaderGradient";
 import { useMenu } from "@/contexts/MenuContext";
+import CircuitRequestModal from "@/components/circuits/CircuitRequestModal";
 
 const FILTER_KEYS = ["circuits.all", "circuits.recent"] as const;
 
@@ -32,6 +33,8 @@ export default function CircuitsScreen() {
   const [circuits, setCircuits] = useState<TrackListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isRequestOpen, setIsRequestOpen] = useState(false);
+  const [requestCircuitName, setRequestCircuitName] = useState("");
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
   const gradientColors = useHeaderGradient("sky");
@@ -84,6 +87,11 @@ export default function CircuitsScreen() {
     );
   });
 
+  function openCircuitRequest(circuitName = "") {
+    setRequestCircuitName(circuitName.trim());
+    setIsRequestOpen(true);
+  }
+
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
       <ScrollView
@@ -121,6 +129,16 @@ export default function CircuitsScreen() {
               {i18n.t("circuits.title")}
             </Text>
           </View>
+
+          <Pressable
+            onPress={() => openCircuitRequest()}
+            className="mb-3 self-end h-10 flex-row items-center justify-center gap-2 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4"
+          >
+            <Ionicons name="add-circle-outline" size={18} color="#0ea5e9" />
+            <Text className="text-sm font-semibold text-sky-600 dark:text-sky-400">
+              {i18n.t("circuits.requestCircuit")}
+            </Text>
+          </Pressable>
 
           <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-3">
             <View className="flex-row items-center gap-3 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-4 py-3">
@@ -198,6 +216,17 @@ export default function CircuitsScreen() {
               <Text className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
                 {i18n.t("circuits.noTracksFoundHint")}
               </Text>
+              {search.trim() ? (
+                <Pressable
+                  onPress={() => openCircuitRequest(search)}
+                  className="mt-4 h-10 flex-row items-center justify-center gap-2 rounded-xl bg-sky-500"
+                >
+                  <Ionicons name="paper-plane-outline" size={16} color="#ffffff" />
+                  <Text className="text-sm font-semibold text-white">
+                    {i18n.t("circuits.requestSearch", { name: search.trim() })}
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
           ) : null}
 
@@ -250,6 +279,11 @@ export default function CircuitsScreen() {
           ))}
         </View>
       </ScrollView>
+      <CircuitRequestModal
+        visible={isRequestOpen}
+        initialCircuitName={requestCircuitName}
+        onClose={() => setIsRequestOpen(false)}
+      />
     </View>
   );
 }
