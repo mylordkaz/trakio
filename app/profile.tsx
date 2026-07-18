@@ -22,6 +22,7 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { getOrCreateDefaultUserProfile, upsertUserProfile } from '@/db';
 import type { UserRow } from '@/db';
+import { cleanupProfileAvatars, persistProfileAvatar } from '@/services/profile-avatar';
 
 type CountryEntry = { code: string; name: string; flag: string };
 
@@ -161,12 +162,14 @@ export default function ProfileScreen() {
     if (isSaving) return;
     try {
       setIsSaving(true);
+      const storedAvatarUri = persistProfileAvatar(avatarUri);
       await upsertUserProfile(db, {
         username: username.trim() || 'Driver',
         car: car.trim() || null,
         countryCode,
-        avatarUri,
+        avatarUri: storedAvatarUri,
       });
+      cleanupProfileAvatars(storedAvatarUri);
       router.back();
     } catch {
       Alert.alert(i18n.t('profile.title'), 'Failed to save profile.');
