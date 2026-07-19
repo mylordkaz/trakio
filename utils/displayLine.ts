@@ -352,63 +352,6 @@ export type QuarantinedDisplayPoint = {
   accuracyM: number | null;
 };
 
-// Fix A (capture-everything payoff): fixes the capture filter rejected are
-// merged back into the line's input, time-ordered, inheriting the lap of the
-// preceding accepted fix. The display pipeline's own guards (accuracy cutoff,
-// spike rejection, smoothing) decide what actually gets drawn — a hole only
-// fills where genuinely clean data exists. Timing never sees these points.
-export function mergeQuarantinedPoints(
-  points: LapRunPoint[],
-  quarantined: QuarantinedDisplayPoint[]
-): LapRunPoint[] {
-  if (quarantined.length === 0) {
-    return points;
-  }
-
-  const merged: LapRunPoint[] = [];
-  let lastLapId: string | null = null;
-  let quarantineIndex = 0;
-  const sortedQuarantine = [...quarantined].sort(
-    (a, b) => Date.parse(a.recordedAt) - Date.parse(b.recordedAt)
-  );
-
-  for (const point of points) {
-    const pointTime = Date.parse(point.recordedAt);
-
-    while (
-      quarantineIndex < sortedQuarantine.length &&
-      Date.parse(sortedQuarantine[quarantineIndex].recordedAt) < pointTime
-    ) {
-      const q = sortedQuarantine[quarantineIndex];
-      merged.push({
-        recordedAt: q.recordedAt,
-        latitude: q.latitude,
-        longitude: q.longitude,
-        accuracyM: q.accuracyM,
-        lapId: lastLapId,
-      });
-      quarantineIndex++;
-    }
-
-    merged.push(point);
-    lastLapId = point.lapId;
-  }
-
-  // Trailing quarantined fixes (after the last accepted point).
-  for (; quarantineIndex < sortedQuarantine.length; quarantineIndex++) {
-    const q = sortedQuarantine[quarantineIndex];
-    merged.push({
-      recordedAt: q.recordedAt,
-      latitude: q.latitude,
-      longitude: q.longitude,
-      accuracyM: q.accuracyM,
-      lapId: lastLapId,
-    });
-  }
-
-  return merged;
-}
-
 export type LapRun = {
   key: string;
   lapId: string | null;
@@ -443,16 +386,63 @@ function crossingClipPoint(
   };
 }
 
-// Consecutive points sharing a lap id form a run. Each run is clipped at the
-// start/finish line: the stitch point on each side is the interpolated
-// crossing of the boundary segment with the line, so every lap starts and
-// ends exactly at its own crossing, and consecutive laps share that point —
-// meeting without gap and without ever extending past the line. Where the
-// boundary segment does not cross the line (pit entry/exit, degenerate data)
-// the side gets no stitch: a gap, never an overlap.
+// Quarantined fixes join a run's accepted points in time order. Only called
+// with fixes already bucketed to this run, so the lap assignment is the
+// run's own.
+function mergeRunPoints(
+  accepted: LapRunPoint[],
+  quarantined: QuarantinedDisplayPoint[],
+  lapId: string | null
+): LapRunPoint[] {
+  if (quarantined.length === 0) {
+    return accepted;
+  }
+
+  const sorted = [...quarantined].sort(
+    (a, b) => Date.parse(a.recordedAt) - Date.parse(b.recordedAt)
+  );
+  const merged: LapRunPoint[] = [];
+  let quarantineIndex = 0;
+
+  for (const point of accepted) {
+    const pointTime = Date.parse(point.recordedAt);
+    while (
+      quarantineIndex < sorted.length &&
+      Date.parse(sorted[quarantineIndex].recordedAt) < pointTime
+    ) {
+      merged.push({ ...sorted[quarantineIndex], lapId });
+      quarantineIndex++;
+    }
+    merged.push(point);
+  }
+
+  for (; quarantineIndex < sorted.length; quarantineIndex++) {
+    merged.push({ ...sorted[quarantineIndex], lapId });
+  }
+
+  return merged;
+}
+
+// Consecutive accepted points sharing a lap id form a run. Each run is
+// clipped at the start/finish line: the stitch point on each side is the
+// interpolated crossing of the boundary segment with the line, so every lap
+// starts and ends exactly at its own crossing, and consecutive laps share
+// that point — meeting without gap and without ever extending past the line.
+// Where the boundary segment does not cross the line (pit entry/exit,
+// degenerate data) the side gets no stitch: a gap, never an overlap.
+//
+// Quarantined fixes (capture-everything payoff) are merged in AFTER the
+// clips are computed, bucketed by the crossing time itself — so a fix
+// rejected during the crossing second lands in the lap it belongs to, on the
+// correct side of the line, and can never displace a clip. Clip geometry
+// comes exclusively from accepted points: the same boundary segment the
+// detector timed. The display pipeline's guards (accuracy cutoff, spike
+// rejection) still decide what actually gets drawn. Timing never sees any
+// of this.
 export function groupPointsIntoLapRuns(
   points: LapRunPoint[],
-  startFinishLine?: TimingLineRow | null
+  startFinishLine?: TimingLineRow | null,
+  quarantined: QuarantinedDisplayPoint[] = []
 ): LapRun[] {
   const runs: { lapId: string | null; points: LapRunPoint[] }[] = [];
 
@@ -467,6 +457,10 @@ export function groupPointsIntoLapRuns(
     currentRun.points.push(point);
   }
 
+  if (runs.length === 0) {
+    return [];
+  }
+
   const boundaryClips = runs.slice(0, -1).map((run, index) =>
     startFinishLine
       ? crossingClipPoint(
@@ -477,6 +471,26 @@ export function groupPointsIntoLapRuns(
       : null
   );
 
+  const boundaryTimesMs = runs.slice(0, -1).map((run, index) => {
+    const clip = boundaryClips[index];
+    if (clip) {
+      return Date.parse(clip.recordedAt);
+    }
+    const fromMs = Date.parse(run.points[run.points.length - 1].recordedAt);
+    const toMs = Date.parse(runs[index + 1].points[0].recordedAt);
+    return (fromMs + toMs) / 2;
+  });
+
+  const bucketed: QuarantinedDisplayPoint[][] = runs.map(() => []);
+  for (const q of quarantined) {
+    const t = Date.parse(q.recordedAt);
+    let index = 0;
+    while (index < boundaryTimesMs.length && t >= boundaryTimesMs[index]) {
+      index++;
+    }
+    bucketed[index].push(q);
+  }
+
   return runs.map((run, index) => {
     const startClip = index > 0 ? boundaryClips[index - 1] : null;
     const endClip = index < runs.length - 1 ? boundaryClips[index] : null;
@@ -485,7 +499,7 @@ export function groupPointsIntoLapRuns(
       lapId: run.lapId,
       points: [
         ...(startClip ? [{ ...startClip, lapId: run.lapId }] : []),
-        ...run.points,
+        ...mergeRunPoints(run.points, bucketed[index], run.lapId),
         ...(endClip ? [{ ...endClip, lapId: run.lapId }] : []),
       ],
       key: `${run.lapId ?? 'unassigned'}-${index}`,

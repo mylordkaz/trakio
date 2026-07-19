@@ -8,7 +8,7 @@ import type {
 } from '@/telemetry/types';
 import { haversineDistanceMeters, toRadians } from '@/utils/geo';
 
-const DEFAULT_DETECTION_CONFIG: TelemetryDetectionConfig = {
+export const DEFAULT_DETECTION_CONFIG: TelemetryDetectionConfig = {
   debounceMs: 1500,
   minLapTimeMs: 15000,
   minCrossingSpeedMps: 5,

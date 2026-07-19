@@ -1,6 +1,6 @@
 import { createSessionRecorder } from '@/db/session-recorder';
 import type { TimingLineRow, TrackRow } from '@/db/types';
-import { detectTimingLineCrossings } from '@/telemetry/detection';
+import { DEFAULT_DETECTION_CONFIG, detectTimingLineCrossings } from '@/telemetry/detection';
 import { filterTelemetrySample, type TelemetryFilterConfig } from '@/telemetry/filters';
 import type {
   DetectionState,
@@ -416,7 +416,13 @@ export function createSessionRuntime(args: {
     };
   }
 
-  async function handleAcceptedSample(sample: TelemetrySample) {
+  // detectionPrevious overrides the segment detection sees. The re-anchor
+  // path uses it: timing must run on the validated rejected chain, never on
+  // the displaced-anchor chord that was just proven impossible.
+  async function handleAcceptedSample(
+    sample: TelemetrySample,
+    detectionPrevious?: TelemetrySample
+  ) {
     const sessionId = snapshot.sessionId;
     if (!sessionId) {
       throw new Error('Session runtime received a sample without an active session.');
@@ -436,7 +442,7 @@ export function createSessionRuntime(args: {
     const hasGap = gapMs !== null && gapMs > SAMPLE_GAP_THRESHOLD_MS;
 
     const events = detectTimingLineCrossings(
-      previousAcceptedSample,
+      detectionPrevious ?? previousAcceptedSample,
       sample,
       timingLines,
       toDetectionState(),
@@ -514,15 +520,30 @@ export function createSessionRuntime(args: {
         snapshot.lastRejectionReason === 'impossible_jump' &&
         lastRejectedSample !== null
       ) {
+        const chainPrevious = lastRejectedSample;
         const chainValidation = filterTelemetrySample(
-          lastRejectedSample,
+          chainPrevious,
           sample,
           config?.filterConfig
         );
 
         if (chainValidation.accepted) {
           lastRejectedSample = null;
-          const events = await handleAcceptedSample(chainValidation.sample);
+          // Two cascade species, split by the gap back to the anchor. A short
+          // gap is a displaced anchor: the chord to it is proven wrong, so
+          // detection must see the validated chain instead. A hole-spanning
+          // gap means the anchor is simply old and the crossing may lie
+          // inside the hole — that chord belongs to crossing recovery
+          // (flagged ~), exactly as when the re-anchor is disabled.
+          const anchorGapMs = snapshot.latestAcceptedSample
+            ? sample.recordedAt - snapshot.latestAcceptedSample.recordedAt
+            : 0;
+          const recoveryMinGapMs =
+            config?.detectionConfig?.recoveryMinGapMs ??
+            DEFAULT_DETECTION_CONFIG.recoveryMinGapMs;
+          const detectionPrevious =
+            anchorGapMs <= recoveryMinGapMs ? chainPrevious : undefined;
+          const events = await handleAcceptedSample(chainValidation.sample, detectionPrevious);
 
           return {
             accepted: true,

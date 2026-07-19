@@ -1,5 +1,6 @@
 import * as fs from 'fs';
-import { buildDisplayPolylines, groupPointsIntoLapRuns, mergeQuarantinedPoints } from '@/utils/displayLine';
+import { segmentTimingLineFraction } from '@/telemetry/detection';
+import { buildDisplayPolylines, groupPointsIntoLapRuns } from '@/utils/displayLine';
 import { toRadians } from '@/utils/geo';
 import { loadSessionExport, replaySession } from './replay';
 
@@ -42,11 +43,11 @@ async function main() {
   };
   const distSf = makeDistToLine(sf);
 
-  for (const [label, input] of [
-    ['before (accepted only)', points],
-    ['after  (quarantine merged)', mergeQuarantinedPoints(points, quarantined)],
+  for (const [label, quarantineInput] of [
+    ['before (accepted only)', []],
+    ['after  (quarantine merged)', quarantined],
   ] as const) {
-    const runs = groupPointsIntoLapRuns(input as any, sf);
+    const runs = groupPointsIntoLapRuns(points as any, sf, quarantineInput as any);
     const budget = Math.max(250, Math.floor(6000 / runs.length));
     const rows: string[] = [];
     let multiSegmentLaps = 0;
@@ -61,7 +62,7 @@ async function main() {
     console.log('  ' + rows.join('  '));
   }
 
-  const mergedRuns = groupPointsIntoLapRuns(mergeQuarantinedPoints(points, quarantined) as any, sf);
+  const mergedRuns = groupPointsIntoLapRuns(points as any, sf, quarantined as any);
   const budget = Math.max(250, Math.floor(6000 / mergedRuns.length));
   const lapSegCounts = new Map<number, number>();
   for (const run of mergedRuns) {
@@ -127,6 +128,37 @@ async function main() {
     sharedViolations === 0 && sharedChecked >= 12,
     `${sharedChecked} boundaries, ${sharedViolations} mismatches`
   );
+
+  // Finding-2 regression: a good-accuracy fix rejected during the crossing
+  // second (past the line, before the next accepted fix) must land in the
+  // FOLLOWING lap and must not displace any clip.
+  const idByLapNo = new Map([...lapNoById.entries()].map(([id, n]) => [n, id]));
+  const boundaryFrom = [...points].reverse().find((p: any) => p.lapId === idByLapNo.get(6))!;
+  const boundaryTo = points.find((p: any) => p.lapId === idByLapNo.get(7))!;
+  const crossingFraction = segmentTimingLineFraction(boundaryFrom, boundaryTo, sf)!;
+  const injectFraction = (crossingFraction + 1) / 2;
+  const fromMs = Date.parse(boundaryFrom.recordedAt);
+  const toMs = Date.parse(boundaryTo.recordedAt);
+  const injected = {
+    recordedAt: new Date(fromMs + (toMs - fromMs) * injectFraction).toISOString(),
+    latitude: boundaryFrom.latitude + (boundaryTo.latitude - boundaryFrom.latitude) * injectFraction,
+    longitude: boundaryFrom.longitude + (boundaryTo.longitude - boundaryFrom.longitude) * injectFraction,
+    accuracyM: 5,
+  };
+  const withInjection = groupPointsIntoLapRuns(points as any, sf, [...quarantined, injected] as any);
+  const injStats = endpointStats(withInjection, distSf, lapNoById as Map<string, number>, 13, budget);
+  check(
+    'F2: crossing-second quarantined fix cannot displace clips',
+    injStats.offLine === 0 && injStats.lapsChecked === 13,
+    `worst endpoint ${injStats.maxD.toFixed(2)} m with an injected past-line fix`
+  );
+  const inLap7 = withInjection
+    .find((r) => r.lapId === idByLapNo.get(7))
+    ?.points.some((p) => p.recordedAt === injected.recordedAt) ?? false;
+  const inLap6 = withInjection
+    .find((r) => r.lapId === idByLapNo.get(6))
+    ?.points.some((p) => p.recordedAt === injected.recordedAt) ?? false;
+  check('F2: injected fix lands in the following lap', inLap7 && !inLap6, inLap7 && !inLap6 ? 'in L7, not L6' : `inL7=${inLap7} inL6=${inLap6}`);
 
   const APRIL_FILE = 'bench/data/trakio-session-1777178068619-hec6w8m.json';
   if (fs.existsSync(APRIL_FILE)) {

@@ -35,7 +35,7 @@ import { shareSessionDataExport } from '@/services/share';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useShareSession } from '@/hooks/useShareSession';
 import { formatLapTime, formatGapSeconds, formatDateTime, formatDuration, formatSpeed } from '@/utils/format';
-import { buildDisplayPolylines, groupPointsIntoLapRuns, mergeQuarantinedPoints } from '@/utils/displayLine';
+import { buildDisplayPolylines, groupPointsIntoLapRuns } from '@/utils/displayLine';
 import { getBestLapRacingLine } from '@/utils/racingLine';
 import {
   getBestLap,
@@ -275,10 +275,7 @@ export default function SessionDetailScreen() {
       return [];
     }
 
-    const runs = groupPointsIntoLapRuns(
-      mergeQuarantinedPoints(points, quarantinedPoints),
-      startFinishLine
-    );
+    const runs = groupPointsIntoLapRuns(points, startFinishLine, quarantinedPoints);
     const displayPointBudget = Math.max(250, Math.floor(6000 / runs.length));
 
     return runs.map((run) => ({

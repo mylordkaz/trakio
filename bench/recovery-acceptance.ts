@@ -3,7 +3,7 @@ import { detectTimingLineCrossings } from '@/telemetry/detection';
 import type { TimingLineRow } from '@/db/types';
 import type { DetectionState, TelemetrySample } from '@/telemetry/types';
 import { maskGpsWindow } from './mask';
-import { loadSessionExport, replaySession, type SessionExport } from './replay';
+import { loadSessionExport, replaySession } from './replay';
 
 // Acceptance table for the crossing-recovery change (design approved
 // 2026-07-10). Run before the track build:

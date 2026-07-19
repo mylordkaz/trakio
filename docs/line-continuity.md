@@ -19,11 +19,14 @@ reported 51/78 km/h, while the rejected chain's steps match reported speeds
 ## The three fixes
 
 **A — display merges the quarantine** (`utils/displayLine.ts
-mergeQuarantinedPoints`, used by session detail). Render-time, read-only:
-quarantined fixes are merged into the accepted stream by time, inheriting
-the lap of the preceding accepted point; the display filters (15 m accuracy
-cutoff, despike, hole split) still gate quality. Applies to every stored
-session that has quarantine data, past and future.
+groupPointsIntoLapRuns`, used by session detail). Render-time, read-only:
+quarantined fixes are merged into each lap run in time order, bucketed by
+the boundary crossing times themselves — so a fix rejected during the
+crossing second lands in the lap it belongs to, on the correct side of the
+line, and can never displace a clip (clip geometry comes exclusively from
+accepted points, the same boundary segment the detector timed). The display
+filters (15 m accuracy cutoff, despike, hole split) still gate quality.
+Applies to every stored session that has quarantine data, past and future.
 
 **B — capture cascade re-anchor** (`telemetry/session-runtime.ts`, flag
 `JUMP_REANCHOR_ENABLED`). A second consecutive `impossible_jump` that is
@@ -31,6 +34,17 @@ consistent with the previously *rejected* sample means the rejected chain
 is the true path and the accepted anchor was displaced: accept it and
 re-anchor there. The first jump of a cascade stays rejected by design — at
 that moment a displaced anchor and a genuine outlier are indistinguishable.
+
+Timing on re-anchor splits by the gap back to the anchor (review finding,
+2026-07-20). Short gap (≤ `recoveryMinGapMs`, 4 s) = displaced anchor: the
+anchor chord was just proven impossible, so detection runs on the validated
+rejected chain — never on a segment that could cross gates the car never
+crossed. Hole-spanning gap = the anchor is simply the last fix before a
+delivery hole and the crossing may lie inside it: the anchor chord stays
+the detection segment so crossing recovery can time it, flagged `≈`,
+exactly as with the re-anchor disabled. Both regimes are unit-tested
+(`telemetry/__tests__/session-runtime-reanchor.test.ts`) and the masked
+acceptance table reproduces to the millisecond.
 
 **C — laps clipped at the crossing line** (`groupPointsIntoLapRuns`).
 Each lap's line is clipped at the start/finish line: the stitch point on

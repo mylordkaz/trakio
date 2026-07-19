@@ -109,7 +109,11 @@ async function main() {
   console.log('errors at 5-11 s (target ≤0.15 s at 5 s, ≤0.3 s at 11 s) with zero lost laps.');
 }
 
-main().catch((error) => {
-  console.error('MASK BENCH FAILURE', error);
-  process.exit(1);
-});
+// CLI entry only when executed directly — importing maskGpsWindow from other
+// benches must not run the bench itself.
+if (process.argv[1] && process.argv[1].endsWith('mask.ts')) {
+  main().catch((error) => {
+    console.error('MASK BENCH FAILURE', error);
+    process.exit(1);
+  });
+}

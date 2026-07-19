@@ -1,0 +1,171 @@
+import { createSessionRuntime } from '@/telemetry/session-runtime';
+import type { TimingLineRow, TrackRow } from '@/db/types';
+import type { TelemetrySample } from '@/telemetry/types';
+
+// The cascade re-anchor accepts a sample that is consistent with the
+// previously REJECTED sample (the rejected chain is the true path, the
+// accepted anchor was displaced). Timing must then run on that validated
+// chain — never on the displaced-anchor chord, which was just proven
+// impossible and can cross gates the car never crossed.
+
+const LAT0 = 35;
+const LNG0 = 139;
+const M_LAT = 111320;
+const M_LNG = Math.cos((LAT0 * Math.PI) / 180) * M_LAT;
+const T0 = 1_700_000_000_000;
+
+function sampleXY(xM: number, yM: number, tS: number): TelemetrySample {
+  return {
+    recordedAt: T0 + tS * 1000,
+    elapsedMs: tS * 1000,
+    lat: LAT0 + yM / M_LAT,
+    lng: LNG0 + xM / M_LNG,
+    speedMps: 25,
+    accuracyM: 4,
+    headingDeg: 0,
+    altitudeM: 30,
+    source: 'gps',
+  };
+}
+
+function gateAtY(yM: number, xFromM: number, xToM: number): TimingLineRow {
+  return {
+    id: 'sf',
+    trackId: 't',
+    name: 'SF',
+    type: 'start_finish',
+    seq: 0,
+    a: { latitude: LAT0 + yM / M_LAT, longitude: LNG0 + xFromM / M_LNG },
+    b: { latitude: LAT0 + yM / M_LAT, longitude: LNG0 + xToM / M_LNG },
+    createdAt: '',
+    updatedAt: '',
+  } as TimingLineRow;
+}
+
+function mockRecorder() {
+  return {
+    createSession: async () => {},
+    startLap: async () => {},
+    finishLap: async () => {},
+    setLapInLap: async () => {},
+    insertLapSector: async () => {},
+    recordRejectedSample: async () => {},
+    appendGpsSample: async () => {},
+    flushGpsBuffer: async () => {},
+    finalizeSession: async () => {},
+    getBufferedPointCount: () => 0,
+  };
+}
+
+// True path: northbound along x=50 at 30 m/s. At t=4 a displaced-but-
+// plausible anchor (12, 110) is accepted; t=5 (r1) and t=6 (r2) continue the
+// true path and are rejected against the anchor; r2 is consistent with r1,
+// so it re-anchors.
+const TRUE_PATH = [
+  sampleXY(50, 0, 0),
+  sampleXY(50, 30, 1),
+  sampleXY(50, 60, 2),
+  sampleXY(50, 90, 3),
+];
+const ANCHOR = sampleXY(12, 110, 4);
+const R1 = sampleXY(50, 150, 5);
+const R2 = sampleXY(50, 180, 6);
+const AFTER = sampleXY(50, 210, 7);
+
+async function runCascade(gate: TimingLineRow, jumpReanchorEnabled: boolean) {
+  const runtime = createSessionRuntime({
+    track: { id: 't' } as TrackRow,
+    timingLines: [gate],
+    recorder: mockRecorder() as never,
+    config: { jumpReanchorEnabled },
+  });
+  await runtime.start();
+
+  const accepted: boolean[] = [];
+  const crossings: { elapsedMs: number }[] = [];
+  for (const sample of [...TRUE_PATH, ANCHOR, R1, R2, AFTER]) {
+    const result = await runtime.handleSample(sample);
+    accepted.push(result.accepted);
+    if (result.accepted) {
+      for (const event of result.events) {
+        if (event.type === 'start_finish_crossed') {
+          crossings.push({ elapsedMs: event.sampleElapsedMs });
+        }
+      }
+    }
+  }
+  await runtime.stop();
+  return { accepted, crossings };
+}
+
+describe('re-anchor timing detection', () => {
+  it('re-anchors on the second consecutive consistent jump', async () => {
+    // Gate far away — pure filter behavior.
+    const { accepted } = await runCascade(gateAtY(-500, -20, 20), true);
+    // true path accepted, anchor accepted (displaced but within allowance),
+    // r1 rejected (first jump), r2 accepted via re-anchor, then normal.
+    expect(accepted).toEqual([true, true, true, true, true, false, true, true]);
+  });
+
+  it('never times across the displaced-anchor chord', async () => {
+    // Gate placed so ONLY the impossible chord anchor->r2 crosses it
+    // (at x≈28 on y=140); the true path along x=50 never does.
+    const { accepted, crossings } = await runCascade(gateAtY(140, 15, 40), true);
+    expect(accepted[6]).toBe(true); // re-anchor fired
+    expect(crossings).toHaveLength(0); // no false crossing from the chord
+  });
+
+  it('detects a real crossing on the validated rejected chain', async () => {
+    // Gate on the true path between r1 and r2: crossing at exactly halfway.
+    const { accepted, crossings } = await runCascade(gateAtY(165, 35, 65), true);
+    expect(accepted[6]).toBe(true);
+    expect(crossings).toHaveLength(1);
+    // Interpolated on r1->r2 (t=5.5 s), NOT on the anchor->r2 chord (t≈5.57 s).
+    expect(crossings[0].elapsedMs).toBe(5500);
+  });
+
+  it('keeps the whole cascade rejected when the flag is off', async () => {
+    const { accepted } = await runCascade(gateAtY(-500, -20, 20), false);
+    // Without the re-anchor everything stays rejected against the stale
+    // displaced anchor until the growing time allowance catches up.
+    expect(accepted).toEqual([true, true, true, true, true, false, false, false]);
+  });
+
+  it('keeps chord detection for hole re-entry cascades (crossing recovery)', async () => {
+    // The other cascade species: a long delivery hole, then true fixes whose
+    // distance outgrew the allowance. The anchor is genuinely the last good
+    // fix and the crossing lies INSIDE the hole — the anchor chord must stay
+    // the detection segment so recovery can time it (flagged ~), never the
+    // post-hole chain (which would silently lose the lap).
+    const gate = gateAtY(150, 35, 65);
+    const runtime = createSessionRuntime({
+      track: { id: 't' } as TrackRow,
+      timingLines: [gate],
+      recorder: mockRecorder() as never,
+      config: { jumpReanchorEnabled: true, detectionConfig: { recoveryEnabled: true } },
+    });
+    await runtime.start();
+
+    const crossings: { elapsedMs: number }[] = [];
+    const accepted: boolean[] = [];
+    // True path northbound along x=50 at 30 m/s; delivery hole from t=1..8.
+    for (const sample of [sampleXY(50, 0, 0), sampleXY(50, 270, 9), sampleXY(50, 300, 10)]) {
+      const result = await runtime.handleSample(sample);
+      accepted.push(result.accepted);
+      if (result.accepted) {
+        for (const event of result.events) {
+          if (event.type === 'start_finish_crossed') {
+            crossings.push({ elapsedMs: event.sampleElapsedMs });
+          }
+        }
+      }
+    }
+    await runtime.stop();
+
+    // Re-entry fix rejected (270 m vs ~246 m allowance), next re-anchors.
+    expect(accepted).toEqual([true, false, true]);
+    // The crossing mid-hole is recovered on the anchor chord: y=150 at t=5 s.
+    expect(crossings).toHaveLength(1);
+    expect(crossings[0].elapsedMs).toBe(5000);
+  });
+});
