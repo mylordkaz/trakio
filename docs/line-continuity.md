@@ -58,6 +58,9 @@ synthetics all correct.
 
 ## Validation (`bench/continuity-validation.ts`, real session replay)
 
+Confirmed on device (TestFlight build, 2026-07-20): all 13 laps render as
+continuous lines starting and ending on the start/finish line, no overlap.
+
 - **A**: 13/13 laps single-segment (before: laps 1 and 2 had holes).
 - **B**: merged-stream replay (accepted + quarantined, time-ordered —
   simulates original delivery). Re-anchor off reproduces the device run

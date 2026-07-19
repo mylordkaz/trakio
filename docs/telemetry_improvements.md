@@ -57,10 +57,9 @@ The current telemetry pipeline is functional, but still limited in these ways:
 
 - foreground-only recording: backgrounding the app pauses capture (warned
   live and flagged, but not prevented; background location is future work)
-- no Kalman or similar state estimator
-- no heading/speed fusion for path reconstruction
-- no accelerometer/gyroscope fusion
 - iOS sampling capped at ~1 Hz without external hardware
+- no state estimation or sensor fusion — evaluated and rejected on real
+  data, not missing (see "Evaluated and rejected on evidence" below)
 
 ## Implemented (July 2026 telemetry overhaul)
 
@@ -74,11 +73,41 @@ Current State above for the full inventory. In summary:
   dropouts (was priorities 3 and 4)
 - timing: crossing-quality assessment with per-lap estimated flags
 
-Field validation: a 13-lap Tsukuba session against the circuit transponder
-showed clean crossings within ±0.08 s. The ~1 s outliers come from 5-11 s
-total GPS delivery dropouts at the start/finish gantry (hard fix loss with
-perfect accuracy on both sides — not accuracy degradation); those laps are
-flagged, and the real fix is the state estimator below.
+Field validation: a 13-lap Tsukuba session (2026-07-04) against the circuit
+transponder showed clean crossings within ±0.08 s. The ~1 s outliers came
+from 5-11 s holes in the accepted stream around the start/finish gantry;
+those laps are flagged.
+
+## Implemented (July 2026 continuity phase — `docs/line-continuity.md`)
+
+- **Capture everything**: rejected fixes stored in a quarantine
+  (`rejected_gps_points`, with reason) instead of discarded; 50 Hz phone IMU
+  capture (`imu_samples`); export v3 carries both. This settled the dropout
+  question with data: most mid-session holes were **self-inflicted** — the
+  jump filter rejecting good fixes after a displaced anchor — not GPS
+  silence.
+- **Cascade re-anchor** (capture): a second consecutive impossible-jump
+  consistent with the previously rejected fix re-anchors onto the rejected
+  chain, ending the cascade at its source.
+- **Crossing recovery** (detection): hole-spanning segments crossing the
+  gate extension within a measured margin recover the lap, flagged `≈` —
+  masked-boundary bench went from losing every lap at 11 s holes to 0/14.
+- **Line continuity** (display): quarantined fixes merged into the line at
+  render time; every lap clipped to start and end exactly on the
+  start/finish line. Continuous per-lap lines from phone data alone.
+- Second transponder validation (2026-07-19, 13 laps): clean laps within
+  64 ms (mean 25 ms), best lap within 2 ms — while the circuit transponder
+  itself missed two passings that trakio caught.
+
+## Evaluated and rejected on evidence (see `docs/kalman/`)
+
+- **GPS-only Kalman filtering for detection**: 0/57 configurations valid on
+  real data; corner lag slides crossings off finite gates and loses laps.
+- **Doppler re-timing across dropouts**: worsened real lap error
+  (0.383 → 0.462 s mean); removed.
+- **Phone IMU fusion for bridging**: CoreMotion absorbs sustained
+  acceleration into its gravity estimate; 57–131 m bridge errors vs the
+  ≤12 m requirement. Capture stays (research dataset); fusion does not ship.
 
 ## Remaining Work
 
@@ -88,30 +117,19 @@ flagged, and the real fix is the state estimator below.
   Android real drives (iOS is capped at ~1 Hz by CoreLocation regardless)
 - battery/performance tradeoffs at higher sample rates
 
-### 2. State estimation (Kalman)
-
-- constant-velocity filter fusing position with Doppler speed/heading
-- feeds detection with stabilized positions through GPS dropouts (would reduce
-  how often laps need the estimated flag at all)
-- raw stored telemetry stays untouched; the filter output is derived
-
-### 3. Multi-lap consensus
+### 2. Multi-lap consensus
 
 - many laps of the same track describe the same corridor; a consensus line can
   correct confident-but-wrong drift that single-lap processing cannot detect
 - also a candidate for a persistent post-session reconstruction pass
 
-### 4. IMU fusion
-
-- accelerometer/gyroscope input for continuity through corners and shadows
-
-### 5. Background recording
+### 3. Background recording
 
 - startLocationUpdatesAsync + TaskManager with AutomotiveNavigation activity
   type, UIBackgroundModes location, Android foreground service
 - removes the app-backgrounding interruption class entirely
 
-### 6. External hardware
+### 4. External hardware
 
 - source-agnostic telemetry ingestion; higher-rate external GPS streams plug
   into the same filtering/detection/display pipeline
@@ -133,11 +151,9 @@ This keeps the original data available while allowing better rendered results an
 
 Highest-value next steps, in order:
 
-1. constant-velocity Kalman filter feeding detection (see Remaining Work 2)
-2. multi-lap consensus line for drift correction
-3. background recording
-4. Android sampling-cadence experiments
-5. IMU fusion research and prototype
+1. multi-lap consensus line for drift correction
+2. background recording
+3. Android sampling-cadence experiments
 
 ## Summary
 

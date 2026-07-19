@@ -155,6 +155,13 @@ evidence.** First street capture (12 min city drive, 35,800 IMU samples):
   tuning or code gap (the prototype passes all mechanics checks with
   clean IMU signals).
 
+**Phase close (2026-07-20, PR #6):** the phone-path question 2b existed to
+answer is answered and recorded above; 2c integration does not apply to the
+phone path. The dropout problem itself was resolved on the same branch by
+the continuity thread — capture quarantine, cascade re-anchor, crossing
+recovery, and display clipping (`docs/line-continuity.md`) — validated
+on-device and against the circuit transponder (2026-07-19).
+
 Consequences: shipping behavior stays naive + `≈` flags. Phone IMU capture
 remains (cheap; builds the research dataset and the future RaceBox A/B).
 **Path A (RaceBox on-board IMU) is now the only credible bridging path** —
