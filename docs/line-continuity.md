@@ -32,10 +32,19 @@ is the true path and the accepted anchor was displaced: accept it and
 re-anchor there. The first jump of a cascade stays rejected by design — at
 that moment a displaced anchor and a genuine outlier are indistinguishable.
 
-**C — symmetric lap-boundary stitch** (`groupPointsIntoLapRuns`). Each
-lap run borrows exactly one point from the end of the previous lap and one
-from the start of the next, so consecutive lap lines meet at the boundary
-with no gap and no possibility of overlap.
+**C — laps clipped at the crossing line** (`groupPointsIntoLapRuns`).
+Each lap's line is clipped at the start/finish line: the stitch point on
+each side is the interpolated crossing of the boundary segment with the
+line, computed with the detector's own geometry
+(`segmentTimingLineFraction`). Every lap starts and ends exactly at its
+own crossing position; consecutive laps share that exact point, so they
+meet with no gap and cannot overlap. Where the boundary segment does not
+cross the line (pit entry/exit, degenerate data) that side gets no stitch
+— a gap, never an overlap. The first version borrowed the neighbor lap's
+raw fix instead; at ~110 km/h and 1 Hz that fix sits up to ~30 m past the
+line, doubling every lap's line through the S/F zone — caught on device
+(2026-07-19) because the bench asserted the mechanism ("one stitch point
+per side") instead of the requirement ("ends on the line").
 
 ## Crossing recovery (detection side, same thread)
 
@@ -55,7 +64,9 @@ synthetics all correct.
   exactly: 1405 accepted, 5.0 s cascade holes, lap times within 1 ms of
   stored. Re-anchor on: 1410 accepted, worst hole 2.0 s, lap times still
   within 1 ms — timing untouched, as required.
-- **C**: 0 overlap violations (≤ 1 stitch point per side).
+- **C**: every lap's rendered line starts and ends 0.00 m from the S/F
+  line (13/13 July laps, 14/14 April laps); consecutive laps share the
+  exact clip point at all 13 boundaries.
 
 Bench note: `bench/replay.ts`'s mock recorder must implement every
 recorder method the runtime calls — a missing `recordRejectedSample`

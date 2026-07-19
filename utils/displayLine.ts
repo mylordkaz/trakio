@@ -1,3 +1,5 @@
+import type { TimingLineRow } from '@/db/types';
+import { segmentTimingLineFraction } from '@/telemetry/detection';
 import { toRadians } from '@/utils/geo';
 
 // Display-only rendering of stored GPS traces. Raw telemetry is never
@@ -413,14 +415,45 @@ export type LapRun = {
   points: LapRunPoint[];
 };
 
-// Consecutive points sharing a lap id form a run. A run contains only its own
-// lap's points plus ONE stitch point from each neighboring run (the last fix
-// before the lap and the first fix after it), so the lap's line starts at the
-// crossing instead of one fix past it and the all-laps view stays continuous.
-// Never more than one point per side: drawing a neighboring pass's points
-// renders a second, offset line beside the selected lap, and an overlapping
-// line is worse than a gap.
-export function groupPointsIntoLapRuns(points: LapRunPoint[]): LapRun[] {
+// The point where the boundary segment between two neighboring fixes crosses
+// the start/finish line — a lap's true visual start and end. Interpolated on
+// the real segment, so it is always on the recorded path.
+function crossingClipPoint(
+  from: LapRunPoint,
+  to: LapRunPoint,
+  startFinishLine: TimingLineRow
+): Omit<LapRunPoint, 'lapId'> | null {
+  const fraction = segmentTimingLineFraction(from, to, startFinishLine);
+
+  if (fraction === null) {
+    return null;
+  }
+
+  const fromMs = Date.parse(from.recordedAt);
+  const toMs = Date.parse(to.recordedAt);
+
+  return {
+    latitude: from.latitude + (to.latitude - from.latitude) * fraction,
+    longitude: from.longitude + (to.longitude - from.longitude) * fraction,
+    accuracyM:
+      from.accuracyM === null && to.accuracyM === null
+        ? null
+        : Math.max(from.accuracyM ?? 0, to.accuracyM ?? 0),
+    recordedAt: new Date(fromMs + (toMs - fromMs) * fraction).toISOString(),
+  };
+}
+
+// Consecutive points sharing a lap id form a run. Each run is clipped at the
+// start/finish line: the stitch point on each side is the interpolated
+// crossing of the boundary segment with the line, so every lap starts and
+// ends exactly at its own crossing, and consecutive laps share that point —
+// meeting without gap and without ever extending past the line. Where the
+// boundary segment does not cross the line (pit entry/exit, degenerate data)
+// the side gets no stitch: a gap, never an overlap.
+export function groupPointsIntoLapRuns(
+  points: LapRunPoint[],
+  startFinishLine?: TimingLineRow | null
+): LapRun[] {
   const runs: { lapId: string | null; points: LapRunPoint[] }[] = [];
 
   for (const point of points) {
@@ -434,13 +467,27 @@ export function groupPointsIntoLapRuns(points: LapRunPoint[]): LapRun[] {
     currentRun.points.push(point);
   }
 
+  const boundaryClips = runs.slice(0, -1).map((run, index) =>
+    startFinishLine
+      ? crossingClipPoint(
+          run.points[run.points.length - 1],
+          runs[index + 1].points[0],
+          startFinishLine
+        )
+      : null
+  );
+
   return runs.map((run, index) => {
-    const previousStitch = index > 0 ? [runs[index - 1].points[runs[index - 1].points.length - 1]] : [];
-    const nextStitch = index < runs.length - 1 ? [runs[index + 1].points[0]] : [];
+    const startClip = index > 0 ? boundaryClips[index - 1] : null;
+    const endClip = index < runs.length - 1 ? boundaryClips[index] : null;
 
     return {
       lapId: run.lapId,
-      points: [...previousStitch, ...run.points, ...nextStitch],
+      points: [
+        ...(startClip ? [{ ...startClip, lapId: run.lapId }] : []),
+        ...run.points,
+        ...(endClip ? [{ ...endClip, lapId: run.lapId }] : []),
+      ],
       key: `${run.lapId ?? 'unassigned'}-${index}`,
     };
   });

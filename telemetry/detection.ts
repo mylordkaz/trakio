@@ -82,6 +82,29 @@ function getIntersection(
   };
 }
 
+// Fraction along the segment from->to at which it crosses the timing line's
+// plane, or null when it never reaches it. The display line clips each lap at
+// the start/finish line with this, sharing the detector's crossing geometry.
+export function segmentTimingLineFraction(
+  from: { latitude: number; longitude: number },
+  to: { latitude: number; longitude: number },
+  timingLine: TimingLineRow
+): number | null {
+  const lngScale = Math.cos(toRadians((from.latitude + to.latitude) / 2));
+  const hit = getIntersection(
+    projectPoint(from.latitude, from.longitude, lngScale),
+    projectPoint(to.latitude, to.longitude, lngScale),
+    projectPoint(timingLine.a.latitude, timingLine.a.longitude, lngScale),
+    projectPoint(timingLine.b.latitude, timingLine.b.longitude, lngScale)
+  );
+
+  if (hit === null || hit.movementFraction < 0 || hit.movementFraction > 1) {
+    return null;
+  }
+
+  return hit.movementFraction;
+}
+
 // A stationary car sitting on a timing line jitters back and forth across it;
 // requiring plausible movement speed keeps those phantom crossings out.
 function hasSufficientCrossingSpeed(
