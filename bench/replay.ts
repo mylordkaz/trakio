@@ -93,6 +93,8 @@ export type ReplayedCrossing = {
 export type ReplayResult = {
   laps: ReplayedLap[];
   crossings: ReplayedCrossing[];
+  acceptedCount: number;
+  maxAcceptedGapMs: number;
 };
 
 function createMockRecorder() {
@@ -111,6 +113,7 @@ function createMockRecorder() {
       existing.push({ sectorIndex: input.sectorIndex, splitTimeMs: input.splitTimeMs });
       sectorsByLapId.set(input.lapId, existing);
     },
+    recordRejectedSample: async () => {},
     appendGpsSample: async () => {},
     flushGpsBuffer: async () => {},
     finalizeSession: async () => {},
@@ -130,37 +133,52 @@ function createMockRecorder() {
 export async function replaySession(
   data: SessionExport,
   estimator: PositionEstimator | null,
-  detectionConfig?: Record<string, unknown>
+  detectionConfig?: Record<string, unknown>,
+  jumpReanchorEnabled?: boolean
 ): Promise<ReplayResult> {
   const mock = createMockRecorder();
+  const runtimeConfig =
+    detectionConfig || jumpReanchorEnabled !== undefined
+      ? { config: { detectionConfig, jumpReanchorEnabled } as never }
+      : {};
   const runtime = createSessionRuntime({
     track: { id: data.track.id } as never,
     timingLines: data.timingLines as never,
     recorder: mock.recorder as never,
-    ...(detectionConfig ? { config: { detectionConfig } as never } : {}),
+    ...runtimeConfig,
   });
 
   await runtime.start();
 
   let previousAccepted: TelemetrySample | null = null;
   const crossings: ReplayedCrossing[] = [];
+  let acceptedCount = 0;
+  let maxAcceptedGapMs = 0;
+  let lastAcceptedAtMs: number | null = null;
 
   for (const raw of toSamples(data)) {
+    // The bench pre-filter only decides whether the estimator runs; the
+    // runtime remains the authority on acceptance (it can re-anchor a sample
+    // this pre-filter rejected), so all stats come from the runtime's result.
     const validation = filterTelemetrySample(previousAccepted, raw);
+    let sample = raw;
 
-    if (!validation.accepted) {
-      // The runtime re-rejects internally; feeding it keeps rejection/gap
-      // bookkeeping identical to production. The estimator never sees it.
-      await runtime.handleSample(raw).catch(() => {});
-      continue;
+    if (validation.accepted) {
+      previousAccepted = validation.sample;
+      const position = estimator ? estimator.step(validation.sample) : null;
+      sample = position
+        ? { ...validation.sample, lat: position.lat, lng: position.lng }
+        : validation.sample;
     }
 
-    previousAccepted = validation.sample;
-    const position = estimator ? estimator.step(validation.sample) : null;
-    const sample = position ? { ...validation.sample, lat: position.lat, lng: position.lng } : validation.sample;
-    const result = await runtime.handleSample(sample).catch(() => null);
+    const result = await runtime.handleSample(sample);
 
-    if (result?.accepted) {
+    if (result.accepted) {
+      acceptedCount++;
+      if (lastAcceptedAtMs !== null) {
+        maxAcceptedGapMs = Math.max(maxAcceptedGapMs, raw.recordedAt - lastAcceptedAtMs);
+      }
+      lastAcceptedAtMs = raw.recordedAt;
       for (const event of result.events) {
         crossings.push({
           type: event.type,
@@ -176,6 +194,8 @@ export async function replaySession(
 
   return {
     crossings,
+    acceptedCount,
+    maxAcceptedGapMs,
     laps: snapshot.completedLaps.map((lap) => ({
       lapNumber: lap.lapNumber,
       lapTimeMs: lap.lapTimeMs,

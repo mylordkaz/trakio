@@ -22,3 +22,11 @@ export const IMU_CAPTURE_ENABLED: boolean = true;
 // flagged ≈ via the existing degraded-quality path. Bench-proven to fire
 // zero times on all clean recorded sessions.
 export const CROSSING_RECOVERY_ENABLED: boolean = true;
+
+// Cascade re-anchor: when consecutive fixes are rejected as impossible jumps
+// but agree with EACH OTHER, the world moved and the old anchor was the liar
+// (a displaced fix that got accepted) — accept the chain and move on.
+// Measured at Tsukuba 2026-07-19: one displaced anchor caused 3-4 clean
+// 4 m-accuracy fixes to be discarded per event; re-anchoring caps such holes
+// at ~2 s. Rejected fixes are still quarantined for display/analysis.
+export const JUMP_REANCHOR_ENABLED: boolean = true;

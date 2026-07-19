@@ -35,7 +35,7 @@ import { shareSessionDataExport } from '@/services/share';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useShareSession } from '@/hooks/useShareSession';
 import { formatLapTime, formatGapSeconds, formatDateTime, formatDuration, formatSpeed } from '@/utils/format';
-import { buildDisplayPolylines, groupPointsIntoLapRuns } from '@/utils/displayLine';
+import { buildDisplayPolylines, groupPointsIntoLapRuns, mergeQuarantinedPoints } from '@/utils/displayLine';
 import { getBestLapRacingLine } from '@/utils/racingLine';
 import {
   getBestLap,
@@ -126,6 +126,9 @@ export default function SessionDetailScreen() {
   const [isEditingCar, setIsEditingCar] = useState(false);
   const [carText, setCarText] = useState('');
   const [selectedLapId, setSelectedLapId] = useState<string | null>(null);
+  const [quarantinedPoints, setQuarantinedPoints] = useState<
+    Awaited<ReturnType<typeof getRejectedGpsPointsForSession>>
+  >([]);
   const share = useShareSession(sessionDetail);
 
   const loadSession = useCallback(async () => {
@@ -146,6 +149,9 @@ export default function SessionDetailScreen() {
       }
 
       setSessionDetail(nextSessionDetail);
+      setQuarantinedPoints(
+        await getRejectedGpsPointsForSession(db, nextSessionDetail.session.id).catch(() => [])
+      );
       setCarText(nextSessionDetail.session.car ?? '');
       setLoadError(null);
     } catch {
@@ -269,7 +275,7 @@ export default function SessionDetailScreen() {
       return [];
     }
 
-    const runs = groupPointsIntoLapRuns(points);
+    const runs = groupPointsIntoLapRuns(mergeQuarantinedPoints(points, quarantinedPoints));
     const displayPointBudget = Math.max(250, Math.floor(6000 / runs.length));
 
     return runs.map((run) => ({
@@ -277,7 +283,7 @@ export default function SessionDetailScreen() {
       lapId: run.lapId,
       segments: buildDisplayPolylines(run.points, { maxDisplayPoints: displayPointBudget }),
     }));
-  }, [sessionDetail]);
+  }, [sessionDetail, quarantinedPoints]);
   const lapIdsWithPoints = useMemo(() => {
     const lapIds = new Set<string>();
     for (const group of lapLineGroups) {

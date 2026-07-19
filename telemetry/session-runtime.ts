@@ -9,7 +9,7 @@ import type {
   TelemetrySample,
   TelemetrySampleRejectionReason,
 } from '@/telemetry/types';
-import { CROSSING_RECOVERY_ENABLED } from '@/constants/featureFlags';
+import { CROSSING_RECOVERY_ENABLED, JUMP_REANCHOR_ENABLED } from '@/constants/featureFlags';
 import { getSectorCount, getSectorLineCount } from '@/utils/timing';
 
 type SessionRecorder = ReturnType<typeof createSessionRecorder>;
@@ -23,6 +23,8 @@ type SessionRuntimeConfig = {
   temperatureC?: number | null;
   filterConfig?: Partial<TelemetryFilterConfig>;
   detectionConfig?: Partial<TelemetryDetectionConfig>;
+  // Bench override; the app uses the feature flag.
+  jumpReanchorEnabled?: boolean;
 };
 
 // A pause in accepted samples longer than this is surfaced as a recording
@@ -148,6 +150,11 @@ export function createSessionRuntime(args: {
   let currentLapIsOutLap = false;
   // Whether the crossing that started the current lap was an estimate.
   let currentLapStartIsEstimated = false;
+  // Cascade re-anchor state: the most recent rejected sample, so a following
+  // jump-rejection can be validated against the rejected CHAIN instead of the
+  // stale anchor.
+  let lastRejectedSample: TelemetrySample | null = null;
+  const jumpReanchorEnabled = config?.jumpReanchorEnabled ?? JUMP_REANCHOR_ENABLED;
 
   function enqueue<T>(work: () => Promise<T>): Promise<T> {
     const run = processingQueue.then(work);
@@ -177,6 +184,7 @@ export function createSessionRuntime(args: {
       currentLapIsInLap = false;
       currentLapIsOutLap = false;
       currentLapStartIsEstimated = false;
+      lastRejectedSample = null;
 
       const sessionId = generateId();
       const sessionStartedAtMs = Date.now();
@@ -497,6 +505,35 @@ export function createSessionRuntime(args: {
     );
 
     if (!validation.accepted) {
+      // Cascade re-anchor: a second consecutive impossible_jump that is
+      // consistent with the previously REJECTED sample means the rejected
+      // chain is the true path and the accepted anchor was displaced.
+      if (
+        jumpReanchorEnabled &&
+        validation.reason === 'impossible_jump' &&
+        snapshot.lastRejectionReason === 'impossible_jump' &&
+        lastRejectedSample !== null
+      ) {
+        const chainValidation = filterTelemetrySample(
+          lastRejectedSample,
+          sample,
+          config?.filterConfig
+        );
+
+        if (chainValidation.accepted) {
+          lastRejectedSample = null;
+          const events = await handleAcceptedSample(chainValidation.sample);
+
+          return {
+            accepted: true,
+            events,
+            snapshot: getSnapshot(),
+          };
+        }
+      }
+
+      lastRejectedSample = sample;
+
       if (snapshot.sessionId) {
         await recorder.recordRejectedSample({
           id: generateId(),
@@ -519,6 +556,7 @@ export function createSessionRuntime(args: {
       };
     }
 
+    lastRejectedSample = null;
     const events = await handleAcceptedSample(validation.sample);
 
     return {

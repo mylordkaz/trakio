@@ -343,6 +343,70 @@ export function buildDisplayPolylines(
 
 export type LapRunPoint = DisplayLinePoint & { lapId: string | null };
 
+export type QuarantinedDisplayPoint = {
+  recordedAt: string;
+  latitude: number;
+  longitude: number;
+  accuracyM: number | null;
+};
+
+// Fix A (capture-everything payoff): fixes the capture filter rejected are
+// merged back into the line's input, time-ordered, inheriting the lap of the
+// preceding accepted fix. The display pipeline's own guards (accuracy cutoff,
+// spike rejection, smoothing) decide what actually gets drawn — a hole only
+// fills where genuinely clean data exists. Timing never sees these points.
+export function mergeQuarantinedPoints(
+  points: LapRunPoint[],
+  quarantined: QuarantinedDisplayPoint[]
+): LapRunPoint[] {
+  if (quarantined.length === 0) {
+    return points;
+  }
+
+  const merged: LapRunPoint[] = [];
+  let lastLapId: string | null = null;
+  let quarantineIndex = 0;
+  const sortedQuarantine = [...quarantined].sort(
+    (a, b) => Date.parse(a.recordedAt) - Date.parse(b.recordedAt)
+  );
+
+  for (const point of points) {
+    const pointTime = Date.parse(point.recordedAt);
+
+    while (
+      quarantineIndex < sortedQuarantine.length &&
+      Date.parse(sortedQuarantine[quarantineIndex].recordedAt) < pointTime
+    ) {
+      const q = sortedQuarantine[quarantineIndex];
+      merged.push({
+        recordedAt: q.recordedAt,
+        latitude: q.latitude,
+        longitude: q.longitude,
+        accuracyM: q.accuracyM,
+        lapId: lastLapId,
+      });
+      quarantineIndex++;
+    }
+
+    merged.push(point);
+    lastLapId = point.lapId;
+  }
+
+  // Trailing quarantined fixes (after the last accepted point).
+  for (; quarantineIndex < sortedQuarantine.length; quarantineIndex++) {
+    const q = sortedQuarantine[quarantineIndex];
+    merged.push({
+      recordedAt: q.recordedAt,
+      latitude: q.latitude,
+      longitude: q.longitude,
+      accuracyM: q.accuracyM,
+      lapId: lastLapId,
+    });
+  }
+
+  return merged;
+}
+
 export type LapRun = {
   key: string;
   lapId: string | null;
@@ -350,10 +414,12 @@ export type LapRun = {
 };
 
 // Consecutive points sharing a lap id form a run. A run contains only its own
-// lap's points plus the single point where the next run begins (so the
-// all-laps view stays continuous through the crossing). Never more: drawing a
-// neighboring pass's points renders a second, offset line beside the selected
-// lap, and an overlapping line is worse than a gap.
+// lap's points plus ONE stitch point from each neighboring run (the last fix
+// before the lap and the first fix after it), so the lap's line starts at the
+// crossing instead of one fix past it and the all-laps view stays continuous.
+// Never more than one point per side: drawing a neighboring pass's points
+// renders a second, offset line beside the selected lap, and an overlapping
+// line is worse than a gap.
 export function groupPointsIntoLapRuns(points: LapRunPoint[]): LapRun[] {
   const runs: { lapId: string | null; points: LapRunPoint[] }[] = [];
 
@@ -369,11 +435,12 @@ export function groupPointsIntoLapRuns(points: LapRunPoint[]): LapRun[] {
   }
 
   return runs.map((run, index) => {
-    const stitchPoint = index < runs.length - 1 ? [runs[index + 1].points[0]] : [];
+    const previousStitch = index > 0 ? [runs[index - 1].points[runs[index - 1].points.length - 1]] : [];
+    const nextStitch = index < runs.length - 1 ? [runs[index + 1].points[0]] : [];
 
     return {
       lapId: run.lapId,
-      points: [...run.points, ...stitchPoint],
+      points: [...previousStitch, ...run.points, ...nextStitch],
       key: `${run.lapId ?? 'unassigned'}-${index}`,
     };
   });
