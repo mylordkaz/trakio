@@ -12,6 +12,7 @@ import type { TelemetrySample } from '@/telemetry/types';
 export type ExportedLap = {
   id: string;
   lapNumber: number;
+  startedAt: string;
   lapTimeMs: number | null;
   isTimingEstimated?: 0 | 1;
   sectors?: { sectorIndex: number; splitTimeMs: number }[];

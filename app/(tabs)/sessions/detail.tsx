@@ -275,7 +275,7 @@ export default function SessionDetailScreen() {
       return [];
     }
 
-    const runs = groupPointsIntoLapRuns(points, startFinishLine, quarantinedPoints);
+    const runs = groupPointsIntoLapRuns(points, sessionDetail?.laps ?? [], quarantinedPoints);
     const displayPointBudget = Math.max(250, Math.floor(6000 / runs.length));
 
     return runs.map((run) => ({
@@ -283,7 +283,7 @@ export default function SessionDetailScreen() {
       lapId: run.lapId,
       segments: buildDisplayPolylines(run.points, { maxDisplayPoints: displayPointBudget }),
     }));
-  }, [sessionDetail, quarantinedPoints, startFinishLine]);
+  }, [sessionDetail, quarantinedPoints]);
   const lapIdsWithPoints = useMemo(() => {
     const lapIds = new Set<string>();
     for (const group of lapLineGroups) {

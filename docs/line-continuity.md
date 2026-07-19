@@ -21,44 +21,51 @@ reported 51/78 km/h, while the rejected chain's steps match reported speeds
 **A — display merges the quarantine** (`utils/displayLine.ts
 groupPointsIntoLapRuns`, used by session detail). Render-time, read-only:
 quarantined fixes are merged into each lap run in time order, bucketed by
-the boundary crossing times themselves — so a fix rejected during the
-crossing second lands in the lap it belongs to, on the correct side of the
-line, and can never displace a clip (clip geometry comes exclusively from
-accepted points, the same boundary segment the detector timed). The display
-filters (15 m accuracy cutoff, despike, hole split) still gate quality.
-Applies to every stored session that has quarantine data, past and future.
+the stored crossing times — so a fix rejected during the crossing second
+lands in the lap it belongs to, on the correct side of the line, and can
+never displace a clip. The display filters (15 m accuracy cutoff, despike,
+hole split) still gate quality. Applies to every stored session that has
+quarantine data, past and future.
 
 **B — capture cascade re-anchor** (`telemetry/session-runtime.ts`, flag
-`JUMP_REANCHOR_ENABLED`). A second consecutive `impossible_jump` that is
-consistent with the previously *rejected* sample means the rejected chain
-is the true path and the accepted anchor was displaced: accept it and
-re-anchor there. The first jump of a cascade stays rejected by design — at
-that moment a displaced anchor and a genuine outlier are indistinguishable.
+`JUMP_REANCHOR_ENABLED`), scoped to short cascades (anchor gap
+≤ `recoveryMinGapMs`, 4 s). A second consecutive `impossible_jump` that is
+consistent with the previously *rejected* sample proves the accepted
+anchor was displaced: accept the sample, re-anchor there, and run
+detection on the validated chain — the anchor chord, just proven
+impossible, is never timed. Across a hole-spanning gap that proof does not
+hold (the rejection may be an honest allowance shortfall) and the chain
+would be entirely post-hole, so the re-anchor does not fire at all:
+rejection continues until a sample is *consistent* with the anchor, and
+crossing recovery times that uncontradicted chord, flagged `≈` — the
+behavior the acceptance table validated before the re-anchor existed. The
+extra rejected fixes stay in quarantine, which the display merges anyway.
+The first jump of a cascade stays rejected by design — at that moment a
+displaced anchor and a genuine outlier are indistinguishable. Both regimes
+are unit-tested (`telemetry/__tests__/session-runtime-reanchor.test.ts`)
+and the masked acceptance table reproduces to the millisecond.
 
-Timing on re-anchor splits by the gap back to the anchor (review finding,
-2026-07-20). Short gap (≤ `recoveryMinGapMs`, 4 s) = displaced anchor: the
-anchor chord was just proven impossible, so detection runs on the validated
-rejected chain — never on a segment that could cross gates the car never
-crossed. Hole-spanning gap = the anchor is simply the last fix before a
-delivery hole and the crossing may lie inside it: the anchor chord stays
-the detection segment so crossing recovery can time it, flagged `≈`,
-exactly as with the re-anchor disabled. Both regimes are unit-tested
-(`telemetry/__tests__/session-runtime-reanchor.test.ts`) and the masked
-acceptance table reproduces to the millisecond.
+**C — laps clipped at the stored crossing time** (`groupPointsIntoLapRuns`).
+Each lap's line is clipped at its boundaries' `laps.startedAt` — the
+crossing moment timing froze at capture. The clip point is the recorded
+path's position (accepted + quarantined timeline) interpolated at that
+time, so the line changes laps exactly where the lap time says it did —
+including boundaries the detector timed on a re-anchored chain or a
+recovered hole-spanning chord. Display consumes timing's output; it never
+re-derives crossing geometry. Consecutive laps share the clip point (no
+gap, no overshoot, overlap impossible); a boundary without a crossing time
+(pit entry/exit, unfinished data) gets no clip — a gap, never an overlap.
+Clip points are structural, not measured fixes: `accuracyM` is null so the
+display accuracy filter can never delete a lap's endpoint even when the
+boundary fix itself was degraded (capture accepts up to 40 m; display
+draws up to 15 m).
 
-**C — laps clipped at the crossing line** (`groupPointsIntoLapRuns`).
-Each lap's line is clipped at the start/finish line: the stitch point on
-each side is the interpolated crossing of the boundary segment with the
-line, computed with the detector's own geometry
-(`segmentTimingLineFraction`). Every lap starts and ends exactly at its
-own crossing position; consecutive laps share that exact point, so they
-meet with no gap and cannot overlap. Where the boundary segment does not
-cross the line (pit entry/exit, degenerate data) that side gets no stitch
-— a gap, never an overlap. The first version borrowed the neighbor lap's
-raw fix instead; at ~110 km/h and 1 Hz that fix sits up to ~30 m past the
-line, doubling every lap's line through the S/F zone — caught on device
-(2026-07-19) because the bench asserted the mechanism ("one stitch point
-per side") instead of the requirement ("ends on the line").
+Two earlier designs died in review: borrowing the neighbor lap's raw fix
+(up to ~30 m past the line at crossing speed — doubled every lap through
+the S/F zone, caught on device) and intersecting the accepted boundary
+segment with the line geometrically (correct until a re-anchored boundary
+made timing and display disagree about which segment crossed). The lesson
+both times: assert the requirement, not the mechanism.
 
 ## Crossing recovery (detection side, same thread)
 
@@ -81,9 +88,11 @@ continuous lines starting and ending on the start/finish line, no overlap.
   exactly: 1405 accepted, 5.0 s cascade holes, lap times within 1 ms of
   stored. Re-anchor on: 1410 accepted, worst hole 2.0 s, lap times still
   within 1 ms — timing untouched, as required.
-- **C**: every lap's rendered line starts and ends 0.00 m from the S/F
-  line (13/13 July laps, 14/14 April laps); consecutive laps share the
-  exact clip point at all 13 boundaries.
+- **C**: every lap's rendered line starts and ends within 0.04 m of the
+  S/F line (13/13 July laps, 14/14 April laps — the 4 cm is the stored
+  crossing time's millisecond truncation at ~50 m/s, i.e. display is bound
+  to timing's own precision); consecutive laps share the exact clip point
+  at all 13 boundaries.
 
 Bench note: `bench/replay.ts`'s mock recorder must implement every
 recorder method the runtime calls — a missing `recordRejectedSample`

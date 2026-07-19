@@ -47,7 +47,7 @@ async function main() {
     ['before (accepted only)', []],
     ['after  (quarantine merged)', quarantined],
   ] as const) {
-    const runs = groupPointsIntoLapRuns(points as any, sf, quarantineInput as any);
+    const runs = groupPointsIntoLapRuns(points as any, d.laps, quarantineInput as any);
     const budget = Math.max(250, Math.floor(6000 / runs.length));
     const rows: string[] = [];
     let multiSegmentLaps = 0;
@@ -62,7 +62,7 @@ async function main() {
     console.log('  ' + rows.join('  '));
   }
 
-  const mergedRuns = groupPointsIntoLapRuns(points as any, sf, quarantined as any);
+  const mergedRuns = groupPointsIntoLapRuns(points as any, d.laps, quarantined as any);
   const budget = Math.max(250, Math.floor(6000 / mergedRuns.length));
   const lapSegCounts = new Map<number, number>();
   for (const run of mergedRuns) {
@@ -145,7 +145,7 @@ async function main() {
     longitude: boundaryFrom.longitude + (boundaryTo.longitude - boundaryFrom.longitude) * injectFraction,
     accuracyM: 5,
   };
-  const withInjection = groupPointsIntoLapRuns(points as any, sf, [...quarantined, injected] as any);
+  const withInjection = groupPointsIntoLapRuns(points as any, d.laps, [...quarantined, injected] as any);
   const injStats = endpointStats(withInjection, distSf, lapNoById as Map<string, number>, 13, budget);
   check(
     'F2: crossing-second quarantined fix cannot displace clips',
@@ -168,7 +168,7 @@ async function main() {
     const aprilPoints = april.gpsPoints.map((p: any) => ({
       latitude: p.latitude, longitude: p.longitude, accuracyM: p.accuracyM, recordedAt: p.recordedAt, lapId: p.lapId,
     }));
-    const aprilRuns = groupPointsIntoLapRuns(aprilPoints as any, aprilSf);
+    const aprilRuns = groupPointsIntoLapRuns(aprilPoints as any, april.laps);
     const aprilBudget = Math.max(250, Math.floor(6000 / aprilRuns.length));
     const stats = endpointStats(aprilRuns, makeDistToLine(aprilSf), aprilLapNos as Map<string, number>, 14, aprilBudget);
     check(

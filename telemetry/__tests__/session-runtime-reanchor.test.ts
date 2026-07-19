@@ -14,13 +14,13 @@ const M_LAT = 111320;
 const M_LNG = Math.cos((LAT0 * Math.PI) / 180) * M_LAT;
 const T0 = 1_700_000_000_000;
 
-function sampleXY(xM: number, yM: number, tS: number): TelemetrySample {
+function sampleXY(xM: number, yM: number, tS: number, speedMps = 25): TelemetrySample {
   return {
     recordedAt: T0 + tS * 1000,
     elapsedMs: tS * 1000,
     lat: LAT0 + yM / M_LAT,
     lng: LNG0 + xM / M_LNG,
-    speedMps: 25,
+    speedMps,
     accuracyM: 4,
     headingDeg: 0,
     altitudeM: 30,
@@ -131,12 +131,51 @@ describe('re-anchor timing detection', () => {
     expect(accepted).toEqual([true, true, true, true, true, false, false, false]);
   });
 
-  it('keeps chord detection for hole re-entry cascades (crossing recovery)', async () => {
-    // The other cascade species: a long delivery hole, then true fixes whose
-    // distance outgrew the allowance. The anchor is genuinely the last good
-    // fix and the crossing lies INSIDE the hole — the anchor chord must stay
-    // the detection segment so recovery can time it (flagged ~), never the
-    // post-hole chain (which would silently lose the lap).
+  it('does not re-anchor across a hole-spanning gap (the anchor is unproven)', async () => {
+    // A displaced anchor followed by real GPS silence: the post-hole chain
+    // is mutually consistent, but a long gap cannot prove which of anchor
+    // or chain is true — and the chain is entirely post-hole. So the
+    // re-anchor must NOT fire; rejection continues until a sample is
+    // consistent with the anchor, and no crossing is ever timed on a chord
+    // the filter rejected. Gate placed where only the anchor->S2 chord
+    // would cross.
+    const gate = gateAtY(200, 15, 40);
+    const runtime = createSessionRuntime({
+      track: { id: 't' } as TrackRow,
+      timingLines: [gate],
+      recorder: mockRecorder() as never,
+      config: { jumpReanchorEnabled: true, detectionConfig: { recoveryEnabled: true } },
+    });
+    await runtime.start();
+
+    const accepted: boolean[] = [];
+    let crossingCount = 0;
+    const samples = [
+      sampleXY(50, 30, 1),
+      sampleXY(50, 60, 2),
+      sampleXY(50, 90, 3),
+      sampleXY(12, 110, 4), // displaced anchor, accepted
+      sampleXY(50, 390, 14), // post-silence true fix, inconsistent with anchor
+      sampleXY(50, 420, 15), // consistent with the previous — but gap is 11 s
+    ];
+    for (const sample of samples) {
+      const result = await runtime.handleSample(sample);
+      accepted.push(result.accepted);
+      if (result.accepted) {
+        crossingCount += result.events.filter((e) => e.type === 'start_finish_crossed').length;
+      }
+    }
+    await runtime.stop();
+
+    expect(accepted).toEqual([true, true, true, true, false, false]);
+    expect(crossingCount).toBe(0);
+  });
+
+  it('recovers an in-hole crossing when the re-entry is consistent with the anchor', async () => {
+    // The honest hole case: the anchor is the true last fix, and the first
+    // post-hole fix agrees with it within the (time-grown) allowance. The
+    // uncontradicted chord spans the hole and crossing recovery times the
+    // in-hole crossing on it, flagged.
     const gate = gateAtY(150, 35, 65);
     const runtime = createSessionRuntime({
       track: { id: 't' } as TrackRow,
@@ -148,8 +187,7 @@ describe('re-anchor timing detection', () => {
 
     const crossings: { elapsedMs: number }[] = [];
     const accepted: boolean[] = [];
-    // True path northbound along x=50 at 30 m/s; delivery hole from t=1..8.
-    for (const sample of [sampleXY(50, 0, 0), sampleXY(50, 270, 9), sampleXY(50, 300, 10)]) {
+    for (const sample of [sampleXY(50, 0, 0, 30), sampleXY(50, 270, 9, 30)]) {
       const result = await runtime.handleSample(sample);
       accepted.push(result.accepted);
       if (result.accepted) {
@@ -162,10 +200,8 @@ describe('re-anchor timing detection', () => {
     }
     await runtime.stop();
 
-    // Re-entry fix rejected (270 m vs ~246 m allowance), next re-anchors.
-    expect(accepted).toEqual([true, false, true]);
-    // The crossing mid-hole is recovered on the anchor chord: y=150 at t=5 s.
+    expect(accepted).toEqual([true, true]);
     expect(crossings).toHaveLength(1);
-    expect(crossings[0].elapsedMs).toBe(5000);
+    expect(crossings[0].elapsedMs).toBe(5000); // y=150 at t=5 s, mid-hole
   });
 });

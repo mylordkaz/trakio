@@ -514,8 +514,26 @@ export function createSessionRuntime(args: {
       // Cascade re-anchor: a second consecutive impossible_jump that is
       // consistent with the previously REJECTED sample means the rejected
       // chain is the true path and the accepted anchor was displaced.
+      // Cascade re-anchor, scoped to short cascades only. A second
+      // consecutive impossible_jump consistent with the previously REJECTED
+      // sample proves the accepted anchor was displaced, so detection runs
+      // on the validated chain — the anchor chord is never timed. Across a
+      // hole-spanning gap this proof does not hold (the rejection may be an
+      // honest allowance shortfall) and the chain would be entirely
+      // post-hole, silently losing an in-hole crossing — so long-gap
+      // rejections fall through: the allowance grows until a sample is
+      // CONSISTENT with the anchor and crossing recovery times that
+      // uncontradicted chord, flagged. The extra rejected fixes stay in
+      // quarantine, which the display merges anyway.
+      const anchorGapMs = snapshot.latestAcceptedSample
+        ? sample.recordedAt - snapshot.latestAcceptedSample.recordedAt
+        : Infinity;
+      const recoveryMinGapMs =
+        config?.detectionConfig?.recoveryMinGapMs ?? DEFAULT_DETECTION_CONFIG.recoveryMinGapMs;
+
       if (
         jumpReanchorEnabled &&
+        anchorGapMs <= recoveryMinGapMs &&
         validation.reason === 'impossible_jump' &&
         snapshot.lastRejectionReason === 'impossible_jump' &&
         lastRejectedSample !== null
@@ -529,21 +547,7 @@ export function createSessionRuntime(args: {
 
         if (chainValidation.accepted) {
           lastRejectedSample = null;
-          // Two cascade species, split by the gap back to the anchor. A short
-          // gap is a displaced anchor: the chord to it is proven wrong, so
-          // detection must see the validated chain instead. A hole-spanning
-          // gap means the anchor is simply old and the crossing may lie
-          // inside the hole — that chord belongs to crossing recovery
-          // (flagged ~), exactly as when the re-anchor is disabled.
-          const anchorGapMs = snapshot.latestAcceptedSample
-            ? sample.recordedAt - snapshot.latestAcceptedSample.recordedAt
-            : 0;
-          const recoveryMinGapMs =
-            config?.detectionConfig?.recoveryMinGapMs ??
-            DEFAULT_DETECTION_CONFIG.recoveryMinGapMs;
-          const detectionPrevious =
-            anchorGapMs <= recoveryMinGapMs ? chainPrevious : undefined;
-          const events = await handleAcceptedSample(chainValidation.sample, detectionPrevious);
+          const events = await handleAcceptedSample(chainValidation.sample, chainPrevious);
 
           return {
             accepted: true,
