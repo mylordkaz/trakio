@@ -533,9 +533,9 @@ export default function PreSessionScreen() {
               </Pressable>
               <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.title')}</Text>
             </View>
-            <Animated.View style={badgeStyle} className="flex-row items-center gap-2 rounded-full bg-emerald-500/30 px-3 py-1.5 border border-emerald-400/40">
-              <View className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-              <Text className="text-sm text-emerald-400">{i18n.t('session.ready')}</Text>
+            <Animated.View style={badgeStyle} className="flex-row items-center gap-2 rounded-full bg-emerald-500/15 dark:bg-emerald-500/30 px-3 py-1.5 border border-emerald-600/30 dark:border-emerald-400/40">
+              <View className="h-2.5 w-2.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />
+              <Text className="text-sm font-medium text-emerald-700 dark:text-emerald-400">{i18n.t('session.ready')}</Text>
             </Animated.View>
           </View>
 
