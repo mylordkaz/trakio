@@ -18,14 +18,19 @@ reported 51/78 km/h, while the rejected chain's steps match reported speeds
 
 ## The three fixes
 
-**A — display merges the quarantine** (`utils/displayLine.ts
-groupPointsIntoLapRuns`, used by session detail). Render-time, read-only:
-quarantined fixes are merged into each lap run in time order, bucketed by
-the stored crossing times — so a fix rejected during the crossing second
-lands in the lap it belongs to, on the correct side of the line, and can
-never displace a clip. The display filters (15 m accuracy cutoff, despike,
-hole split) still gate quality. Applies to every stored session that has
-quarantine data, past and future.
+**A — quarantine bridges holes** (`utils/displayLine.ts`). Render-time,
+read-only, and governed by one invariant that ends the
+quarantine-vs-rendering bug class structurally: **the trusted stream
+(accepted points + clips) renders exactly as if quarantine did not exist —
+its segmentation is computed first and is immutable — and quarantined
+fixes participate only as hole bridges.** A hole in the trusted stream is
+closed exactly when a complete chain of quarantined fixes connects its
+edges with every hop inside the same time/distance guards; anything else
+about a quarantined point — isolated jumps, garbage islands, fixes in
+continuous regions — cannot affect the rendered line at all. Bucketing by
+the stored crossing times decides which lap a quarantined fix may bridge
+in. Applies to every stored session that has quarantine data, past and
+future.
 
 **B — capture cascade re-anchor** (`telemetry/session-runtime.ts`, flag
 `JUMP_REANCHOR_ENABLED`), scoped to short cascades (anchor gap
@@ -76,9 +81,11 @@ entry/exit, unfinished data) gets no clip — a gap, never an overlap.
 Clip points are structural, not measured fixes: `accuracyM` is null so
 the display accuracy filter can never delete a lap's endpoint even when
 the boundary fix itself was degraded (capture accepts up to 40 m;
-display draws up to 15 m). Quarantined fixes still join the rendered
-paths and lap bucketing — but they never participate in clip geometry,
-so no rejected point of any accuracy can steer a lap's endpoint.
+display draws up to 15 m), and because clips are part of the trusted
+stream, no quarantined point can displace, detach, or split them (see
+Fix A's invariant). Migration v16 is restart-safe (column-guarded ALTERs
+— `user_version` is written after `up()` returns, so a crash in between
+must not brick the retry).
 
 Two earlier designs died in review: borrowing the neighbor lap's raw fix
 (up to ~30 m past the line at crossing speed — doubled every lap through

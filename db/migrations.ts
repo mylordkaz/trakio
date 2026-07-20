@@ -651,12 +651,19 @@ const MIGRATIONS: Migration[] = [
     // the exact segment detection timed. The display clips lap lines at this
     // point; laps recorded before this column exist fall back to
     // interpolating the accepted path at started_at.
+    // Column checks make the migration restart-safe: user_version is only
+    // written after up() returns, so a crash in between must not make the
+    // rerun fail on a duplicate column.
     version: 16,
     up: async (db) => {
-      await db.execAsync(`
-        ALTER TABLE laps ADD COLUMN started_latitude REAL;
-        ALTER TABLE laps ADD COLUMN started_longitude REAL;
-      `);
+      const lapColumns = await getColumnNames(db, 'laps');
+
+      if (!lapColumns.includes('started_latitude')) {
+        await db.execAsync('ALTER TABLE laps ADD COLUMN started_latitude REAL;');
+      }
+      if (!lapColumns.includes('started_longitude')) {
+        await db.execAsync('ALTER TABLE laps ADD COLUMN started_longitude REAL;');
+      }
     },
   },
 ];

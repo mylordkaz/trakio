@@ -54,7 +54,7 @@ async function main() {
     for (const run of runs) {
       const lapNo = run.lapId ? lapNoById.get(run.lapId) : null;
       if (lapNo === null || lapNo === undefined || (lapNo as number) > 13) continue;
-      const segs = buildDisplayPolylines(run.points, { maxDisplayPoints: budget });
+      const segs = buildDisplayPolylines(run.points, { maxDisplayPoints: budget }, run.fillers);
       if (segs.length > 1) multiSegmentLaps++;
       rows.push(`L${String(lapNo).padStart(2)}:${segs.length}seg start@${segs.length ? distSf(segs[0][0]).toFixed(1) : '-'}m`);
     }
@@ -68,7 +68,7 @@ async function main() {
   for (const run of mergedRuns) {
     const lapNo = run.lapId ? (lapNoById.get(run.lapId) as number) : null;
     if (lapNo === null || lapNo > 13) continue;
-    lapSegCounts.set(lapNo, buildDisplayPolylines(run.points, { maxDisplayPoints: budget }).length);
+    lapSegCounts.set(lapNo, buildDisplayPolylines(run.points, { maxDisplayPoints: budget }, run.fillers).length);
   }
   check('A: L1 hole filled', lapSegCounts.get(1) === 1, `${lapSegCounts.get(1)} segment(s)`);
   check('A: L2 hole filled', lapSegCounts.get(2) === 1, `${lapSegCounts.get(2)} segment(s)`);
@@ -90,7 +90,7 @@ async function main() {
     for (const run of runs) {
       const lapNo = run.lapId ? lapNos.get(run.lapId) : null;
       if (lapNo === null || lapNo === undefined || lapNo > maxLapNo) continue;
-      const segs = buildDisplayPolylines(run.points, { maxDisplayPoints: runBudget });
+      const segs = buildDisplayPolylines(run.points, { maxDisplayPoints: runBudget }, run.fillers);
       if (segs.length === 0) continue;
       const first = segs[0][0];
       const lastSeg = segs[segs.length - 1];
@@ -154,10 +154,10 @@ async function main() {
   );
   const inLap7 = withInjection
     .find((r) => r.lapId === idByLapNo.get(7))
-    ?.points.some((p) => p.recordedAt === injected.recordedAt) ?? false;
+    ?.fillers.some((p) => p.recordedAt === injected.recordedAt) ?? false;
   const inLap6 = withInjection
     .find((r) => r.lapId === idByLapNo.get(6))
-    ?.points.some((p) => p.recordedAt === injected.recordedAt) ?? false;
+    ?.fillers.some((p) => p.recordedAt === injected.recordedAt) ?? false;
   check('F2: injected fix lands in the following lap', inLap7 && !inLap6, inLap7 && !inLap6 ? 'in L7, not L6' : `inL7=${inLap7} inL6=${inLap6}`);
 
   const APRIL_FILE = 'bench/data/trakio-session-1777178068619-hec6w8m.json';

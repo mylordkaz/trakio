@@ -89,18 +89,64 @@ describe('groupPointsIntoLapRuns time-based clipping', () => {
     expect(yOf(l1.points[l1.points.length - 1])).toBeCloseTo(100, 6);
     expect(yOf(l2.points[0])).toBeCloseTo(100, 6);
 
-    expect(l1.points.some((p) => p.recordedAt === pastLine.recordedAt)).toBe(false);
-    expect(l2.points[1].recordedAt).toBe(pastLine.recordedAt);
-    expect(l2.points[1].lapId).toBe('L2');
+    expect(l1.fillers).toHaveLength(0);
+    expect(l2.fillers.some((p) => p.recordedAt === pastLine.recordedAt)).toBe(true);
+
+    // Rendered: both laps still start/end on the line.
+    const l1Rendered = buildDisplayPolylines(l1.points, { maxDisplayPoints: 500 }, l1.fillers);
+    const l1Last = l1Rendered[l1Rendered.length - 1];
+    expect(yOf(l1Last[l1Last.length - 1])).toBeCloseTo(100, 5);
+    const l2Rendered = buildDisplayPolylines(l2.points, { maxDisplayPoints: 500 }, l2.fillers);
+    expect(yOf(l2Rendered[0][0])).toBeCloseTo(100, 5);
   });
 
-  it('merges mid-lap quarantined fixes into the run in time order', () => {
+  it('fillers in continuous regions never alter the rendered line', () => {
     const midLap = quarantinedAt(0, 175, 4.5);
     const runs = groupPointsIntoLapRuns(POINTS, LAPS, [midLap]);
     const l1 = runs[1];
-    const index = l1.points.findIndex((p) => p.recordedAt === midLap.recordedAt);
-    expect(index).toBe(3); // clip, t3, t4, then the merged fix
-    expect(l1.points[index].lapId).toBe('L1');
+    expect(l1.fillers.some((p) => p.recordedAt === midLap.recordedAt)).toBe(true);
+
+    // The trusted stream has no hole here, so the filler is never consulted:
+    // the rendered polylines are identical with and without it.
+    const withFiller = buildDisplayPolylines(l1.points, { maxDisplayPoints: 500 }, l1.fillers);
+    const without = buildDisplayPolylines(l1.points, { maxDisplayPoints: 500 });
+    expect(withFiller).toEqual(without);
+  });
+
+  it('an isolated jump cannot detach a clip from the rendered line', () => {
+    // The round-5 repro: a good-accuracy quarantined jump between the last
+    // trusted fix and the end clip. Merged-stream rendering split around it
+    // and dropped the then-singleton clip; with trusted-stream segmentation
+    // the jump is never consulted (no hole exists) and both rendered
+    // endpoints stay on the line.
+    const isolated = { ...quarantinedAt(300, 60, 6.2), accuracyM: 4 };
+    const runs = groupPointsIntoLapRuns(POINTS, LAPS, [isolated]);
+    const l1 = runs[1];
+
+    const rendered = buildDisplayPolylines(l1.points, { maxDisplayPoints: 500 }, l1.fillers);
+    expect(rendered).toHaveLength(1);
+    expect(yOf(rendered[0][0])).toBeCloseTo(100, 5);
+    expect(yOf(rendered[0][rendered[0].length - 1])).toBeCloseTo(100, 5);
+  });
+
+  it('bridges a trusted hole only with a fully connected quarantined chain', () => {
+    // Trusted stream with a real hole (6 s, 180 m): a complete 1 Hz chain of
+    // quarantined fixes closes it; a chain broken by one garbage fix leaves
+    // the honest gap and renders nothing from quarantine.
+    const trusted = [
+      point(0, 0, 0, 'L1'),
+      point(0, 30, 1, 'L1'),
+      point(0, 60, 2, 'L1'),
+      point(0, 240, 8, 'L1'),
+      point(0, 270, 9, 'L1'),
+    ];
+    const chain = [3, 4, 5, 6, 7].map((t) => quarantinedAt(0, 30 * t, t));
+
+    expect(buildDisplayPolylines(trusted, {}, [])).toHaveLength(2);
+    expect(buildDisplayPolylines(trusted, {}, chain)).toHaveLength(1);
+
+    const broken = chain.map((q, i) => (i === 2 ? quarantinedAt(400, 150, 5) : q));
+    expect(buildDisplayPolylines(trusted, {}, broken)).toHaveLength(2);
   });
 
   it('clips a re-anchored boundary at the STORED crossing position', () => {
@@ -139,10 +185,10 @@ describe('groupPointsIntoLapRuns time-based clipping', () => {
     expect(yOf(l1.points[l1.points.length - 1])).toBeCloseTo(100, 6);
   });
 
-  it('never lets a good-accuracy isolated jump steer a clip', () => {
+  it('never lets a good-accuracy isolated jump steer a clip — grouped or rendered', () => {
     // A 4 m-accuracy quarantined fix with a garbage position near the
-    // crossing time: accuracy is no credential — quarantine simply does not
-    // participate in clip geometry at all, in either mode.
+    // crossing time: accuracy is no credential — quarantine participates in
+    // neither clip geometry nor the trusted segmentation.
     const isolatedJump = { ...quarantinedAt(400, 835, 6.4), accuracyM: 4 };
     const runs = groupPointsIntoLapRuns(POINTS, LAPS, [isolatedJump]);
     const [, l1, l2] = runs;
@@ -150,6 +196,13 @@ describe('groupPointsIntoLapRuns time-based clipping', () => {
     expect(yOf(l1.points[l1.points.length - 1])).toBeCloseTo(100, 6);
     expect(xOf(l1.points[l1.points.length - 1])).toBeCloseTo(0, 6);
     expect(yOf(l2.points[0])).toBeCloseTo(100, 6);
+
+    const l1Rendered = buildDisplayPolylines(l1.points, { maxDisplayPoints: 500 }, l1.fillers);
+    const l1Last = l1Rendered[l1Rendered.length - 1];
+    expect(l1Rendered).toHaveLength(1);
+    expect(yOf(l1Last[l1Last.length - 1])).toBeCloseTo(100, 5);
+    const l2Rendered = buildDisplayPolylines(l2.points, { maxDisplayPoints: 500 }, l2.fillers);
+    expect(yOf(l2Rendered[0][0])).toBeCloseTo(100, 5);
   });
 
   it('never lets an undrawable quarantined outlier steer a clip', () => {
