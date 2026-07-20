@@ -129,6 +129,68 @@ against.
 
 ### 2b — Bench (the decisive step, no app changes)
 
+**Progress (2026-07-08, branch `feat/imu-fusion-bench`):** the machinery is
+built and the fusion prototype passes all mechanics checks. Waiting on real
+captured data (street drive first, then track).
+
+**Path B verdict (2026-07-09) — phone bridging NOT viable; killed on real
+evidence.** First street capture (12 min city drive, 35,800 IMU samples):
+
+- Capture pipeline: excellent. 49.5 Hz delivered (dt median 20 ms, p95
+  30 ms), 100% field coverage, clocks in one domain, ~8 MB export.
+- Attitude: good — 0.55 m/s² horizontal gravity residual under the W3C
+  rotation (convention verified best among 6 candidates, on data).
+- Online yaw alignment: correct — converged to −85.4°, and a brute-force
+  sweep of fixed offsets confirms the global optimum at −85° (mount yaw).
+- **The blocker:** effective world-frame acceleration error is
+  ~0.87 m/s (per 1 s interval) with IMU-integrated Δv magnitudes only
+  ~78% of GPS Δv. Masked reconstructions on real driving: fused error
+  57 m (5 s), 62 m (8 s), 65–131 m (11 s) — versus a ≤12 m requirement
+  for 0.3 s crossings and versus the naive chord's 2–7 m on street.
+  Deriving user-acceleration ourselves (R·accelInclGravity − constant g)
+  is bit-identical to iOS's — CoreMotion computes both from one filter,
+  which absorbs *sustained* acceleration into its gravity estimate; the
+  signal we need is filtered away at the source, and track dynamics would
+  make that worse, not better. This is a platform limitation, not a
+  tuning or code gap (the prototype passes all mechanics checks with
+  clean IMU signals).
+
+**Phase close (2026-07-20, PR #6):** the phone-path question 2b existed to
+answer is answered and recorded above; 2c integration does not apply to the
+phone path. The dropout problem itself was resolved on the same branch by
+the continuity thread — capture quarantine, cascade re-anchor, crossing
+recovery, and display clipping (`docs/line-continuity.md`) — validated
+on-device and against the circuit transponder (2026-07-19).
+
+Consequences: shipping behavior stays naive + `≈` flags. Phone IMU capture
+remains (cheap; builds the research dataset and the future RaceBox A/B).
+**Path A (RaceBox on-board IMU) is now the only credible bridging path** —
+its gForce is raw MEMS output on the GNSS clock, immune to the CoreMotion
+absorption problem. A raw-`Accelerometer`+GPS-aided own-attitude filter
+remains a documented research option, out of scope for now.
+Tools added: `bench/reconstruct.ts` (masked reconstruction on any v2
+capture) — the RaceBox capture, when hardware arrives, gets judged by the
+same command.
+
+- `bench/imu-quality.ts` — stream-quality report for any capture (rate,
+  jitter, gaps, field coverage, stationary-window accelerometer bias).
+- `bench/mask.ts` — masked-GPS naive baseline, locked on the April session
+  (mean boundary-lap |err|, by mask length and crossing phase):
+  3 s ≈ 0.05–0.07 s; 5 s ≈ 0.16 s; 8 s ≈ 0.36–0.53 s with laps starting to
+  vanish; **11 s = every lap lost at all 14 boundaries, both phases** (July's
+  real 11 s dropouts survived only through lucky hole geometry). Fusion's
+  bar, unchanged: ≤0.15 s at 5 s, ≤0.3 s at 11 s, zero lost laps.
+- `bench/fusion.ts` — the fusion prototype (accel-as-control predict at IMU
+  rate, GPS position+Doppler updates, W3C attitude rotation, online yaw
+  alignment from GPS-vs-IMU Δv with honest CV cold start).
+- `bench/fusion-synthetic.ts` — mechanics validation, all passing: 11 s
+  accelerating mask 1 ms vs naive 1058 ms; Phase 0 gate-edge scene kept with
+  0 ms err (GPS-only lost it); corner bridged at 15 ms across an 8 s mask
+  where naive loses the lap; yaw converges to 0.0° from a 37° offset; bias
+  budget measured 50→6 ms, 100→27 ms, 200→109 ms, 500 mm/s²→lap lost.
+  Per the Phase 0 lesson these gate development only — the shipping verdict
+  belongs to real captured data below.
+
 Extend `bench/` to replay GPS+IMU. Two validation classes:
 
 1. **Masked-GPS reconstruction (the key trick)**: take a *clean* captured

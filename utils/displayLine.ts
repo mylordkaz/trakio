@@ -46,6 +46,8 @@ type XY = {
   y: number;
 };
 
+type TimedXY = XY & { timeMs: number };
+
 function distanceM(a: XY, b: XY) {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
@@ -67,20 +69,22 @@ function lerp(a: XY, b: XY, t: number): XY {
 
 // Consecutive points become one segment; a hole in time or distance starts a
 // new one, so missing data renders as a gap instead of a drawn guess.
+// Singleton components are kept here — hole bridging may reconnect them; the
+// micro-segment filter removes whatever stays isolated.
 function splitIntoSegments(
   points: DisplayLinePoint[],
   lngScaleM: number,
   config: DisplayLineConfig
-): XY[][] {
-  const segments: XY[][] = [];
-  let current: XY[] = [];
-  let previous: (XY & { timeMs: number }) | null = null;
+): TimedXY[][] {
+  const segments: TimedXY[][] = [];
+  let current: TimedXY[] = [];
+  let previous: TimedXY | null = null;
 
   for (const point of points) {
-    const timeMs = Date.parse(point.recordedAt);
-    const projected: XY = {
+    const projected: TimedXY = {
       x: point.longitude * lngScaleM,
       y: point.latitude * METERS_PER_DEG_LAT,
+      timeMs: Date.parse(point.recordedAt),
     };
 
     if (previous) {
@@ -90,8 +94,8 @@ function splitIntoSegments(
         continue;
       }
 
-      if (timeMs - previous.timeMs > config.maxGapMs || gapM > config.maxGapM) {
-        if (current.length >= 2) {
+      if (projected.timeMs - previous.timeMs > config.maxGapMs || gapM > config.maxGapM) {
+        if (current.length >= 1) {
           segments.push(current);
         }
         current = [];
@@ -99,14 +103,62 @@ function splitIntoSegments(
     }
 
     current.push(projected);
-    previous = { ...projected, timeMs };
+    previous = projected;
   }
 
-  if (current.length >= 2) {
+  if (current.length >= 1) {
     segments.push(current);
   }
 
   return segments;
+}
+
+// Quarantined fixes participate in rendering ONLY here: the trusted stream's
+// segmentation above is immutable, and a hole in it is closed exactly when a
+// complete chain of quarantined fixes connects the hole's edges with every
+// hop inside the same time/distance guards. A quarantined point can turn a
+// gap into a bridge and can do nothing else — it cannot displace, detach, or
+// split anything the trusted stream renders on its own.
+function bridgeHoles(
+  segments: TimedXY[][],
+  fillers: TimedXY[],
+  config: DisplayLineConfig
+): TimedXY[][] {
+  if (segments.length < 2 || fillers.length === 0) {
+    return segments;
+  }
+
+  const sorted = [...fillers].sort((a, b) => a.timeMs - b.timeMs);
+  const result: TimedXY[][] = [segments[0].slice()];
+
+  for (let i = 1; i < segments.length; i++) {
+    const previous = result[result.length - 1];
+    const next = segments[i];
+    const holeStart = previous[previous.length - 1];
+    const holeEnd = next[0];
+    const candidates = sorted.filter(
+      (f) => f.timeMs > holeStart.timeMs && f.timeMs < holeEnd.timeMs
+    );
+
+    const chain = [holeStart, ...candidates, holeEnd];
+    let connects = candidates.length > 0;
+    for (let k = 1; k < chain.length && connects; k++) {
+      if (
+        chain[k].timeMs - chain[k - 1].timeMs > config.maxGapMs ||
+        distanceM(chain[k - 1], chain[k]) > config.maxGapM
+      ) {
+        connects = false;
+      }
+    }
+
+    if (connects) {
+      previous.push(...candidates, ...next);
+    } else {
+      result.push(next.slice());
+    }
+  }
+
+  return result;
 }
 
 // An isolated spike leaves the path and comes straight back: both hops are
@@ -288,7 +340,8 @@ function densifySegment(points: XY[], subdivisions: number): XY[] {
 
 export function buildDisplayPolylines(
   points: DisplayLinePoint[],
-  config: Partial<DisplayLineConfig> = {}
+  config: Partial<DisplayLineConfig> = {},
+  holeFillers: DisplayLinePoint[] = []
 ): GeoPoint[][] {
   const mergedConfig = { ...DEFAULT_DISPLAY_LINE_CONFIG, ...config };
 
@@ -308,7 +361,19 @@ export function buildDisplayPolylines(
   }
   const lngScaleM = Math.cos(toRadians((minLat + maxLat) / 2)) * METERS_PER_DEG_LAT;
 
-  const segments = splitIntoSegments(usablePoints, lngScaleM, mergedConfig)
+  const usableFillers: TimedXY[] = holeFillers
+    .filter((point) => point.accuracyM === null || point.accuracyM <= mergedConfig.maxAccuracyM)
+    .map((point) => ({
+      x: point.longitude * lngScaleM,
+      y: point.latitude * METERS_PER_DEG_LAT,
+      timeMs: Date.parse(point.recordedAt),
+    }));
+
+  const segments = bridgeHoles(
+    splitIntoSegments(usablePoints, lngScaleM, mergedConfig),
+    usableFillers,
+    mergedConfig
+  )
     .map((segment) =>
       simplifySegment(
         smoothSegment(rejectSpikes(segment), mergedConfig.smoothingPasses),
@@ -343,18 +408,77 @@ export function buildDisplayPolylines(
 
 export type LapRunPoint = DisplayLinePoint & { lapId: string | null };
 
+export type QuarantinedDisplayPoint = {
+  recordedAt: string;
+  latitude: number;
+  longitude: number;
+  accuracyM: number | null;
+};
+
 export type LapRun = {
   key: string;
   lapId: string | null;
   points: LapRunPoint[];
+  // Quarantined fixes bucketed to this run — consulted by the renderer only
+  // to bridge holes in the trusted points above.
+  fillers: QuarantinedDisplayPoint[];
 };
 
-// Consecutive points sharing a lap id form a run. A run contains only its own
-// lap's points plus the single point where the next run begins (so the
-// all-laps view stays continuous through the crossing). Never more: drawing a
-// neighboring pass's points renders a second, offset line beside the selected
-// lap, and an overlapping line is worse than a gap.
-export function groupPointsIntoLapRuns(points: LapRunPoint[]): LapRun[] {
+// The recorded path's position at a given moment: interpolated between the
+// two time-adjacent points around it. Returns null outside the timeline.
+function pathPointAtTime(
+  timeline: { latitude: number; longitude: number; timeMs: number }[],
+  tMs: number
+): { latitude: number; longitude: number } | null {
+  for (let i = 0; i < timeline.length - 1; i++) {
+    const a = timeline[i];
+    const b = timeline[i + 1];
+    if (tMs < a.timeMs || tMs > b.timeMs) {
+      continue;
+    }
+    const dt = b.timeMs - a.timeMs;
+    const fraction = dt <= 0 ? 0 : (tMs - a.timeMs) / dt;
+    return {
+      latitude: a.latitude + (b.latitude - a.latitude) * fraction,
+      longitude: a.longitude + (b.longitude - a.longitude) * fraction,
+    };
+  }
+  return null;
+}
+
+// Consecutive accepted points sharing a lap id form a run, and each run is
+// clipped at its lap boundaries' STORED crossing: laps.startedLatitude/
+// startedLongitude is the interpolated crossing position frozen at capture
+// on the exact segment detection timed. Display consumes timing's record —
+// it never re-derives crossing geometry — so the line changes laps exactly
+// where the lap time says it did, including boundaries timed on a
+// re-anchored chain or a recovered hole-spanning chord. Laps recorded
+// before the position existed (pre-v16) fall back to interpolating the
+// ACCEPTED path at laps.startedAt; their boundaries were timed on accepted
+// segments, so the fallback walks the same geometry. Consecutive laps share
+// the clip point (no gap, no overshoot, overlap impossible); a boundary
+// without a lap start (pit entry/exit, unfinished data) gets no clip: a
+// gap, never an overlap.
+//
+// Clip points are structural, not measured fixes — accuracyM is null so the
+// display accuracy filter can never delete them (an accepted 20 m boundary
+// fix must not strip both laps' shared endpoint).
+//
+// Quarantined fixes (capture-everything payoff) are bucketed to runs by the
+// stored crossing times and returned as each run's hole FILLERS: the
+// renderer consults them exclusively to bridge holes in the trusted stream
+// (see bridgeHoles) — they participate in neither clip geometry nor the
+// trusted segmentation. Timing never sees any of this.
+export function groupPointsIntoLapRuns(
+  points: LapRunPoint[],
+  lapStarts: {
+    id: string;
+    startedAt: string;
+    startedLatitude?: number | null;
+    startedLongitude?: number | null;
+  }[] = [],
+  quarantined: QuarantinedDisplayPoint[] = []
+): LapRun[] {
   const runs: { lapId: string | null; points: LapRunPoint[] }[] = [];
 
   for (const point of points) {
@@ -368,12 +492,78 @@ export function groupPointsIntoLapRuns(points: LapRunPoint[]): LapRun[] {
     currentRun.points.push(point);
   }
 
+  if (runs.length === 0) {
+    return [];
+  }
+
+  const lapStartById = new Map(lapStarts.map((lap) => [lap.id, lap]));
+
+  // Legacy fallback timeline: accepted points only.
+  const timeline = points
+    .map((p) => ({ latitude: p.latitude, longitude: p.longitude, timeMs: Date.parse(p.recordedAt) }))
+    .sort((a, b) => a.timeMs - b.timeMs);
+
+  // Boundary i sits between runs[i] and runs[i+1]; its crossing time is the
+  // following lap's stored start.
+  const boundaryTimesMs = runs.slice(0, -1).map((run, index) => {
+    const nextLapId = runs[index + 1].lapId;
+    const startedAt = nextLapId ? lapStartById.get(nextLapId)?.startedAt : undefined;
+    if (startedAt !== undefined) {
+      return Date.parse(startedAt);
+    }
+    const fromMs = Date.parse(run.points[run.points.length - 1].recordedAt);
+    const toMs = Date.parse(runs[index + 1].points[0].recordedAt);
+    return (fromMs + toMs) / 2;
+  });
+
+  const boundaryClips = runs.slice(0, -1).map((run, index) => {
+    const nextLapId = runs[index + 1].lapId;
+    const lapStart = nextLapId ? lapStartById.get(nextLapId) : undefined;
+    if (!lapStart) {
+      return null;
+    }
+
+    const tMs = boundaryTimesMs[index];
+    // The stored pair is atomic: use it only when both halves are finite.
+    const stored =
+      Number.isFinite(lapStart.startedLatitude ?? NaN) &&
+      Number.isFinite(lapStart.startedLongitude ?? NaN)
+        ? { latitude: lapStart.startedLatitude!, longitude: lapStart.startedLongitude! }
+        : pathPointAtTime(timeline, tMs);
+    if (stored === null) {
+      return null;
+    }
+
+    return {
+      latitude: stored.latitude,
+      longitude: stored.longitude,
+      accuracyM: null,
+      recordedAt: new Date(tMs).toISOString(),
+    };
+  });
+
+  const bucketed: QuarantinedDisplayPoint[][] = runs.map(() => []);
+  for (const q of quarantined) {
+    const t = Date.parse(q.recordedAt);
+    let index = 0;
+    while (index < boundaryTimesMs.length && t >= boundaryTimesMs[index]) {
+      index++;
+    }
+    bucketed[index].push(q);
+  }
+
   return runs.map((run, index) => {
-    const stitchPoint = index < runs.length - 1 ? [runs[index + 1].points[0]] : [];
+    const startClip = index > 0 ? boundaryClips[index - 1] : null;
+    const endClip = index < runs.length - 1 ? boundaryClips[index] : null;
 
     return {
       lapId: run.lapId,
-      points: [...run.points, ...stitchPoint],
+      points: [
+        ...(startClip ? [{ ...startClip, lapId: run.lapId }] : []),
+        ...run.points,
+        ...(endClip ? [{ ...endClip, lapId: run.lapId }] : []),
+      ],
+      fillers: bucketed[index],
       key: `${run.lapId ?? 'unassigned'}-${index}`,
     };
   });

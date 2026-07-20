@@ -22,6 +22,7 @@ import {
   addSessionNote,
   deleteSession,
   getImuSamplesForSession,
+  getRejectedGpsPointsForSession,
   deleteSessionNote,
   getSessionById,
   updateSessionCar,
@@ -125,6 +126,9 @@ export default function SessionDetailScreen() {
   const [isEditingCar, setIsEditingCar] = useState(false);
   const [carText, setCarText] = useState('');
   const [selectedLapId, setSelectedLapId] = useState<string | null>(null);
+  const [quarantinedPoints, setQuarantinedPoints] = useState<
+    Awaited<ReturnType<typeof getRejectedGpsPointsForSession>>
+  >([]);
   const share = useShareSession(sessionDetail);
 
   const loadSession = useCallback(async () => {
@@ -145,6 +149,9 @@ export default function SessionDetailScreen() {
       }
 
       setSessionDetail(nextSessionDetail);
+      setQuarantinedPoints(
+        await getRejectedGpsPointsForSession(db, nextSessionDetail.session.id).catch(() => [])
+      );
       setCarText(nextSessionDetail.session.car ?? '');
       setLoadError(null);
     } catch {
@@ -268,15 +275,19 @@ export default function SessionDetailScreen() {
       return [];
     }
 
-    const runs = groupPointsIntoLapRuns(points);
+    const runs = groupPointsIntoLapRuns(points, sessionDetail?.laps ?? [], quarantinedPoints);
     const displayPointBudget = Math.max(250, Math.floor(6000 / runs.length));
 
     return runs.map((run) => ({
       key: run.key,
       lapId: run.lapId,
-      segments: buildDisplayPolylines(run.points, { maxDisplayPoints: displayPointBudget }),
+      segments: buildDisplayPolylines(
+        run.points,
+        { maxDisplayPoints: displayPointBudget },
+        run.fillers
+      ),
     }));
-  }, [sessionDetail]);
+  }, [sessionDetail, quarantinedPoints]);
   const lapIdsWithPoints = useMemo(() => {
     const lapIds = new Set<string>();
     for (const group of lapLineGroups) {
@@ -746,9 +757,12 @@ export default function SessionDetailScreen() {
           <Pressable
             onPress={() => {
               if (sessionDetail) {
-                void getImuSamplesForSession(db, sessionDetail.session.id)
-                  .catch(() => [])
-                  .then((imuSamples) => shareSessionDataExport(sessionDetail, imuSamples));
+                void Promise.all([
+                  getImuSamplesForSession(db, sessionDetail.session.id).catch(() => []),
+                  getRejectedGpsPointsForSession(db, sessionDetail.session.id).catch(() => []),
+                ]).then(([imuSamples, rejectedGpsPoints]) =>
+                  shareSessionDataExport(sessionDetail, imuSamples, rejectedGpsPoints)
+                );
               }
             }}
             disabled={!sessionDetail}

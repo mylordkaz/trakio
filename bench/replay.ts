@@ -12,12 +12,27 @@ import type { TelemetrySample } from '@/telemetry/types';
 export type ExportedLap = {
   id: string;
   lapNumber: number;
+  startedAt: string;
+  // Present from export v4: crossing position frozen at capture.
+  startedLatitude?: number | null;
+  startedLongitude?: number | null;
   lapTimeMs: number | null;
   isTimingEstimated?: 0 | 1;
   sectors?: { sectorIndex: number; splitTimeMs: number }[];
 };
 
+export type ExportedImuSample = {
+  recordedAt: number;
+  intervalMs: number | null;
+  accel: [number | null, number | null, number | null];
+  accelInclGravity: [number | null, number | null, number | null];
+  rotation: [number | null, number | null, number | null];
+  rotationRate: [number | null, number | null, number | null];
+};
+
 export type SessionExport = {
+  format?: string;
+  version?: number;
   session: { id: string; name: string | null };
   track: { id: string };
   timingLines: unknown[];
@@ -31,6 +46,20 @@ export type SessionExport = {
     accuracyM: number | null;
     headingDeg: number | null;
     altitudeM: number | null;
+  }[];
+  // Present from export v2 when Phase 2a capture ran during the session.
+  imuSamples?: ExportedImuSample[];
+  // Present from export v3: fixes the capture filter rejected (quarantine).
+  rejectedGpsPoints?: {
+    recordedAt: string;
+    elapsedMs: number | null;
+    latitude: number;
+    longitude: number;
+    speedMps: number | null;
+    accuracyM: number | null;
+    altitudeM: number | null;
+    headingDeg: number | null;
+    rejectionReason: string;
   }[];
 };
 
@@ -59,8 +88,17 @@ export type ReplayedLap = {
   sectorSplitsMs: number[];
 };
 
+export type ReplayedCrossing = {
+  type: 'start_finish_crossed' | 'sector_crossed';
+  elapsedMs: number;
+  quality: 'good' | 'degraded';
+};
+
 export type ReplayResult = {
   laps: ReplayedLap[];
+  crossings: ReplayedCrossing[];
+  acceptedCount: number;
+  maxAcceptedGapMs: number;
 };
 
 function createMockRecorder() {
@@ -79,6 +117,7 @@ function createMockRecorder() {
       existing.push({ sectorIndex: input.sectorIndex, splitTimeMs: input.splitTimeMs });
       sectorsByLapId.set(input.lapId, existing);
     },
+    recordRejectedSample: async () => {},
     appendGpsSample: async () => {},
     flushGpsBuffer: async () => {},
     finalizeSession: async () => {},
@@ -97,39 +136,70 @@ function createMockRecorder() {
 
 export async function replaySession(
   data: SessionExport,
-  estimator: PositionEstimator | null
+  estimator: PositionEstimator | null,
+  detectionConfig?: Record<string, unknown>,
+  jumpReanchorEnabled?: boolean
 ): Promise<ReplayResult> {
   const mock = createMockRecorder();
+  const runtimeConfig =
+    detectionConfig || jumpReanchorEnabled !== undefined
+      ? { config: { detectionConfig, jumpReanchorEnabled } as never }
+      : {};
   const runtime = createSessionRuntime({
     track: { id: data.track.id } as never,
     timingLines: data.timingLines as never,
     recorder: mock.recorder as never,
+    ...runtimeConfig,
   });
 
   await runtime.start();
 
   let previousAccepted: TelemetrySample | null = null;
+  const crossings: ReplayedCrossing[] = [];
+  let acceptedCount = 0;
+  let maxAcceptedGapMs = 0;
+  let lastAcceptedAtMs: number | null = null;
 
   for (const raw of toSamples(data)) {
+    // The bench pre-filter only decides whether the estimator runs; the
+    // runtime remains the authority on acceptance (it can re-anchor a sample
+    // this pre-filter rejected), so all stats come from the runtime's result.
     const validation = filterTelemetrySample(previousAccepted, raw);
+    let sample = raw;
 
-    if (!validation.accepted) {
-      // The runtime re-rejects internally; feeding it keeps rejection/gap
-      // bookkeeping identical to production. The estimator never sees it.
-      await runtime.handleSample(raw).catch(() => {});
-      continue;
+    if (validation.accepted) {
+      previousAccepted = validation.sample;
+      const position = estimator ? estimator.step(validation.sample) : null;
+      sample = position
+        ? { ...validation.sample, lat: position.lat, lng: position.lng }
+        : validation.sample;
     }
 
-    previousAccepted = validation.sample;
-    const position = estimator ? estimator.step(validation.sample) : null;
-    const sample = position ? { ...validation.sample, lat: position.lat, lng: position.lng } : validation.sample;
-    await runtime.handleSample(sample).catch(() => {});
+    const result = await runtime.handleSample(sample);
+
+    if (result.accepted) {
+      acceptedCount++;
+      if (lastAcceptedAtMs !== null) {
+        maxAcceptedGapMs = Math.max(maxAcceptedGapMs, raw.recordedAt - lastAcceptedAtMs);
+      }
+      lastAcceptedAtMs = raw.recordedAt;
+      for (const event of result.events) {
+        crossings.push({
+          type: event.type,
+          elapsedMs: event.sampleElapsedMs,
+          quality: event.quality,
+        });
+      }
+    }
   }
 
   const snapshot = runtime.getSnapshot();
   await runtime.stop();
 
   return {
+    crossings,
+    acceptedCount,
+    maxAcceptedGapMs,
     laps: snapshot.completedLaps.map((lap) => ({
       lapNumber: lap.lapNumber,
       lapTimeMs: lap.lapTimeMs,

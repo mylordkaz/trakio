@@ -12,7 +12,14 @@ work can stop and resume months later without re-deriving anything.
 | --- | --- | --- | --- |
 | 0 | [phase-0-offline-bench.md](phase-0-offline-bench.md) | Filter module + offline bench on real data. **No app changes.** | **Complete 2026-07-07 — kill criterion fired** (see Outcome in the phase doc) |
 | 1 | [phase-1-app-integration.md](phase-1-app-integration.md) | Wire filter into detection behind a feature flag | **Cancelled** — 0/57 configs valid; filtering loses laps (gate-edge slip) |
-| 2 | [phase-2-imu-fusion.md](phase-2-imu-fusion.md) | IMU fusion — phone path first (RaceBox deferred until hardware available) | **2a capture built** (flagged off, awaiting field data); 2b bench next |
+| 2 | [phase-2-imu-fusion.md](phase-2-imu-fusion.md) | IMU fusion | **Path B (phone IMU) killed on real street data** — CoreMotion filters away sustained acceleration (57–131 m bridge errors vs ≤12 m needed). Path A (RaceBox raw IMU) pending hardware; bench fully armed for it |
+
+**Where the dropout problem actually went (2026-07-19/20):** the
+capture-everything quarantine proved most mid-session holes were
+*self-inflicted* jump-filter cascades, not GPS silence — fixed at capture
+(re-anchor), detection (crossing recovery), and display (quarantine merge +
+laps clipped at the line). See `docs/line-continuity.md`. Estimation remains
+killed; the continuity thread delivered what it was chartered for.
 
 **Phase 0 verdict in one line:** on real 1 Hz data, GPS-only filtering for
 detection improved nothing (clean laps are already at the GPS-vs-transponder
@@ -55,9 +62,17 @@ So the honest value ordering is:
 
 ## Benchmark datasets (ground truth)
 
-Two real sessions exported via the app's **Export Data** button
-(`format: trakio-session-export`, v1). They are the regression bench for all
+Real sessions exported via the app's **Export Data** button
+(`format: trakio-session-export`). They are the regression bench for all
 phases. Keep the files; they are irreplaceable ground truth.
+
+A third Tsukuba session joined the bench on 2026-07-19
+(`trakio-session-1784442643247-9ybpbqn.json`, export v3: 13 laps, 12
+quarantined fixes, 70k IMU samples, transponder truth for 12 laps): clean
+laps within 64 ms of the transponder (mean 25 ms, best lap Δ 2 ms) while the
+transponder itself missed two passings. Primary bench for
+`bench/continuity-validation.ts`. Two street drives (v2/v3) back the IMU
+stream-quality and reconstruction benches.
 
 | | July session | April session |
 | --- | --- | --- |

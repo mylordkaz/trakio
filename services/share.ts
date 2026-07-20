@@ -109,13 +109,25 @@ export async function shareSessionDataExport(
     laps: unknown[];
     gpsPoints: unknown[];
   },
-  imuSamples: unknown[] = []
+  imuSamples: unknown[] = [],
+  rejectedGpsPoints: unknown[] = []
 ): Promise<ShareResult> {
   try {
+    const hasCrossingPositions = sessionDetail.laps.some(
+      (lap) => (lap as { startedLatitude?: number | null }).startedLatitude != null
+    );
     const payload = {
       format: 'trakio-session-export',
-      // v2 adds imuSamples (Phase 2a raw DeviceMotion capture) when present.
-      version: imuSamples.length > 0 ? 2 : 1,
+      // v2 added imuSamples; v3 added rejectedGpsPoints (capture-everything
+      // quarantine); v4 adds per-lap stored crossing positions
+      // (laps.startedLatitude/startedLongitude). All additive.
+      version: hasCrossingPositions
+        ? 4
+        : rejectedGpsPoints.length > 0
+          ? 3
+          : imuSamples.length > 0
+            ? 2
+            : 1,
       exportedAt: new Date().toISOString(),
       session: sessionDetail.session,
       track: sessionDetail.track,
@@ -123,6 +135,7 @@ export async function shareSessionDataExport(
       laps: sessionDetail.laps,
       gpsPoints: sessionDetail.gpsPoints,
       ...(imuSamples.length > 0 ? { imuSamples } : {}),
+      ...(rejectedGpsPoints.length > 0 ? { rejectedGpsPoints } : {}),
     };
 
     const json = JSON.stringify(payload);

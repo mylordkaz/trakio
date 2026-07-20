@@ -8,10 +8,19 @@ import type {
 } from '@/telemetry/types';
 import { haversineDistanceMeters, toRadians } from '@/utils/geo';
 
-const DEFAULT_DETECTION_CONFIG: TelemetryDetectionConfig = {
+export const DEFAULT_DETECTION_CONFIG: TelemetryDetectionConfig = {
   debounceMs: 1500,
   minLapTimeMs: 15000,
   minCrossingSpeedMps: 5,
+  // Recovery is opt-in (the app opts in via CROSSING_RECOVERY_ENABLED).
+  recoveryEnabled: false,
+  recoveryMinGapMs: 4000,
+  // Measured on real Tsukuba data: hole-spanning corner-cut chords meet the
+  // line at up to ~2.1 gate-lengths, while genuine off-gate traffic (pit
+  // lane and other track sections crossing the extension) clusters at 2.6+.
+  // 1.25 accepts [-1.25, +2.25]: covers every observed recovery with ~0.4
+  // gate-lengths of buffer to the nearest real traffic band.
+  recoveryMaxLineExtension: 1.25,
 };
 
 type Point = {
@@ -44,12 +53,19 @@ function subtract(a: Point, b: Point): Point {
   };
 }
 
-function getMovementFraction(
+type Intersection = {
+  movementFraction: number;
+  lineFraction: number;
+};
+
+// Intersection of the movement chord with the timing line's infinite
+// extension; the caller decides which fraction ranges are acceptable.
+function getIntersection(
   movementStart: Point,
   movementEnd: Point,
   timingLineStart: Point,
   timingLineEnd: Point
-): number | null {
+): Intersection | null {
   const movement = subtract(movementEnd, movementStart);
   const timingLine = subtract(timingLineEnd, timingLineStart);
   const denominator = cross(movement, timingLine);
@@ -59,19 +75,34 @@ function getMovementFraction(
   }
 
   const originDelta = subtract(timingLineStart, movementStart);
-  const movementFraction = cross(originDelta, timingLine) / denominator;
-  const timingLineFraction = cross(originDelta, movement) / denominator;
 
-  if (
-    movementFraction < 0 ||
-    movementFraction > 1 ||
-    timingLineFraction < 0 ||
-    timingLineFraction > 1
-  ) {
+  return {
+    movementFraction: cross(originDelta, timingLine) / denominator,
+    lineFraction: cross(originDelta, movement) / denominator,
+  };
+}
+
+// Fraction along the segment from->to at which it crosses the timing line's
+// plane, or null when it never reaches it. The display line clips each lap at
+// the start/finish line with this, sharing the detector's crossing geometry.
+export function segmentTimingLineFraction(
+  from: { latitude: number; longitude: number },
+  to: { latitude: number; longitude: number },
+  timingLine: TimingLineRow
+): number | null {
+  const lngScale = Math.cos(toRadians((from.latitude + to.latitude) / 2));
+  const hit = getIntersection(
+    projectPoint(from.latitude, from.longitude, lngScale),
+    projectPoint(to.latitude, to.longitude, lngScale),
+    projectPoint(timingLine.a.latitude, timingLine.a.longitude, lngScale),
+    projectPoint(timingLine.b.latitude, timingLine.b.longitude, lngScale)
+  );
+
+  if (hit === null || hit.movementFraction < 0 || hit.movementFraction > 1) {
     return null;
   }
 
-  return movementFraction;
+  return hit.movementFraction;
 }
 
 // A stationary car sitting on a timing line jitters back and forth across it;
@@ -217,6 +248,10 @@ function toDetectionEvent(
     seq: timingLine.seq,
     sampleRecordedAt: Math.round(interpolatedRecordedAt),
     sampleElapsedMs: Math.round(interpolatedElapsedMs),
+    // Crossing position on the exact segment detection timed — persisted so
+    // the display clips lap lines where timing says the lap changed.
+    sampleLat: previousSample.lat + (currentSample.lat - previousSample.lat) * movementFraction,
+    sampleLng: previousSample.lng + (currentSample.lng - previousSample.lng) * movementFraction,
     quality,
   };
 }
@@ -257,17 +292,36 @@ export function detectTimingLineCrossings(
   const movementEnd = projectPoint(currentSample.lat, currentSample.lng, lngScale);
 
   const candidates: CandidateCrossing[] = [];
+  const segmentGapMs = currentSample.recordedAt - previousSample.recordedAt;
+  const recoveryActive =
+    mergedConfig.recoveryEnabled && segmentGapMs > mergedConfig.recoveryMinGapMs;
 
   for (const timingLine of timingLines) {
-    const movementFraction = getMovementFraction(
+    const hit = getIntersection(
       movementStart,
       movementEnd,
       projectPoint(timingLine.a.latitude, timingLine.a.longitude, lngScale),
       projectPoint(timingLine.b.latitude, timingLine.b.longitude, lngScale)
     );
 
-    if (movementFraction !== null) {
-      candidates.push({ timingLine, movementFraction });
+    if (hit === null || hit.movementFraction < 0 || hit.movementFraction > 1) {
+      continue;
+    }
+
+    const onGate = hit.lineFraction >= 0 && hit.lineFraction <= 1;
+
+    // Recovery: a hole-spanning chord that crosses the line just past the
+    // gate's end. The car followed the track through the gate — the chord
+    // merely cut the corner — so the crossing physically happened. The
+    // extension margin keeps genuinely-offset paths (a pit lane running
+    // beside the gate) excluded.
+    const recoverable =
+      recoveryActive &&
+      hit.lineFraction >= -mergedConfig.recoveryMaxLineExtension &&
+      hit.lineFraction <= 1 + mergedConfig.recoveryMaxLineExtension;
+
+    if (onGate || recoverable) {
+      candidates.push({ timingLine, movementFraction: hit.movementFraction });
     }
   }
 

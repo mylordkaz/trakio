@@ -1,6 +1,6 @@
 import { createSessionRecorder } from '@/db/session-recorder';
 import type { TimingLineRow, TrackRow } from '@/db/types';
-import { detectTimingLineCrossings } from '@/telemetry/detection';
+import { DEFAULT_DETECTION_CONFIG, detectTimingLineCrossings } from '@/telemetry/detection';
 import { filterTelemetrySample, type TelemetryFilterConfig } from '@/telemetry/filters';
 import type {
   DetectionState,
@@ -9,6 +9,7 @@ import type {
   TelemetrySample,
   TelemetrySampleRejectionReason,
 } from '@/telemetry/types';
+import { CROSSING_RECOVERY_ENABLED, JUMP_REANCHOR_ENABLED } from '@/constants/featureFlags';
 import { getSectorCount, getSectorLineCount } from '@/utils/timing';
 
 type SessionRecorder = ReturnType<typeof createSessionRecorder>;
@@ -22,6 +23,8 @@ type SessionRuntimeConfig = {
   temperatureC?: number | null;
   filterConfig?: Partial<TelemetryFilterConfig>;
   detectionConfig?: Partial<TelemetryDetectionConfig>;
+  // Bench override; the app uses the feature flag.
+  jumpReanchorEnabled?: boolean;
 };
 
 // A pause in accepted samples longer than this is surfaced as a recording
@@ -147,6 +150,13 @@ export function createSessionRuntime(args: {
   let currentLapIsOutLap = false;
   // Whether the crossing that started the current lap was an estimate.
   let currentLapStartIsEstimated = false;
+  // Cascade re-anchor state: the most recent rejected sample, so a following
+  // jump-rejection can be validated against the rejected CHAIN instead of the
+  // stale anchor; and the start of the current uninterrupted rejection
+  // streak, which bounds the liveness fallback.
+  let lastRejectedSample: TelemetrySample | null = null;
+  let rejectionStreakStartMs: number | null = null;
+  const jumpReanchorEnabled = config?.jumpReanchorEnabled ?? JUMP_REANCHOR_ENABLED;
 
   function enqueue<T>(work: () => Promise<T>): Promise<T> {
     const run = processingQueue.then(work);
@@ -176,6 +186,8 @@ export function createSessionRuntime(args: {
       currentLapIsInLap = false;
       currentLapIsOutLap = false;
       currentLapStartIsEstimated = false;
+      lastRejectedSample = null;
+      rejectionStreakStartMs = null;
 
       const sessionId = generateId();
       const sessionStartedAtMs = Date.now();
@@ -240,6 +252,8 @@ export function createSessionRuntime(args: {
         sessionId: snapshot.sessionId,
         lapNumber: 1,
         startedAt: new Date(event.sampleRecordedAt).toISOString(),
+        startedLatitude: event.sampleLat,
+        startedLongitude: event.sampleLng,
         isOutLap: pendingOutLap ? 1 : 0,
       });
       currentLapIsOutLap = pendingOutLap;
@@ -330,6 +344,8 @@ export function createSessionRuntime(args: {
       sessionId: snapshot.sessionId,
       lapNumber: nextLapNumber,
       startedAt: new Date(event.sampleRecordedAt).toISOString(),
+      startedLatitude: event.sampleLat,
+      startedLongitude: event.sampleLng,
       isOutLap: pendingOutLap ? 1 : 0,
     });
     currentLapIsOutLap = pendingOutLap;
@@ -407,7 +423,16 @@ export function createSessionRuntime(args: {
     };
   }
 
-  async function handleAcceptedSample(sample: TelemetrySample) {
+  // detectionPrevious overrides the segment detection sees. The re-anchor
+  // path passes the validated rejected chain (timing must never run on the
+  // displaced-anchor chord that was just proven impossible); the liveness
+  // fallback passes null to suppress detection entirely for its correction
+  // step (nothing across the ambiguous span may be timed). undefined means
+  // the normal segment from the latest accepted sample.
+  async function handleAcceptedSample(
+    sample: TelemetrySample,
+    detectionPrevious?: TelemetrySample | null
+  ) {
     const sessionId = snapshot.sessionId;
     if (!sessionId) {
       throw new Error('Session runtime received a sample without an active session.');
@@ -427,11 +452,11 @@ export function createSessionRuntime(args: {
     const hasGap = gapMs !== null && gapMs > SAMPLE_GAP_THRESHOLD_MS;
 
     const events = detectTimingLineCrossings(
-      previousAcceptedSample,
+      detectionPrevious === undefined ? previousAcceptedSample : detectionPrevious,
       sample,
       timingLines,
       toDetectionState(),
-      config?.detectionConfig
+      { recoveryEnabled: CROSSING_RECOVERY_ENABLED, ...config?.detectionConfig }
     );
 
     for (const event of events) {
@@ -496,6 +521,102 @@ export function createSessionRuntime(args: {
     );
 
     if (!validation.accepted) {
+      // Cascade re-anchor, scoped to short cascades. A second consecutive
+      // impossible_jump consistent with the previously REJECTED sample
+      // proves the accepted anchor was displaced, so detection runs on the
+      // validated chain — the anchor chord is never timed. Across a
+      // hole-spanning gap this proof does not hold (the rejection may be an
+      // honest allowance shortfall) and the chain would be entirely
+      // post-hole, so long-gap rejections fall through: the allowance grows
+      // until a sample is CONSISTENT with the anchor and crossing recovery
+      // times that uncontradicted chord, flagged. The extra rejected fixes
+      // stay in quarantine, which the display merges anyway.
+      const anchorGapMs = snapshot.latestAcceptedSample
+        ? sample.recordedAt - snapshot.latestAcceptedSample.recordedAt
+        : Infinity;
+      const recoveryMinGapMs =
+        config?.detectionConfig?.recoveryMinGapMs ?? DEFAULT_DETECTION_CONFIG.recoveryMinGapMs;
+
+      // Chain continuity for this sample vs the previous rejection, computed
+      // once: it drives the re-anchor, the liveness fallback, and the
+      // streak bookkeeping below.
+      const chainPrevious =
+        validation.reason === 'impossible_jump' &&
+        snapshot.lastRejectionReason === 'impossible_jump' &&
+        lastRejectedSample !== null
+          ? lastRejectedSample
+          : null;
+      const chainValidation = chainPrevious
+        ? filterTelemetrySample(chainPrevious, sample, config?.filterConfig)
+        : null;
+      const chainConsistent = chainValidation !== null && chainValidation.accepted;
+
+      if (jumpReanchorEnabled && chainConsistent && anchorGapMs <= recoveryMinGapMs) {
+        lastRejectedSample = null;
+        rejectionStreakStartMs = null;
+        const events = await handleAcceptedSample(chainValidation.sample, chainPrevious!);
+
+        return {
+          accepted: true,
+          events,
+          snapshot: getSnapshot(),
+        };
+      }
+
+      // Liveness fallback: with a long-gap anchor, the direct allowance is
+      // not guaranteed to catch up (it grows with reported speed while
+      // displacement integrates actual speed) — without an escape, one
+      // stale anchor could reject every remaining sample of the session.
+      // Once the CONTINUOUSLY CHAIN-VALID jump streak has lasted longer
+      // than recoveryMinGapMs while the anchor kept rejecting, re-anchor to
+      // restore capture — but suppress detection for this step: nothing
+      // across the ambiguous span is timed. An in-span crossing is honestly
+      // missed, never guessed. The anchor-consistent chord path (crossing
+      // recovery, flagged) always wins first when it can: real hole
+      // re-entries become consistent within a couple of samples, so this
+      // fires only when that path is unreachable.
+      if (
+        jumpReanchorEnabled &&
+        chainConsistent &&
+        anchorGapMs > recoveryMinGapMs &&
+        rejectionStreakStartMs !== null &&
+        sample.recordedAt - rejectionStreakStartMs > recoveryMinGapMs
+      ) {
+        lastRejectedSample = null;
+        rejectionStreakStartMs = null;
+        const events = await handleAcceptedSample(chainValidation.sample, null);
+
+        return {
+          accepted: true,
+          events,
+          snapshot: getSnapshot(),
+        };
+      }
+
+      lastRejectedSample = sample;
+
+      // The liveness timer tracks only the continuously chain-valid
+      // impossible-jump sequence: any other rejection reason clears it, an
+      // inconsistent hop restarts it at this sample (which may head a new
+      // chain), and a validated hop backdates it to the chain's first
+      // sample.
+      if (validation.reason !== 'impossible_jump') {
+        rejectionStreakStartMs = null;
+      } else if (!chainConsistent) {
+        rejectionStreakStartMs = sample.recordedAt;
+      } else if (rejectionStreakStartMs === null) {
+        rejectionStreakStartMs = chainPrevious!.recordedAt;
+      }
+
+      if (snapshot.sessionId) {
+        await recorder.recordRejectedSample({
+          id: generateId(),
+          sessionId: snapshot.sessionId,
+          sample,
+          reason: validation.reason,
+        });
+      }
+
       snapshot = {
         ...snapshot,
         consecutiveRejectedCount: snapshot.consecutiveRejectedCount + 1,
@@ -509,6 +630,8 @@ export function createSessionRuntime(args: {
       };
     }
 
+    lastRejectedSample = null;
+    rejectionStreakStartMs = null;
     const events = await handleAcceptedSample(validation.sample);
 
     return {

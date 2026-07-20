@@ -74,6 +74,10 @@ export type TelemetryDetectionConfig = {
   debounceMs: number;
   minLapTimeMs: number;
   minCrossingSpeedMps: number;
+  // Crossing recovery across hole-spanning segments (see featureFlags).
+  recoveryEnabled: boolean;
+  recoveryMinGapMs: number;
+  recoveryMaxLineExtension: number;
 };
 
 export type CrossingQuality = 'good' | 'degraded';
@@ -84,6 +88,9 @@ export type TelemetryDetectionEvent = {
   seq: number;
   sampleRecordedAt: number;
   sampleElapsedMs: number;
+  // Interpolated crossing position on the segment detection timed.
+  sampleLat: number;
+  sampleLng: number;
   quality: CrossingQuality;
 };
 
