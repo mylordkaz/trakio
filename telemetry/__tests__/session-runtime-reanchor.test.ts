@@ -225,6 +225,59 @@ describe('re-anchor timing detection', () => {
     expect(crossingCount).toBe(0);
   });
 
+  it('unrelated rejections cannot pre-age the liveness bound (and the fallback still fires when earned)', async () => {
+    // Attack: a stale poor_accuracy rejection, then a mutually consistent
+    // garbage cluster. The old timer started at the poor_accuracy sample,
+    // so one second of chain consistency triggered the fallback and the
+    // next garbage sample timed a false crossing. The timer must count
+    // only the continuously chain-valid jump streak — and, once that
+    // streak genuinely exceeds the bound, the fallback must still fire
+    // (safety and liveness in one scenario).
+    const gate = gateAtY(345, 185, 215); // crossed only by garbage-cluster segments
+    const runtime = createSessionRuntime({
+      track: { id: 't' } as TrackRow,
+      timingLines: [gate],
+      recorder: mockRecorder() as never,
+      config: { jumpReanchorEnabled: true, detectionConfig: { recoveryEnabled: true } },
+    });
+    await runtime.start();
+
+    const accepted: boolean[] = [];
+    let crossingCount = 0;
+    const samples = [
+      sampleXY(50, 30, 1),
+      sampleXY(50, 60, 2),
+      sampleXY(50, 90, 3),
+      { ...sampleXY(50, 105, 4), accuracyM: 60 }, // stale poor_accuracy rejection
+      sampleXY(200, 300, 9), // garbage cluster, chain head
+      sampleXY(200, 330, 10), // 1 s chain-valid — old code fell back HERE
+      sampleXY(200, 360, 11),
+      sampleXY(200, 390, 12),
+      sampleXY(200, 420, 13), // 4.0 s: still within the bound
+      sampleXY(200, 450, 14), // 5.0 s > recoveryMinGapMs: fallback earned
+      sampleXY(200, 480, 15), // normal capture against the new anchor
+    ];
+    for (const sample of samples) {
+      const result = await runtime.handleSample(sample);
+      accepted.push(result.accepted);
+      if (result.accepted) {
+        crossingCount += result.events.filter((e) => e.type === 'start_finish_crossed').length;
+      }
+    }
+    await runtime.stop();
+
+    expect(accepted).toEqual([
+      true, true, true,
+      false,
+      false, false, false, false, false,
+      true, true,
+    ]);
+    // The old premature fallback let the next garbage segment cross the
+    // gate at y=345; with the chain-valid timer nothing is ever timed
+    // there.
+    expect(crossingCount).toBe(0);
+  });
+
   it('recovers an in-hole crossing when the re-entry is consistent with the anchor', async () => {
     // The honest hole case: the anchor is the true last fix, and the first
     // post-hole fix agrees with it within the (time-grown) allowance. The
