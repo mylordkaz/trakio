@@ -9,11 +9,16 @@ const ACCENTS = {
 
 type AccentKey = keyof typeof ACCENTS;
 
+// Light mode has no gradient: flat background, accent colors live only in
+// texts and buttons. Dark mode keeps the accent glow.
 export function useHeaderGradient(accent: AccentKey): [string, string, string] {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const base = ACCENTS[accent];
   const bg = isDark ? '#18181b' : '#fafafa';
-  const opacity = isDark ? '0.15)' : '0.10)';
-  return [`${base}${opacity}`, bg, bg];
+
+  if (!isDark) {
+    return [bg, bg, bg];
+  }
+
+  return [`${ACCENTS[accent]}0.15)`, bg, bg];
 }

@@ -31,6 +31,7 @@ import {
 } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { shareSessionDataExport } from '@/services/share';
+import { exportSessionTimeSheetCsv, exportSessionTimeSheetPdf } from '@/services/timesheet-export';
 
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useShareSession } from '@/hooks/useShareSession';
@@ -756,6 +757,30 @@ export default function SessionDetailScreen() {
         <View className="px-5 pb-5 pt-1 flex-row gap-3">
           <Pressable
             onPress={() => {
+              if (!sessionDetail) return;
+              Alert.alert(i18n.t('sessions.exportData'), i18n.t('sessions.exportChooseFormat'), [
+                {
+                  text: i18n.t('sessions.exportPdf'),
+                  onPress: () => {
+                    void exportSessionTimeSheetPdf(sessionDetail).then((result) => {
+                      if (!result.ok) Alert.alert(i18n.t('sessions.exportFailed'));
+                    });
+                  },
+                },
+                {
+                  text: i18n.t('sessions.exportCsv'),
+                  onPress: () => {
+                    void exportSessionTimeSheetCsv(sessionDetail).then((result) => {
+                      if (!result.ok) Alert.alert(i18n.t('sessions.exportFailed'));
+                    });
+                  },
+                },
+                { text: i18n.t('common.cancel'), style: 'cancel' },
+              ]);
+            }}
+            // Developer path: the raw JSON export (full telemetry, IMU,
+            // quarantine) stays reachable behind a long-press only.
+            onLongPress={() => {
               if (sessionDetail) {
                 void Promise.all([
                   getImuSamplesForSession(db, sessionDetail.session.id).catch(() => []),
