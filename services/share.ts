@@ -113,11 +113,21 @@ export async function shareSessionDataExport(
   rejectedGpsPoints: unknown[] = []
 ): Promise<ShareResult> {
   try {
+    const hasCrossingPositions = sessionDetail.laps.some(
+      (lap) => (lap as { startedLatitude?: number | null }).startedLatitude != null
+    );
     const payload = {
       format: 'trakio-session-export',
-      // v2 added imuSamples; v3 adds rejectedGpsPoints (capture-everything
-      // quarantine). Both are additive and only included when present.
-      version: rejectedGpsPoints.length > 0 ? 3 : imuSamples.length > 0 ? 2 : 1,
+      // v2 added imuSamples; v3 added rejectedGpsPoints (capture-everything
+      // quarantine); v4 adds per-lap stored crossing positions
+      // (laps.startedLatitude/startedLongitude). All additive.
+      version: hasCrossingPositions
+        ? 4
+        : rejectedGpsPoints.length > 0
+          ? 3
+          : imuSamples.length > 0
+            ? 2
+            : 1,
       exportedAt: new Date().toISOString(),
       session: sessionDetail.session,
       track: sessionDetail.track,

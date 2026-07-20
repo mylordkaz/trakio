@@ -44,36 +44,41 @@ rejected fixes stay in quarantine, which the display merges anyway.
 The direct allowance is not *guaranteed* to catch up, though — it grows
 with reported speed while displacement integrates actual speed — and
 without an escape one stale anchor could reject every remaining sample of
-the session. The **liveness fallback** bounds this: once the incoming
-stream has stayed self-consistent for longer than `recoveryMinGapMs`
-while the anchor kept rejecting, capture re-anchors onto the chain with
-detection suppressed for that one step. Nothing across the ambiguous span
-is timed — an in-span crossing is honestly missed, never guessed — and
-the anchor-consistent recovery path always wins first when it is
-reachable.
+the session. The **liveness fallback** bounds this: once the
+*continuously chain-valid* impossible-jump streak has lasted longer than
+`recoveryMinGapMs` while the anchor kept rejecting, capture re-anchors
+onto the chain with detection suppressed for that one step. The streak
+timer counts only proven self-consistency — any other rejection reason
+clears it, and an inconsistent hop restarts it at the sample that may
+head a new chain — so stale unrelated rejections can never pre-age the
+bound. Nothing across the ambiguous span is timed — an in-span crossing
+is honestly missed, never guessed — and the anchor-consistent recovery
+path always wins first when it is reachable.
 The first jump of a cascade stays rejected by design — at that moment a
 displaced anchor and a genuine outlier are indistinguishable. Both regimes
 are unit-tested (`telemetry/__tests__/session-runtime-reanchor.test.ts`)
 and the masked acceptance table reproduces to the millisecond.
 
-**C — laps clipped at the stored crossing time** (`groupPointsIntoLapRuns`).
-Each lap's line is clipped at its boundaries' `laps.startedAt` — the
-crossing moment timing froze at capture. The clip point is the recorded
-path's position (accepted + quarantined timeline) interpolated at that
-time, so the line changes laps exactly where the lap time says it did —
-including boundaries the detector timed on a re-anchored chain or a
-recovered hole-spanning chord. Display consumes timing's output; it never
-re-derives crossing geometry. Consecutive laps share the clip point (no
-gap, no overshoot, overlap impossible); a boundary without a crossing time
-(pit entry/exit, unfinished data) gets no clip — a gap, never an overlap.
-Clip points are structural, not measured fixes: `accuracyM` is null so the
-display accuracy filter can never delete a lap's endpoint even when the
-boundary fix itself was degraded (capture accepts up to 40 m; display
-draws up to 15 m). The clip's interpolation timeline is guarded in the
-other direction: accepted points always shape it, but quarantined fixes —
-which passed no validation — steer it only if the renderer would draw
-them, so a poor-accuracy outlier next to a crossing cannot drag the
-unfilterable clip off the path.
+**C — laps clipped at the stored crossing position**
+(`groupPointsIntoLapRuns`). Detection interpolates the crossing's
+position on the exact segment it timed — accepted, re-anchored chain, or
+recovered chord — and the runtime freezes it into
+`laps.started_latitude/started_longitude` (migration v16, export v4).
+The display clip *is* that stored point: display consumes timing's
+record and never re-derives crossing geometry, so the line changes laps
+exactly where the lap time says it did, by construction. The stored pair
+is atomic (used only when both halves are finite); laps recorded before
+v16 fall back to interpolating the *accepted* path at `laps.startedAt` —
+their boundaries were timed on accepted segments, so the fallback walks
+the same geometry. Consecutive laps share the clip point (no gap, no
+overshoot, overlap impossible); a boundary without a lap start (pit
+entry/exit, unfinished data) gets no clip — a gap, never an overlap.
+Clip points are structural, not measured fixes: `accuracyM` is null so
+the display accuracy filter can never delete a lap's endpoint even when
+the boundary fix itself was degraded (capture accepts up to 40 m;
+display draws up to 15 m). Quarantined fixes still join the rendered
+paths and lap bucketing — but they never participate in clip geometry,
+so no rejected point of any accuracy can steer a lap's endpoint.
 
 Two earlier designs died in review: borrowing the neighbor lap's raw fix
 (up to ~30 m past the line at crossing speed — doubled every lap through

@@ -103,11 +103,13 @@ describe('groupPointsIntoLapRuns time-based clipping', () => {
     expect(l1.points[index].lapId).toBe('L1');
   });
 
-  it('clips a re-anchored boundary on the chain the detector timed', () => {
+  it('clips a re-anchored boundary at the STORED crossing position', () => {
     // Displaced anchor (12, 110) accepted into L1; the true fixes r1 (t=5,
     // quarantined) and r2 (t=6, re-anchored into L2) carried the real path.
-    // Timing put the crossing at t=5.5 on the chain r1->r2 — the clip must
-    // land there (50, 165), not on the accepted anchor->r2 chord.
+    // Timing crossed on the chain r1->r2 at (50, 165) and froze that
+    // position into the lap row — the clip is that stored point, not the
+    // accepted anchor->r2 chord's interpolation (which would give ~(40.5,
+    // 162.5)).
     const accepted: LapRunPoint[] = [
       point(50, 60, 2, 'L1'),
       point(50, 90, 3, 'L1'),
@@ -116,13 +118,38 @@ describe('groupPointsIntoLapRuns time-based clipping', () => {
       point(50, 210, 7, 'L2'),
     ];
     const rejectedChain = [quarantinedAt(50, 150, 5)];
-    const laps = [{ id: 'L2', startedAt: startedAt(5.5) }];
+    const laps = [{
+      id: 'L2',
+      startedAt: startedAt(5.5),
+      startedLatitude: LAT0 + 165 / M_LAT,
+      startedLongitude: LNG0 + 50 / M_LNG,
+    }];
 
     const runs = groupPointsIntoLapRuns(accepted, laps, rejectedChain);
     const boundary = runs[0].points[runs[0].points.length - 1];
     expect(xOf(boundary)).toBeCloseTo(50, 6);
     expect(yOf(boundary)).toBeCloseTo(165, 6);
     expect(runs[1].points[0].latitude).toBe(boundary.latitude);
+  });
+
+  it('interpolates the accepted path at startedAt for legacy laps without a stored position', () => {
+    const runs = groupPointsIntoLapRuns(POINTS, LAPS); // LAPS carry no positions
+    const l1 = runs[1];
+    expect(yOf(l1.points[0])).toBeCloseTo(100, 6);
+    expect(yOf(l1.points[l1.points.length - 1])).toBeCloseTo(100, 6);
+  });
+
+  it('never lets a good-accuracy isolated jump steer a clip', () => {
+    // A 4 m-accuracy quarantined fix with a garbage position near the
+    // crossing time: accuracy is no credential — quarantine simply does not
+    // participate in clip geometry at all, in either mode.
+    const isolatedJump = { ...quarantinedAt(400, 835, 6.4), accuracyM: 4 };
+    const runs = groupPointsIntoLapRuns(POINTS, LAPS, [isolatedJump]);
+    const [, l1, l2] = runs;
+
+    expect(yOf(l1.points[l1.points.length - 1])).toBeCloseTo(100, 6);
+    expect(xOf(l1.points[l1.points.length - 1])).toBeCloseTo(0, 6);
+    expect(yOf(l2.points[0])).toBeCloseTo(100, 6);
   });
 
   it('never lets an undrawable quarantined outlier steer a clip', () => {

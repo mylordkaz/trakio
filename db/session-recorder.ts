@@ -23,6 +23,8 @@ type StartLapInput = {
   sessionId: string;
   lapNumber: number;
   startedAt: string;
+  startedLatitude?: number | null;
+  startedLongitude?: number | null;
   isOutLap?: 0 | 1;
   isInvalid?: 0 | 1;
 };
@@ -126,19 +128,25 @@ export function createSessionRecorder(db: SQLiteDatabase, config: RecorderConfig
         session_id,
         lap_number,
         started_at,
+        started_latitude,
+        started_longitude,
         is_out_lap,
         is_invalid
-      ) VALUES (?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         session_id = excluded.session_id,
         lap_number = excluded.lap_number,
         started_at = excluded.started_at,
+        started_latitude = excluded.started_latitude,
+        started_longitude = excluded.started_longitude,
         is_out_lap = excluded.is_out_lap,
         is_invalid = excluded.is_invalid;`,
       input.id,
       input.sessionId,
       input.lapNumber,
       input.startedAt,
+      input.startedLatitude ?? null,
+      input.startedLongitude ?? null,
       input.isOutLap ?? 0,
       input.isInvalid ?? 0
     );

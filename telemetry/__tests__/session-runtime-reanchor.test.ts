@@ -42,10 +42,18 @@ function gateAtY(yM: number, xFromM: number, xToM: number): TimingLineRow {
   } as TimingLineRow;
 }
 
-function mockRecorder() {
+type StartLapCapture = {
+  lapNumber: number;
+  startedLatitude?: number | null;
+  startedLongitude?: number | null;
+};
+
+function mockRecorder(startLaps: StartLapCapture[] = []) {
   return {
     createSession: async () => {},
-    startLap: async () => {},
+    startLap: async (input: StartLapCapture) => {
+      startLaps.push(input);
+    },
     finishLap: async () => {},
     setLapInLap: async () => {},
     insertLapSector: async () => {},
@@ -82,14 +90,18 @@ async function runCascade(gate: TimingLineRow, jumpReanchorEnabled: boolean) {
   await runtime.start();
 
   const accepted: boolean[] = [];
-  const crossings: { elapsedMs: number }[] = [];
+  const crossings: { elapsedMs: number; lat: number; lng: number }[] = [];
   for (const sample of [...TRUE_PATH, ANCHOR, R1, R2, AFTER]) {
     const result = await runtime.handleSample(sample);
     accepted.push(result.accepted);
     if (result.accepted) {
       for (const event of result.events) {
         if (event.type === 'start_finish_crossed') {
-          crossings.push({ elapsedMs: event.sampleElapsedMs });
+          crossings.push({
+            elapsedMs: event.sampleElapsedMs,
+            lat: event.sampleLat,
+            lng: event.sampleLng,
+          });
         }
       }
     }
@@ -122,6 +134,38 @@ describe('re-anchor timing detection', () => {
     expect(crossings).toHaveLength(1);
     // Interpolated on r1->r2 (t=5.5 s), NOT on the anchor->r2 chord (t≈5.57 s).
     expect(crossings[0].elapsedMs).toBe(5500);
+    // The event position sits on the chain too: (50, 165) — the value the
+    // lap row freezes for display clipping.
+    expect((crossings[0].lat - LAT0) * M_LAT).toBeCloseTo(165, 4);
+    expect((crossings[0].lng - LNG0) * M_LNG).toBeCloseTo(50, 4);
+  });
+
+  it('persists the crossing position on first and subsequent lap starts', async () => {
+    const startLaps: StartLapCapture[] = [];
+    const runtime = createSessionRuntime({
+      track: { id: 't' } as TrackRow,
+      timingLines: [gateAtY(100, 0, 100)],
+      recorder: mockRecorder(startLaps) as never,
+      config: {},
+    });
+    await runtime.start();
+
+    // Northbound through the gate, U-turn far up-track, southbound back
+    // through it: two crossings — the arming one (first startLap) and the
+    // lap-1 rollover (second startLap).
+    for (let t = 0; t <= 70; t++) {
+      const y = t <= 35 ? 30 * t : 30 * 35 - 30 * (t - 35);
+      await runtime.handleSample(sampleXY(50, y, t, 30));
+    }
+    await runtime.stop();
+
+    expect(startLaps.length).toBeGreaterThanOrEqual(2);
+    for (const lap of startLaps) {
+      expect(Number.isFinite(lap.startedLatitude ?? NaN)).toBe(true);
+      expect(Number.isFinite(lap.startedLongitude ?? NaN)).toBe(true);
+      expect((lap.startedLatitude! - LAT0) * M_LAT).toBeCloseTo(100, 4);
+      expect((lap.startedLongitude! - LNG0) * M_LNG).toBeCloseTo(50, 4);
+    }
   });
 
   it('keeps the whole cascade rejected when the flag is off', async () => {

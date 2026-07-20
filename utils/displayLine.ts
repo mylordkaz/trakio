@@ -416,28 +416,36 @@ function mergeRunPoints(
 }
 
 // Consecutive accepted points sharing a lap id form a run, and each run is
-// clipped at its lap boundaries' STORED crossing times: the clip point is
-// the recorded path's position at the moment timing froze into
-// laps.startedAt. Display consumes timing's output instead of re-deriving
-// crossing geometry, so the line changes laps exactly where the lap time
-// says it did — including boundaries the detector timed on a re-anchored
-// chain or a recovered hole-spanning chord. Consecutive laps share the clip
-// point (no gap, no overshoot, overlap impossible); a boundary without a
-// crossing time (pit entry/exit, unfinished data) gets no clip: a gap,
-// never an overlap.
+// clipped at its lap boundaries' STORED crossing: laps.startedLatitude/
+// startedLongitude is the interpolated crossing position frozen at capture
+// on the exact segment detection timed. Display consumes timing's record —
+// it never re-derives crossing geometry — so the line changes laps exactly
+// where the lap time says it did, including boundaries timed on a
+// re-anchored chain or a recovered hole-spanning chord. Laps recorded
+// before the position existed (pre-v16) fall back to interpolating the
+// ACCEPTED path at laps.startedAt; their boundaries were timed on accepted
+// segments, so the fallback walks the same geometry. Consecutive laps share
+// the clip point (no gap, no overshoot, overlap impossible); a boundary
+// without a lap start (pit entry/exit, unfinished data) gets no clip: a
+// gap, never an overlap.
 //
 // Clip points are structural, not measured fixes — accuracyM is null so the
-// display accuracy filter can never delete them (finding: an accepted 20 m
-// boundary fix must not strip both laps' shared endpoint).
+// display accuracy filter can never delete them (an accepted 20 m boundary
+// fix must not strip both laps' shared endpoint).
 //
-// Quarantined fixes (capture-everything payoff) are merged into the runs in
-// time order, bucketed by the same stored crossing times — a fix rejected
-// during the crossing second lands in the lap it belongs to. The display
-// pipeline's guards (accuracy cutoff, spike rejection) still decide what
-// actually gets drawn. Timing never sees any of this.
+// Quarantined fixes (capture-everything payoff) still join the rendered
+// runs, in time order, bucketed by the stored crossing times — but they
+// never participate in clip geometry. The display pipeline's guards
+// (accuracy cutoff, spike rejection) still decide what actually gets
+// drawn. Timing never sees any of this.
 export function groupPointsIntoLapRuns(
   points: LapRunPoint[],
-  lapStarts: { id: string; startedAt: string }[] = [],
+  lapStarts: {
+    id: string;
+    startedAt: string;
+    startedLatitude?: number | null;
+    startedLongitude?: number | null;
+  }[] = [],
   quarantined: QuarantinedDisplayPoint[] = []
 ): LapRun[] {
   const runs: { lapId: string | null; points: LapRunPoint[] }[] = [];
@@ -457,26 +465,18 @@ export function groupPointsIntoLapRuns(
     return [];
   }
 
-  const startedAtByLapId = new Map(lapStarts.map((lap) => [lap.id, lap.startedAt]));
+  const lapStartById = new Map(lapStarts.map((lap) => [lap.id, lap]));
 
-  // The path timeline for clip interpolation. Accepted points always shape
-  // it — they are capture-validated, and the detector timed crossings on
-  // them even where the renderer skips drawing a degraded one. Quarantined
-  // fixes passed no validation at all, so they steer structural geometry
-  // only if the renderer would draw them: a poor-accuracy outlier next to a
-  // crossing must not drag the (unfilterable) clip off the path.
-  const timeline = [
-    ...points.map((p) => ({ latitude: p.latitude, longitude: p.longitude, timeMs: Date.parse(p.recordedAt) })),
-    ...quarantined
-      .filter((q) => q.accuracyM === null || q.accuracyM <= DEFAULT_DISPLAY_LINE_CONFIG.maxAccuracyM)
-      .map((q) => ({ latitude: q.latitude, longitude: q.longitude, timeMs: Date.parse(q.recordedAt) })),
-  ].sort((a, b) => a.timeMs - b.timeMs);
+  // Legacy fallback timeline: accepted points only.
+  const timeline = points
+    .map((p) => ({ latitude: p.latitude, longitude: p.longitude, timeMs: Date.parse(p.recordedAt) }))
+    .sort((a, b) => a.timeMs - b.timeMs);
 
   // Boundary i sits between runs[i] and runs[i+1]; its crossing time is the
   // following lap's stored start.
   const boundaryTimesMs = runs.slice(0, -1).map((run, index) => {
     const nextLapId = runs[index + 1].lapId;
-    const startedAt = nextLapId ? startedAtByLapId.get(nextLapId) : undefined;
+    const startedAt = nextLapId ? lapStartById.get(nextLapId)?.startedAt : undefined;
     if (startedAt !== undefined) {
       return Date.parse(startedAt);
     }
@@ -487,17 +487,25 @@ export function groupPointsIntoLapRuns(
 
   const boundaryClips = runs.slice(0, -1).map((run, index) => {
     const nextLapId = runs[index + 1].lapId;
-    if (!nextLapId || !startedAtByLapId.has(nextLapId)) {
+    const lapStart = nextLapId ? lapStartById.get(nextLapId) : undefined;
+    if (!lapStart) {
       return null;
     }
+
     const tMs = boundaryTimesMs[index];
-    const position = pathPointAtTime(timeline, tMs);
-    if (position === null) {
+    // The stored pair is atomic: use it only when both halves are finite.
+    const stored =
+      Number.isFinite(lapStart.startedLatitude ?? NaN) &&
+      Number.isFinite(lapStart.startedLongitude ?? NaN)
+        ? { latitude: lapStart.startedLatitude!, longitude: lapStart.startedLongitude! }
+        : pathPointAtTime(timeline, tMs);
+    if (stored === null) {
       return null;
     }
+
     return {
-      latitude: position.latitude,
-      longitude: position.longitude,
+      latitude: stored.latitude,
+      longitude: stored.longitude,
       accuracyM: null,
       recordedAt: new Date(tMs).toISOString(),
     };

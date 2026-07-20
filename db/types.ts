@@ -100,6 +100,10 @@ export type LapRow = {
   sessionId: string;
   lapNumber: number;
   startedAt: ISODateString;
+  // Interpolated crossing position frozen at capture (null on laps recorded
+  // before migration v16). Meaningful only as a pair.
+  startedLatitude: number | null;
+  startedLongitude: number | null;
   endedAt: ISODateString | null;
   lapTimeMs: number | null;
   isOutLap: 0 | 1;

@@ -13,6 +13,9 @@ export type ExportedLap = {
   id: string;
   lapNumber: number;
   startedAt: string;
+  // Present from export v4: crossing position frozen at capture.
+  startedLatitude?: number | null;
+  startedLongitude?: number | null;
   lapTimeMs: number | null;
   isTimingEstimated?: 0 | 1;
   sectors?: { sectorIndex: number; splitTimeMs: number }[];

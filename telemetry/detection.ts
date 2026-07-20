@@ -248,6 +248,10 @@ function toDetectionEvent(
     seq: timingLine.seq,
     sampleRecordedAt: Math.round(interpolatedRecordedAt),
     sampleElapsedMs: Math.round(interpolatedElapsedMs),
+    // Crossing position on the exact segment detection timed — persisted so
+    // the display clips lap lines where timing says the lap changed.
+    sampleLat: previousSample.lat + (currentSample.lat - previousSample.lat) * movementFraction,
+    sampleLng: previousSample.lng + (currentSample.lng - previousSample.lng) * movementFraction,
     quality,
   };
 }

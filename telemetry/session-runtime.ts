@@ -252,6 +252,8 @@ export function createSessionRuntime(args: {
         sessionId: snapshot.sessionId,
         lapNumber: 1,
         startedAt: new Date(event.sampleRecordedAt).toISOString(),
+        startedLatitude: event.sampleLat,
+        startedLongitude: event.sampleLng,
         isOutLap: pendingOutLap ? 1 : 0,
       });
       currentLapIsOutLap = pendingOutLap;
@@ -342,6 +344,8 @@ export function createSessionRuntime(args: {
       sessionId: snapshot.sessionId,
       lapNumber: nextLapNumber,
       startedAt: new Date(event.sampleRecordedAt).toISOString(),
+      startedLatitude: event.sampleLat,
+      startedLongitude: event.sampleLng,
       isOutLap: pendingOutLap ? 1 : 0,
     });
     currentLapIsOutLap = pendingOutLap;
@@ -517,59 +521,54 @@ export function createSessionRuntime(args: {
     );
 
     if (!validation.accepted) {
-      // Cascade re-anchor: a second consecutive impossible_jump that is
-      // consistent with the previously REJECTED sample means the rejected
-      // chain is the true path and the accepted anchor was displaced.
-      // Cascade re-anchor, scoped to short cascades only. A second
-      // consecutive impossible_jump consistent with the previously REJECTED
-      // sample proves the accepted anchor was displaced, so detection runs
-      // on the validated chain — the anchor chord is never timed. Across a
+      // Cascade re-anchor, scoped to short cascades. A second consecutive
+      // impossible_jump consistent with the previously REJECTED sample
+      // proves the accepted anchor was displaced, so detection runs on the
+      // validated chain — the anchor chord is never timed. Across a
       // hole-spanning gap this proof does not hold (the rejection may be an
       // honest allowance shortfall) and the chain would be entirely
-      // post-hole, silently losing an in-hole crossing — so long-gap
-      // rejections fall through: the allowance grows until a sample is
-      // CONSISTENT with the anchor and crossing recovery times that
-      // uncontradicted chord, flagged. The extra rejected fixes stay in
-      // quarantine, which the display merges anyway.
+      // post-hole, so long-gap rejections fall through: the allowance grows
+      // until a sample is CONSISTENT with the anchor and crossing recovery
+      // times that uncontradicted chord, flagged. The extra rejected fixes
+      // stay in quarantine, which the display merges anyway.
       const anchorGapMs = snapshot.latestAcceptedSample
         ? sample.recordedAt - snapshot.latestAcceptedSample.recordedAt
         : Infinity;
       const recoveryMinGapMs =
         config?.detectionConfig?.recoveryMinGapMs ?? DEFAULT_DETECTION_CONFIG.recoveryMinGapMs;
 
-      if (
-        jumpReanchorEnabled &&
-        anchorGapMs <= recoveryMinGapMs &&
+      // Chain continuity for this sample vs the previous rejection, computed
+      // once: it drives the re-anchor, the liveness fallback, and the
+      // streak bookkeeping below.
+      const chainPrevious =
         validation.reason === 'impossible_jump' &&
         snapshot.lastRejectionReason === 'impossible_jump' &&
         lastRejectedSample !== null
-      ) {
-        const chainPrevious = lastRejectedSample;
-        const chainValidation = filterTelemetrySample(
-          chainPrevious,
-          sample,
-          config?.filterConfig
-        );
+          ? lastRejectedSample
+          : null;
+      const chainValidation = chainPrevious
+        ? filterTelemetrySample(chainPrevious, sample, config?.filterConfig)
+        : null;
+      const chainConsistent = chainValidation !== null && chainValidation.accepted;
 
-        if (chainValidation.accepted) {
-          lastRejectedSample = null;
-          rejectionStreakStartMs = null;
-          const events = await handleAcceptedSample(chainValidation.sample, chainPrevious);
+      if (jumpReanchorEnabled && chainConsistent && anchorGapMs <= recoveryMinGapMs) {
+        lastRejectedSample = null;
+        rejectionStreakStartMs = null;
+        const events = await handleAcceptedSample(chainValidation.sample, chainPrevious!);
 
-          return {
-            accepted: true,
-            events,
-            snapshot: getSnapshot(),
-          };
-        }
+        return {
+          accepted: true,
+          events,
+          snapshot: getSnapshot(),
+        };
       }
 
       // Liveness fallback: with a long-gap anchor, the direct allowance is
       // not guaranteed to catch up (it grows with reported speed while
       // displacement integrates actual speed) — without an escape, one
       // stale anchor could reject every remaining sample of the session.
-      // Once the incoming stream has stayed self-consistent for longer than
-      // recoveryMinGapMs while the anchor kept rejecting, re-anchor to
+      // Once the CONTINUOUSLY CHAIN-VALID jump streak has lasted longer
+      // than recoveryMinGapMs while the anchor kept rejecting, re-anchor to
       // restore capture — but suppress detection for this step: nothing
       // across the ambiguous span is timed. An in-span crossing is honestly
       // missed, never guessed. The anchor-consistent chord path (crossing
@@ -578,35 +577,35 @@ export function createSessionRuntime(args: {
       // fires only when that path is unreachable.
       if (
         jumpReanchorEnabled &&
+        chainConsistent &&
         anchorGapMs > recoveryMinGapMs &&
-        validation.reason === 'impossible_jump' &&
-        snapshot.lastRejectionReason === 'impossible_jump' &&
-        lastRejectedSample !== null &&
         rejectionStreakStartMs !== null &&
         sample.recordedAt - rejectionStreakStartMs > recoveryMinGapMs
       ) {
-        const chainValidation = filterTelemetrySample(
-          lastRejectedSample,
-          sample,
-          config?.filterConfig
-        );
+        lastRejectedSample = null;
+        rejectionStreakStartMs = null;
+        const events = await handleAcceptedSample(chainValidation.sample, null);
 
-        if (chainValidation.accepted) {
-          lastRejectedSample = null;
-          rejectionStreakStartMs = null;
-          const events = await handleAcceptedSample(chainValidation.sample, null);
-
-          return {
-            accepted: true,
-            events,
-            snapshot: getSnapshot(),
-          };
-        }
+        return {
+          accepted: true,
+          events,
+          snapshot: getSnapshot(),
+        };
       }
 
       lastRejectedSample = sample;
-      if (rejectionStreakStartMs === null) {
+
+      // The liveness timer tracks only the continuously chain-valid
+      // impossible-jump sequence: any other rejection reason clears it, an
+      // inconsistent hop restarts it at this sample (which may head a new
+      // chain), and a validated hop backdates it to the chain's first
+      // sample.
+      if (validation.reason !== 'impossible_jump') {
+        rejectionStreakStartMs = null;
+      } else if (!chainConsistent) {
         rejectionStreakStartMs = sample.recordedAt;
+      } else if (rejectionStreakStartMs === null) {
+        rejectionStreakStartMs = chainPrevious!.recordedAt;
       }
 
       if (snapshot.sessionId) {

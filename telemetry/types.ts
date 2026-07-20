@@ -88,6 +88,9 @@ export type TelemetryDetectionEvent = {
   seq: number;
   sampleRecordedAt: number;
   sampleElapsedMs: number;
+  // Interpolated crossing position on the segment detection timed.
+  sampleLat: number;
+  sampleLng: number;
   quality: CrossingQuality;
 };
 

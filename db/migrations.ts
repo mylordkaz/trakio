@@ -646,6 +646,19 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    // The interpolated start/finish crossing position, frozen at capture on
+    // the exact segment detection timed. The display clips lap lines at this
+    // point; laps recorded before this column exist fall back to
+    // interpolating the accepted path at started_at.
+    version: 16,
+    up: async (db) => {
+      await db.execAsync(`
+        ALTER TABLE laps ADD COLUMN started_latitude REAL;
+        ALTER TABLE laps ADD COLUMN started_longitude REAL;
+      `);
+    },
+  },
 ];
 
 export const DATABASE_NAME = 'trakio.db';
