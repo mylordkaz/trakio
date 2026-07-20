@@ -23,6 +23,9 @@ function sheetLabels(): TimeSheetLabels {
     sectorPrefix: i18n.t('sessions.timeSheetSectorPrefix'),
     maxSpeed: 'km/h',
     legend: i18n.t('sessions.timeSheetLegend'),
+    bestLap: i18n.t('sessions.storyBestLap'),
+    lapsLabel: i18n.t('sessions.laps'),
+    topSpeed: i18n.t('sessions.timeSheetTopSpeed'),
   };
 }
 

@@ -206,6 +206,7 @@ export default {
     timeSheetPassingTime: 'Passing Time',
     timeSheetLapTime: 'Lap Time',
     timeSheetSectorPrefix: 'Sec',
+    timeSheetTopSpeed: '最高速度',
     timeSheetLegend: 'B = ベストラップ · ≈ = 推定クロッシング · OUT/IN = アウト/インラップ',
     sessionNotes: 'セッションノート',
     sessionNotesSubtitle: 'この走行からの所見',

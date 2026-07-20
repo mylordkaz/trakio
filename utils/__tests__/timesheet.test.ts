@@ -109,10 +109,15 @@ describe('time sheet builders', () => {
         sectorPrefix: 'Sec',
         maxSpeed: 'km/h',
         legend: 'B = best lap',
+        bestLap: 'Best Lap',
+        lapsLabel: 'Laps',
+        topSpeed: 'Top Speed',
       }
     );
 
-    expect(html).toContain("B 1'19.600");
+    expect(html).toContain('TRAK<span class="io">IO</span>');
+    expect(html).toContain("1'19.600");
+    expect(html).toContain('b-mark');
     expect(html).toContain('(1)');
     expect(html).toContain('≈');
     expect(html).toContain('class="best"');

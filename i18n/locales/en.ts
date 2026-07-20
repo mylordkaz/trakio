@@ -206,6 +206,7 @@ export default {
     timeSheetPassingTime: 'Passing Time',
     timeSheetLapTime: 'Lap Time',
     timeSheetSectorPrefix: 'Sec',
+    timeSheetTopSpeed: 'Top Speed',
     timeSheetLegend: 'B = best lap · ≈ = estimated crossing · OUT/IN = out/in lap',
     sessionNotes: 'Session Notes',
     sessionNotesSubtitle: 'Your observations from this run',
