@@ -131,14 +131,15 @@ describe('re-anchor timing detection', () => {
     expect(accepted).toEqual([true, true, true, true, true, false, false, false]);
   });
 
-  it('does not re-anchor across a hole-spanning gap (the anchor is unproven)', async () => {
-    // A displaced anchor followed by real GPS silence: the post-hole chain
-    // is mutually consistent, but a long gap cannot prove which of anchor
-    // or chain is true — and the chain is entirely post-hole. So the
-    // re-anchor must NOT fire; rejection continues until a sample is
-    // consistent with the anchor, and no crossing is ever timed on a chord
-    // the filter rejected. Gate placed where only the anchor->S2 chord
-    // would cross.
+  it('long gap: no chain timing, and the liveness fallback restores capture without timing', async () => {
+    // A displaced anchor followed by real GPS silence, where the vehicle
+    // moves faster than the reported speed grows the allowance: the direct
+    // path NEVER becomes anchor-consistent. The chain re-anchor must not
+    // fire (a long gap cannot prove which side is true) — but capture must
+    // not stay dead either. Once the stream has been self-consistent for
+    // longer than recoveryMinGapMs, the liveness fallback re-anchors with
+    // detection suppressed: capture resumes, nothing across the ambiguous
+    // span is timed. Gate placed where only the anchor chords would cross.
     const gate = gateAtY(200, 15, 40);
     const runtime = createSessionRuntime({
       track: { id: 't' } as TrackRow,
@@ -155,8 +156,13 @@ describe('re-anchor timing detection', () => {
       sampleXY(50, 60, 2),
       sampleXY(50, 90, 3),
       sampleXY(12, 110, 4), // displaced anchor, accepted
-      sampleXY(50, 390, 14), // post-silence true fix, inconsistent with anchor
-      sampleXY(50, 420, 15), // consistent with the previous — but gap is 11 s
+      sampleXY(50, 390, 14), // post-silence; divergence begins (reported 25, actual 30 m/s)
+      sampleXY(50, 420, 15), // chain-consistent, but the gap is 11 s: no chain re-anchor
+      sampleXY(50, 450, 16),
+      sampleXY(50, 480, 17),
+      sampleXY(50, 510, 18), // streak duration 4.0 s: still within the bound
+      sampleXY(50, 540, 19), // streak 5.0 s > recoveryMinGapMs: liveness fallback
+      sampleXY(50, 570, 20), // normal capture against the new anchor
     ];
     for (const sample of samples) {
       const result = await runtime.handleSample(sample);
@@ -167,7 +173,11 @@ describe('re-anchor timing detection', () => {
     }
     await runtime.stop();
 
-    expect(accepted).toEqual([true, true, true, true, false, false]);
+    expect(accepted).toEqual([
+      true, true, true, true,
+      false, false, false, false, false,
+      true, true,
+    ]);
     expect(crossingCount).toBe(0);
   });
 

@@ -35,11 +35,22 @@ anchor was displaced: accept the sample, re-anchor there, and run
 detection on the validated chain — the anchor chord, just proven
 impossible, is never timed. Across a hole-spanning gap that proof does not
 hold (the rejection may be an honest allowance shortfall) and the chain
-would be entirely post-hole, so the re-anchor does not fire at all:
-rejection continues until a sample is *consistent* with the anchor, and
-crossing recovery times that uncontradicted chord, flagged `≈` — the
-behavior the acceptance table validated before the re-anchor existed. The
-extra rejected fixes stay in quarantine, which the display merges anyway.
+would be entirely post-hole, so the re-anchor does not fire: rejection
+continues until a sample is *consistent* with the anchor, and crossing
+recovery times that uncontradicted chord, flagged `≈` — the behavior the
+acceptance table validated before the re-anchor existed. The extra
+rejected fixes stay in quarantine, which the display merges anyway.
+
+The direct allowance is not *guaranteed* to catch up, though — it grows
+with reported speed while displacement integrates actual speed — and
+without an escape one stale anchor could reject every remaining sample of
+the session. The **liveness fallback** bounds this: once the incoming
+stream has stayed self-consistent for longer than `recoveryMinGapMs`
+while the anchor kept rejecting, capture re-anchors onto the chain with
+detection suppressed for that one step. Nothing across the ambiguous span
+is timed — an in-span crossing is honestly missed, never guessed — and
+the anchor-consistent recovery path always wins first when it is
+reachable.
 The first jump of a cascade stays rejected by design — at that moment a
 displaced anchor and a genuine outlier are indistinguishable. Both regimes
 are unit-tested (`telemetry/__tests__/session-runtime-reanchor.test.ts`)
@@ -58,7 +69,11 @@ gap, no overshoot, overlap impossible); a boundary without a crossing time
 Clip points are structural, not measured fixes: `accuracyM` is null so the
 display accuracy filter can never delete a lap's endpoint even when the
 boundary fix itself was degraded (capture accepts up to 40 m; display
-draws up to 15 m).
+draws up to 15 m). The clip's interpolation timeline is guarded in the
+other direction: accepted points always shape it, but quarantined fixes —
+which passed no validation — steer it only if the renderer would draw
+them, so a poor-accuracy outlier next to a crossing cannot drag the
+unfilterable clip off the path.
 
 Two earlier designs died in review: borrowing the neighbor lap's raw fix
 (up to ~30 m past the line at crossing speed — doubled every lap through

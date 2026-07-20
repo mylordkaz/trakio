@@ -125,6 +125,20 @@ describe('groupPointsIntoLapRuns time-based clipping', () => {
     expect(runs[1].points[0].latitude).toBe(boundary.latitude);
   });
 
+  it('never lets an undrawable quarantined outlier steer a clip', () => {
+    // A poor-accuracy rejected fix near the crossing time would drag the
+    // interpolated clip far off the path — and the clip (accuracyM null) is
+    // unfilterable. Quarantined points must pass the display accuracy gate
+    // before they can influence structural geometry.
+    const outlier = { ...quarantinedAt(400, 900, 6.4), accuracyM: 500 };
+    const runs = groupPointsIntoLapRuns(POINTS, LAPS, [outlier]);
+    const [, l1, l2] = runs;
+
+    expect(yOf(l1.points[l1.points.length - 1])).toBeCloseTo(100, 6);
+    expect(xOf(l1.points[l1.points.length - 1])).toBeCloseTo(0, 6);
+    expect(yOf(l2.points[0])).toBeCloseTo(100, 6);
+  });
+
   it('keeps clips renderable when a boundary fix has degraded accuracy', () => {
     // Capture accepts up to 40 m; display drops fixes above 15 m. A 20 m
     // boundary fix must not delete the laps' shared structural endpoint.

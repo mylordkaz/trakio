@@ -459,13 +459,17 @@ export function groupPointsIntoLapRuns(
 
   const startedAtByLapId = new Map(lapStarts.map((lap) => [lap.id, lap.startedAt]));
 
-  // The path timeline for clip interpolation includes the quarantined fixes:
-  // where a boundary fix was rejected (and later re-anchored past), the
-  // detector's segment ran through it, and the clip must land on that same
-  // path.
+  // The path timeline for clip interpolation. Accepted points always shape
+  // it — they are capture-validated, and the detector timed crossings on
+  // them even where the renderer skips drawing a degraded one. Quarantined
+  // fixes passed no validation at all, so they steer structural geometry
+  // only if the renderer would draw them: a poor-accuracy outlier next to a
+  // crossing must not drag the (unfilterable) clip off the path.
   const timeline = [
     ...points.map((p) => ({ latitude: p.latitude, longitude: p.longitude, timeMs: Date.parse(p.recordedAt) })),
-    ...quarantined.map((q) => ({ latitude: q.latitude, longitude: q.longitude, timeMs: Date.parse(q.recordedAt) })),
+    ...quarantined
+      .filter((q) => q.accuracyM === null || q.accuracyM <= DEFAULT_DISPLAY_LINE_CONFIG.maxAccuracyM)
+      .map((q) => ({ latitude: q.latitude, longitude: q.longitude, timeMs: Date.parse(q.recordedAt) })),
   ].sort((a, b) => a.timeMs - b.timeMs);
 
   // Boundary i sits between runs[i] and runs[i+1]; its crossing time is the
