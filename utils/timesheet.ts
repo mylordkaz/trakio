@@ -1,4 +1,5 @@
 import type { SessionDetail } from '@/db/sessions';
+import { getTopSpeedKph } from '@/utils/session-analytics';
 import { getSectorCount } from '@/utils/timing';
 
 // Builds the lap time sheet exported for users, modeled on a circuit
@@ -30,6 +31,11 @@ export type TimeSheetLabels = {
   bestLap: string;
   lapsLabel: string;
   topSpeed: string;
+  condition: string | null;
+};
+
+type TimeSheetHtmlOptions = {
+  timeZone?: string;
 };
 
 // Circuit-sheet style duration: minutes'seconds.milliseconds (1'19.600).
@@ -50,13 +56,13 @@ export function buildTimeSheet(detail: SessionDetail): { rows: TimeSheetRow[]; s
     .sort((a, b) => a.lapNumber - b.lapNumber);
 
   const ranked = laps
-    .filter((lap) => !lap.isInvalid)
+    .filter((lap) => !lap.isInvalid && !lap.isOutLap && !lap.isInLap)
     .sort((a, b) => a.lapTimeMs! - b.lapTimeMs!);
   const rankByLapId = new Map(ranked.map((lap, index) => [lap.id, index + 1]));
 
   const rows = laps.map((lap) => {
     const rank = rankByLapId.get(lap.id) ?? null;
-    const sortedSectors = [...lap.sectors].sort((a, b) => a.sectorIndex - b.sectorIndex);
+    const sectorsByIndex = new Map(lap.sectors.map((sector) => [sector.sectorIndex, sector]));
 
     return {
       lapNumber: lap.lapNumber,
@@ -68,7 +74,7 @@ export function buildTimeSheet(detail: SessionDetail): { rows: TimeSheetRow[]; s
       isEstimated: lap.isTimingEstimated === 1,
       tag: lap.isOutLap === 1 ? ('OUT' as const) : lap.isInLap === 1 ? ('IN' as const) : null,
       sectors: Array.from({ length: sectorCount }, (_, index) => {
-        const split = sortedSectors[index];
+        const split = sectorsByIndex.get(index);
         return split ? (split.splitTimeMs / 1000).toFixed(3) : null;
       }),
       maxSpeedKph: lap.maxSpeedKph !== null ? lap.maxSpeedKph.toFixed(1) : null,
@@ -120,23 +126,39 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-export function buildTimeSheetHtml(detail: SessionDetail, labels: TimeSheetLabels): string {
+function formatSheetDate(value: string, timeZone?: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    ...(timeZone ? { timeZone } : {}),
+  }).formatToParts(new Date(value));
+  const dateParts = new Map(parts.map((part) => [part.type, part.value]));
+  return `${dateParts.get('year')}-${dateParts.get('month')}-${dateParts.get('day')}`;
+}
+
+export function buildTimeSheetHtml(
+  detail: SessionDetail,
+  labels: TimeSheetLabels,
+  options: TimeSheetHtmlOptions = {}
+): string {
   const { rows, sectorCount } = buildTimeSheet(detail);
   const session = detail.session;
-  const dateLabel = new Date(session.startedAt).toISOString().slice(0, 10);
+  const dateLabel = formatSheetDate(session.startedAt, options.timeZone);
+  const condition = [
+    labels.condition,
+    session.temperatureC !== null ? `${session.temperatureC}°C` : null,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(' ');
   const metaParts = [
-    session.name ? escapeHtml(session.name) : null,
-    session.car ? escapeHtml(session.car) : null,
-    [session.condition, session.temperatureC !== null ? `${session.temperatureC}°C` : null]
-      .filter(Boolean)
-      .join(' '),
-  ].filter((part) => part && part.length > 0);
+    session.name,
+    session.car,
+    condition || null,
+  ].filter((part): part is string => Boolean(part));
 
   const best = rows.find((row) => row.isBest) ?? null;
-  const topSpeed = rows.reduce<number | null>((acc, row) => {
-    const value = row.maxSpeedKph !== null ? Number(row.maxSpeedKph) : null;
-    return value === null ? acc : acc === null ? value : Math.max(acc, value);
-  }, null);
+  const topSpeed = getTopSpeedKph(detail);
 
   const sectorHeaders = Array.from(
     { length: sectorCount },
@@ -168,7 +190,7 @@ export function buildTimeSheetHtml(detail: SessionDetail, labels: TimeSheetLabel
   body { font-family: -apple-system, 'Helvetica Neue', Helvetica, sans-serif; margin: 0; color: #18181b; }
   .header { padding: 34px 40px 18px; border-bottom: 2px solid #18181b; }
   .wordmark { font-size: 34px; font-weight: 900; font-style: italic; letter-spacing: 2px; }
-  
+
   .header .sheet-title { margin-top: 4px; font-size: 12px; font-weight: 600; letter-spacing: 4px; color: #52525b; text-transform: uppercase; }
   .header .trackline { margin-top: 14px; font-size: 15px; font-weight: 700; color: #18181b; }
   .header .trackline .date { font-weight: 400; color: #52525b; }
@@ -195,7 +217,7 @@ export function buildTimeSheetHtml(detail: SessionDetail, labels: TimeSheetLabel
   .footer { margin-top: 22px; display: flex; align-items: center; justify-content: space-between; }
   .legend { font-size: 9.5px; color: #71717a; }
   .footer .brand { font-size: 12px; font-weight: 900; font-style: italic; letter-spacing: 1.5px; color: #18181b; }
-  
+
 </style>
 </head>
 <body>
@@ -203,7 +225,7 @@ export function buildTimeSheetHtml(detail: SessionDetail, labels: TimeSheetLabel
     <div class="wordmark">Trakio</div>
     <div class="sheet-title">${escapeHtml(labels.title)}</div>
     <div class="trackline">${escapeHtml(detail.track.name)} <span class="date">— ${dateLabel}</span></div>
-    ${metaParts.length > 0 ? `<div class="meta">${metaParts.map((part) => `<span>${part}</span>`).join('')}</div>` : ''}
+    ${metaParts.length > 0 ? `<div class="meta">${metaParts.map((part) => `<span>${escapeHtml(part)}</span>`).join('')}</div>` : ''}
   </div>
   <div class="content">
     <div class="stats">

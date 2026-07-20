@@ -1,4 +1,6 @@
 import * as Print from 'expo-print';
+import { getCalendars } from 'expo-localization';
+import { Platform } from 'react-native';
 import Share from 'react-native-share';
 import type { SessionDetail } from '@/db/sessions';
 import i18n from '@/i18n';
@@ -10,11 +12,23 @@ import { buildTimeSheetCsv, buildTimeSheetHtml, type TimeSheetLabels } from '@/u
 
 type ExportResult = { ok: true } | { ok: false; message: string };
 
+const WEATHER_CONDITION_KEYS = ['clear', 'cloudy', 'rain', 'fog', 'snow', 'storm'] as const;
+
 function isUserCancel(message: string) {
   return message.includes('User did not share');
 }
 
-function sheetLabels(): TimeSheetLabels {
+function localizeCondition(condition: string | null): string | null {
+  if (!condition || condition === 'unknown') {
+    return null;
+  }
+
+  return (WEATHER_CONDITION_KEYS as readonly string[]).includes(condition)
+    ? i18n.t(`preSession.${condition}`)
+    : condition;
+}
+
+function sheetLabels(detail: SessionDetail): TimeSheetLabels {
   return {
     title: i18n.t('sessions.timeSheetTitle'),
     lap: i18n.t('sessions.timeSheetLap'),
@@ -26,13 +40,16 @@ function sheetLabels(): TimeSheetLabels {
     bestLap: i18n.t('sessions.storyBestLap'),
     lapsLabel: i18n.t('sessions.laps'),
     topSpeed: i18n.t('sessions.timeSheetTopSpeed'),
+    condition: localizeCondition(detail.session.condition),
   };
 }
 
 export async function exportSessionTimeSheetPdf(detail: SessionDetail): Promise<ExportResult> {
   try {
     const { uri } = await Print.printToFileAsync({
-      html: buildTimeSheetHtml(detail, sheetLabels()),
+      html: buildTimeSheetHtml(detail, sheetLabels(detail), {
+        timeZone: getCalendars()[0]?.timeZone ?? undefined,
+      }),
     });
 
     await Share.open({
@@ -52,13 +69,21 @@ export async function exportSessionTimeSheetPdf(detail: SessionDetail): Promise<
 export async function exportSessionTimeSheetCsv(detail: SessionDetail): Promise<ExportResult> {
   try {
     const csv = buildTimeSheetCsv(detail);
+    const filenameStem = `trakio-timesheet-${detail.session.id}`;
 
-    await Share.open({
+    const shareOptions = {
       url: `data:text/csv;base64,${utf8ToBase64(csv)}`,
-      filename: `trakio-timesheet-${detail.session.id}.csv`,
+      // Android derives and appends the extension for base64 shares; iOS
+      // writes the provided filename verbatim.
+      filename: Platform.OS === 'android' ? filenameStem : `${filenameStem}.csv`,
       type: 'text/csv',
       failOnCancel: false,
-    });
+      useInternalStorage: true,
+    } satisfies Parameters<typeof Share.open>[0] & { useInternalStorage?: boolean };
+
+    // react-native-share supports this Android option natively, although its
+    // ShareOptions declaration currently omits it.
+    await Share.open(shareOptions);
 
     return { ok: true };
   } catch (error) {
