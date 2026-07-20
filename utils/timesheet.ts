@@ -173,26 +173,27 @@ export function buildTimeSheetHtml(detail: SessionDetail, labels: TimeSheetLabel
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, 'Helvetica Neue', Helvetica, sans-serif; margin: 0; color: #18181b; }
-  .header { background: #18181b; padding: 30px 40px 24px; color: #ffffff; }
+  .header { background: #141b26; padding: 30px 40px 24px; color: #ffffff; }
   .wordmark { font-size: 34px; font-weight: 900; font-style: italic; letter-spacing: 2px; }
-  .wordmark .io { color: #8b5cf6; }
+  
   .header .sheet-title { margin-top: 4px; font-size: 12px; font-weight: 600; letter-spacing: 4px; color: #a1a1aa; text-transform: uppercase; }
   .header .trackline { margin-top: 14px; font-size: 15px; font-weight: 700; }
   .header .trackline .date { font-weight: 400; color: #a1a1aa; }
   .header .meta { margin-top: 3px; font-size: 11px; color: #a1a1aa; }
   .header .meta span + span::before { content: '  ·  '; color: #52525b; }
-  .checker { height: 14px; ${checker} }
-  .content { padding: 26px 40px 34px; }
+  .curb { height: 12px; background: repeating-linear-gradient(90deg, #d02a2a 0 26px, #ffffff 26px 52px); border-bottom: 2px solid #141b26; }
+  .checker { height: 10px; ${checker} }
+  .content { padding: 26px 40px 30px; }
   .stats { display: flex; gap: 12px; margin-bottom: 24px; }
   .stat { flex: 1; border: 1px solid #e4e4e7; border-radius: 12px; padding: 12px 16px; }
-  .stat.hero { background: #18181b; border-color: #18181b; }
+  .stat.hero { background: #141b26; border-color: #141b26; }
   .stat .label { font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #71717a; }
   .stat .value { margin-top: 4px; font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .stat.hero .label { color: #a78bfa; }
+  .stat.hero .label { color: #e8a0a0; }
   .stat.hero .value { color: #ffffff; }
-  .stat.hero .value .flag { color: #8b5cf6; }
+  .stat.hero .value .flag { color: #d02a2a; }
   table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
-  thead th { background: #18181b; color: #ffffff; text-align: right; padding: 9px 10px; font-weight: 700; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; white-space: nowrap; }
+  thead th { background: #141b26; color: #ffffff; text-align: right; padding: 9px 10px; font-weight: 700; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; white-space: nowrap; }
   thead th:first-child { text-align: left; border-radius: 8px 0 0 8px; }
   thead th:last-child { border-radius: 0 8px 8px 0; }
   td { text-align: right; border-bottom: 1px solid #f0f0f2; padding: 8px 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -201,24 +202,24 @@ export function buildTimeSheetHtml(detail: SessionDetail, labels: TimeSheetLabel
   .lap-no { font-weight: 700; color: #52525b; }
   .laptime { font-weight: 600; }
   .rank { color: #a1a1aa; font-weight: 400; }
-  tr.best td { background: #f5f3ff !important; border-top: 1.5px solid #8b5cf6; border-bottom: 1.5px solid #8b5cf6; font-weight: 700; }
-  tr.best .laptime { color: #7c3aed; }
-  .b-mark { display: inline-block; background: #8b5cf6; color: #ffffff; font-size: 9px; font-weight: 800; border-radius: 4px; padding: 1px 5px; vertical-align: 1px; }
+  tr.best td { background: #fdf1f0 !important; border-top: 1.5px solid #d02a2a; border-bottom: 1.5px solid #d02a2a; font-weight: 700; }
+  tr.best .laptime { color: #c22323; }
+  .b-mark { display: inline-block; background: #d02a2a; color: #ffffff; font-size: 9px; font-weight: 800; border-radius: 4px; padding: 1px 5px; vertical-align: 1px; }
   .tag { font-size: 8.5px; font-weight: 700; color: #a1a1aa; letter-spacing: 1px; }
   .footer { margin-top: 22px; display: flex; align-items: center; justify-content: space-between; }
   .legend { font-size: 9.5px; color: #a1a1aa; }
   .footer .brand { font-size: 12px; font-weight: 900; font-style: italic; letter-spacing: 1.5px; color: #18181b; }
-  .footer .brand .io { color: #8b5cf6; }
+  
 </style>
 </head>
 <body>
   <div class="header">
-    <div class="wordmark">TRAK<span class="io">IO</span></div>
+    <div class="wordmark">Trakio</div>
     <div class="sheet-title">${escapeHtml(labels.title)}</div>
     <div class="trackline">${escapeHtml(detail.track.name)} <span class="date">— ${dateLabel}</span></div>
     ${metaParts.length > 0 ? `<div class="meta">${metaParts.map((part) => `<span>${part}</span>`).join('')}</div>` : ''}
   </div>
-  <div class="checker"></div>
+  <div class="curb"></div>
   <div class="content">
     <div class="stats">
       <div class="stat hero">
@@ -248,9 +249,10 @@ export function buildTimeSheetHtml(detail: SessionDetail, labels: TimeSheetLabel
     </table>
     <div class="footer">
       <div class="legend">${escapeHtml(labels.legend)}</div>
-      <div class="brand">TRAK<span class="io">IO</span></div>
+      <div class="brand">Trakio</div>
     </div>
   </div>
+  <div class="checker"></div>
 </body>
 </html>`;
 }

@@ -115,7 +115,8 @@ describe('time sheet builders', () => {
       }
     );
 
-    expect(html).toContain('TRAK<span class="io">IO</span>');
+    expect(html).toContain('class="wordmark">Trakio<');
+    expect(html).not.toContain('#8b5cf6'); // logo palette only — no app-UI violet
     expect(html).toContain("1'19.600");
     expect(html).toContain('b-mark');
     expect(html).toContain('(1)');
