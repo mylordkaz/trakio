@@ -159,55 +159,41 @@ export function buildTimeSheetHtml(detail: SessionDetail, labels: TimeSheetLabel
     })
     .join('');
 
-  // Checkered-flag strip, pure CSS — the motorsport signature under the header.
-  const checker = `background-image:
-      linear-gradient(45deg, #18181b 25%, transparent 25%, transparent 75%, #18181b 75%),
-      linear-gradient(45deg, #18181b 25%, #ffffff 25%, #ffffff 75%, #18181b 75%);
-    background-size: 14px 14px;
-    background-position: 0 0, 7px 7px;`;
-
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8" />
 <style>
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { font-family: -apple-system, 'Helvetica Neue', Helvetica, sans-serif; margin: 0; color: #18181b; }
-  .header { background: #141b26; padding: 30px 40px 24px; color: #ffffff; }
+  .header { padding: 34px 40px 18px; border-bottom: 2px solid #18181b; }
   .wordmark { font-size: 34px; font-weight: 900; font-style: italic; letter-spacing: 2px; }
   
-  .header .sheet-title { margin-top: 4px; font-size: 12px; font-weight: 600; letter-spacing: 4px; color: #a1a1aa; text-transform: uppercase; }
-  .header .trackline { margin-top: 14px; font-size: 15px; font-weight: 700; }
-  .header .trackline .date { font-weight: 400; color: #a1a1aa; }
-  .header .meta { margin-top: 3px; font-size: 11px; color: #a1a1aa; }
-  .header .meta span + span::before { content: '  ·  '; color: #52525b; }
-  .curb { height: 12px; background: repeating-linear-gradient(90deg, #d02a2a 0 26px, #ffffff 26px 52px); border-bottom: 2px solid #141b26; }
-  .checker { height: 10px; ${checker} }
+  .header .sheet-title { margin-top: 4px; font-size: 12px; font-weight: 600; letter-spacing: 4px; color: #52525b; text-transform: uppercase; }
+  .header .trackline { margin-top: 14px; font-size: 15px; font-weight: 700; color: #18181b; }
+  .header .trackline .date { font-weight: 400; color: #52525b; }
+  .header .meta { margin-top: 3px; font-size: 11px; color: #52525b; }
+  .header .meta span + span::before { content: '  ·  '; color: #a1a1aa; }
   .content { padding: 26px 40px 30px; }
   .stats { display: flex; gap: 12px; margin-bottom: 24px; }
   .stat { flex: 1; border: 1px solid #e4e4e7; border-radius: 12px; padding: 12px 16px; }
-  .stat.hero { background: #141b26; border-color: #141b26; }
   .stat .label { font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #71717a; }
   .stat .value { margin-top: 4px; font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .stat.hero .label { color: #e8a0a0; }
-  .stat.hero .value { color: #ffffff; }
-  .stat.hero .value .flag { color: #d02a2a; }
   table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
-  thead th { background: #141b26; color: #ffffff; text-align: right; padding: 9px 10px; font-weight: 700; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; white-space: nowrap; }
-  thead th:first-child { text-align: left; border-radius: 8px 0 0 8px; }
-  thead th:last-child { border-radius: 0 8px 8px 0; }
+  thead th { text-align: right; border-bottom: 2px solid #18181b; padding: 9px 10px; font-weight: 700; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; white-space: nowrap; }
+  thead th:first-child { text-align: left; }
   td { text-align: right; border-bottom: 1px solid #f0f0f2; padding: 8px 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   td:first-child { text-align: left; }
   tbody tr:nth-child(even) td { background: #fafafa; }
   .lap-no { font-weight: 700; color: #52525b; }
   .laptime { font-weight: 600; }
-  .rank { color: #a1a1aa; font-weight: 400; }
-  tr.best td { background: #fdf1f0 !important; border-top: 1.5px solid #d02a2a; border-bottom: 1.5px solid #d02a2a; font-weight: 700; }
-  tr.best .laptime { color: #c22323; }
-  .b-mark { display: inline-block; background: #d02a2a; color: #ffffff; font-size: 9px; font-weight: 800; border-radius: 4px; padding: 1px 5px; vertical-align: 1px; }
+  .rank { color: #71717a; font-weight: 400; }
+  tr.best td { background: #eef0f3 !important; border-top: 1.5px solid #18181b; border-bottom: 1.5px solid #18181b; font-weight: 700; }
+  tr.best .laptime { color: #18181b; }
+  .b-mark { display: inline-block; background: #18181b; color: #ffffff; font-size: 9px; font-weight: 800; border-radius: 4px; padding: 1px 5px; vertical-align: 1px; }
   .tag { font-size: 8.5px; font-weight: 700; color: #a1a1aa; letter-spacing: 1px; }
   .footer { margin-top: 22px; display: flex; align-items: center; justify-content: space-between; }
-  .legend { font-size: 9.5px; color: #a1a1aa; }
+  .legend { font-size: 9.5px; color: #71717a; }
   .footer .brand { font-size: 12px; font-weight: 900; font-style: italic; letter-spacing: 1.5px; color: #18181b; }
   
 </style>
@@ -219,12 +205,11 @@ export function buildTimeSheetHtml(detail: SessionDetail, labels: TimeSheetLabel
     <div class="trackline">${escapeHtml(detail.track.name)} <span class="date">— ${dateLabel}</span></div>
     ${metaParts.length > 0 ? `<div class="meta">${metaParts.map((part) => `<span>${part}</span>`).join('')}</div>` : ''}
   </div>
-  <div class="curb"></div>
   <div class="content">
     <div class="stats">
       <div class="stat hero">
         <div class="label">${escapeHtml(labels.bestLap)}</div>
-        <div class="value"><span class="flag">■</span> ${best ? best.lapTime : '—'}</div>
+        <div class="value">${best ? best.lapTime : '—'}</div>
       </div>
       <div class="stat">
         <div class="label">${escapeHtml(labels.lapsLabel)}</div>
@@ -252,7 +237,6 @@ export function buildTimeSheetHtml(detail: SessionDetail, labels: TimeSheetLabel
       <div class="brand">Trakio</div>
     </div>
   </div>
-  <div class="checker"></div>
 </body>
 </html>`;
 }
