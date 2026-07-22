@@ -10,8 +10,8 @@ export type SessionQuota = {
   canRecord: boolean;
 };
 
-export function calculateSessionQuota(used: number, hasProAccess: boolean): SessionQuota {
-  if (hasProAccess) {
+export function calculateSessionQuota(used: number, quotaExempt: boolean): SessionQuota {
+  if (quotaExempt) {
     return { used, limit: null, remaining: null, canRecord: true };
   }
 
@@ -38,7 +38,7 @@ export async function countUserSessions(db: SQLiteDatabase): Promise<number> {
 
 export async function getSessionQuota(
   db: SQLiteDatabase,
-  hasProAccess: boolean,
+  quotaExempt: boolean,
 ): Promise<SessionQuota> {
-  return calculateSessionQuota(await countUserSessions(db), hasProAccess);
+  return calculateSessionQuota(await countUserSessions(db), quotaExempt);
 }

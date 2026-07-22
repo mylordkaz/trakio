@@ -19,6 +19,7 @@ import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useMenu } from '@/contexts/MenuContext';
 import { useExternalGps } from '@/contexts/ExternalGpsContext';
 import { useEntitlements } from '@/contexts/EntitlementContext';
+import { isSessionQuotaExempt } from '@/services/entitlements';
 import { fetchTrackWeather, type TrackWeather } from '@/services/weather';
 import {
   FREE_SESSION_LIMIT,
@@ -82,7 +83,8 @@ export default function PreSessionScreen() {
   const gradientColors = useHeaderGradient('emerald');
   const { openMenu } = useMenu();
   const { selectedDevice } = useExternalGps();
-  const { accessStatus, hasProAccess } = useEntitlements();
+  const { accessStatus } = useEntitlements();
+  const quotaExempt = isSessionQuotaExempt(accessStatus);
   const [userCar, setUserCar] = useState<string | null>(null);
   const [customSessionTitle, setCustomSessionTitle] = useState<string | null>(null);
   const [hasManualTrackSelection, setHasManualTrackSelection] = useState(false);
@@ -455,11 +457,11 @@ export default function PreSessionScreen() {
     // one: a just-upgraded pro user would otherwise hit a stale free-tier
     // block from the superseded-read fallback.
     latestQuotaRef.current = null;
-  }, [db, hasProAccess]);
+  }, [db, quotaExempt]);
 
   const refreshQuota = useCallback(async (): Promise<SessionQuota | null> => {
     const generation = ++quotaRefreshGenerationRef.current;
-    const quota = await getSessionQuota(db, hasProAccess);
+    const quota = await getSessionQuota(db, quotaExempt);
     if (generation !== quotaRefreshGenerationRef.current) {
       // A superseded read means a fresher concurrent refresh won; its result
       // must still gate the caller rather than letting null skip the check.
@@ -469,7 +471,7 @@ export default function PreSessionScreen() {
     latestQuotaRef.current = quota;
     setSessionQuota(quota);
     return quota;
-  }, [db, hasProAccess]);
+  }, [db, quotaExempt]);
 
   useFocusEffect(
     useCallback(() => {

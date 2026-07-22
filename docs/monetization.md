@@ -46,10 +46,12 @@ The entitlement provider exposes four states:
 - `offline_grace`: a locally cached paid grant is being used offline
 
 GPS recording never depends on a network request. Existing installations are
-identified from the local database and grandfathered without contacting Apple.
-While eligibility is otherwise pending, recording and export use the Free-tier
-rules; an unresolved check never grants Pro. The Pro screen still displays the
-normal plan choices and restore action while this background check is unresolved.
+identified from the local database and grandfathered without contacting Apple,
+before any StoreKit connection is attempted. While eligibility is otherwise
+pending, the session quota is not enforced — recording stays available — but
+exports, plan labels, and every other Pro surface use the Free-tier rules; an
+unresolved check never grants Pro. The Pro screen still displays the normal
+plan choices and restore action while this background check is unresolved.
 
 For a yearly plan, the app caches Apple's signed subscription expiration and
 allows seven additional offline days after that date. Apple Billing Grace Period

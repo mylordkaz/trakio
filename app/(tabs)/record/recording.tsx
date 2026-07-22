@@ -22,6 +22,7 @@ import { createImuCapture } from '@/telemetry/imu-capture';
 import { IMU_CAPTURE_ENABLED } from '@/constants/featureFlags';
 import { useExternalGps } from '@/contexts/ExternalGpsContext';
 import { useEntitlements } from '@/contexts/EntitlementContext';
+import { isSessionQuotaExempt } from '@/services/entitlements';
 import { createSessionRuntime } from '@/telemetry/session-runtime';
 import type { TrackDetail } from '@/db';
 import type { TelemetrySample, ExtendedTelemetrySample } from '@/telemetry/types';
@@ -110,9 +111,9 @@ export default function RecordingScreen() {
   const params = useLocalSearchParams<{ trackId?: string; sessionName?: string; condition?: string; temperatureC?: string }>();
   const gradientColors = useHeaderGradient('red');
   const { selectedDevice } = useExternalGps();
-  const { hasProAccess } = useEntitlements();
-  const hasProAccessRef = useRef(hasProAccess);
-  hasProAccessRef.current = hasProAccess;
+  const { accessStatus } = useEntitlements();
+  const quotaExemptRef = useRef(isSessionQuotaExempt(accessStatus));
+  quotaExemptRef.current = isSessionQuotaExempt(accessStatus);
   const selectedDeviceRef = useRef(selectedDevice);
   selectedDeviceRef.current = selectedDevice;
   const [track, setTrack] = useState<TrackDetail | null>(null);
@@ -270,7 +271,7 @@ export default function RecordingScreen() {
       });
 
       try {
-        const quota = await getSessionQuota(db, hasProAccessRef.current);
+        const quota = await getSessionQuota(db, quotaExemptRef.current);
         if (!quota.canRecord) {
           setLimitQuota(quota);
           return;

@@ -6,6 +6,7 @@ import {
   createPaidEntitlementCache,
   hasGrandfatheringBuildConflict,
   hasProAccessForStatus,
+  isSessionQuotaExempt,
   isSubscriptionEntitled,
   isGrandfatheredBuild,
   nextCachedPaidEntitlementCheckAt,
@@ -24,6 +25,13 @@ describe('entitlement policy', () => {
     expect(hasProAccessForStatus('resolved_free')).toBe(false);
     expect(hasProAccessForStatus('resolved_pro')).toBe(true);
     expect(hasProAccessForStatus('offline_grace')).toBe(true);
+  });
+
+  it('exempts unresolved and Pro states from the session quota', () => {
+    expect(isSessionQuotaExempt('pending')).toBe(true);
+    expect(isSessionQuotaExempt('resolved_pro')).toBe(true);
+    expect(isSessionQuotaExempt('offline_grace')).toBe(true);
+    expect(isSessionQuotaExempt('resolved_free')).toBe(false);
   });
 
   it('fails closed for a clean iOS install that cannot verify AppTransaction', () => {

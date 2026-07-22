@@ -711,6 +711,11 @@ export function EntitlementProvider({ children }: { children: ReactNode }) {
       lastStoreRefreshAttemptAtRef.current = now;
       const refreshPromise = (async () => {
         try {
+          // The grandfathering marker lives in the local database; an existing
+          // early user must resolve without waiting on StoreKit connectivity.
+          await resolveGrandfathering(false);
+          applyAccess(paidCacheRef.current);
+
           const connected = await connectStore();
           await resolveGrandfathering(connected);
           if (!connected) {

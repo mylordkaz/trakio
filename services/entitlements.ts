@@ -22,6 +22,13 @@ export function hasProAccessForStatus(status: AccessStatus): boolean {
   return status === 'resolved_pro' || status === 'offline_grace';
 }
 
+// Recording never depends on a network request: while eligibility is still
+// unresolved the session quota is not enforced, even though Pro-only surfaces
+// (exports, plan labels, paywall) stay closed.
+export function isSessionQuotaExempt(status: AccessStatus): boolean {
+  return hasProAccessForStatus(status) || status === 'pending';
+}
+
 export function shouldFailClosedForFreshInstall(
   platform: string,
   installedBeforeMonetization: boolean | undefined,
