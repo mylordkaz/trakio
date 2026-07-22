@@ -13,6 +13,7 @@ export default {
     track: 'Track',
     change: 'Change',
     viewAll: 'View all',
+    retry: 'Retry',
   },
   tabs: {
     record: 'Record',
@@ -322,18 +323,65 @@ export default {
     language: 'Language',
     english: 'English',
     japanese: 'Japanese',
+    plan: 'Plan',
     about: 'About',
     version: 'Version',
     sendFeedback: 'Send Feedback',
     termsOfUse: 'Terms of Use',
     privacyPolicy: 'Privacy Policy',
   },
+  pro: {
+    title: 'Trakio Pro',
+    subtitle: 'Keep your complete track-day history and take your lap times with you.',
+    limitTitle: 'Free session limit reached',
+    limitMessage:
+      'You have %{used} of %{limit} saved sessions. Delete a session to record again, or unlock unlimited history with Pro.',
+    viewPro: 'View Pro',
+    manageSessions: 'Manage Sessions',
+    sessionUsage: '%{used} of %{limit} saved',
+    checkingEarlyAccess: 'Checking early-user access',
+    freePlan: 'Free',
+    currentPlan: 'Current plan',
+    offlineGrace: 'Using recently verified Pro access while offline.',
+    manageSubscription: 'Manage Subscription',
+    yearly: 'Yearly',
+    yearlyNote: 'Annual access · No free trial',
+    lifetime: 'Lifetime',
+    lifetimeNote: 'One-time purchase',
+    continue: 'Continue',
+    offeringsUnavailable: 'Plans are temporarily unavailable. Check your connection and try again.',
+    renewalDisclosure:
+      'The yearly plan renews automatically each year unless canceled at least 24 hours before renewal. Payment is charged to your Apple Account.',
+    restore: 'Restore Purchases',
+    benefits: {
+      unlimitedSessions: 'Unlimited saved sessions',
+      pdfExport: 'PDF lap time sheets',
+      csvExport: 'CSV lap time exports',
+    },
+    sources: {
+      yearly: 'Pro Yearly',
+      lifetime: 'Pro Lifetime',
+      grandfathered: 'Early User Pro',
+    },
+    purchaseSuccessTitle: 'Pro unlocked',
+    purchaseSuccessMessage: 'Unlimited sessions and data exports are now available.',
+    purchaseDeferredTitle: 'Awaiting approval',
+    purchaseDeferredMessage: 'This purchase is waiting for approval. Pro unlocks automatically once it is approved.',
+    purchaseFailedTitle: 'Purchase unavailable',
+    purchaseFailedMessage: 'The purchase could not be completed. Check your connection and try again.',
+    restoreSuccessTitle: 'Purchases restored',
+    restoreSuccessMessage: 'Your Pro access is active on this device.',
+    restoreEmptyTitle: 'Nothing to restore',
+    restoreEmptyMessage: 'No active Trakio Pro purchase was found for this Apple Account.',
+    restoreFailedTitle: 'Restore unavailable',
+    restoreFailedMessage: 'Purchases could not be checked. Check your connection and try again.',
+  },
   legal: {
     lastUpdated: 'Last updated',
     terms: {
       title: 'Terms of Use',
       subtitle: 'Plain-language rules for using Trakio safely and responsibly.',
-      updatedAt: 'April 4, 2026',
+      updatedAt: 'July 21, 2026',
       sections: {
         overview: {
           title: 'Using Trakio',
@@ -358,7 +406,12 @@ export default {
         hostedServices: {
           title: 'Hosted and third-party services',
           body:
-            'Some features rely on external services, such as weather lookups, Instagram Story sharing, email feedback, and the hosted leaderboard. These services can change, fail, or be removed at any time. Trakio may also limit, reject, or remove leaderboard entries that appear abusive or broken.',
+            'Some features rely on external services, including weather lookups, Instagram Story sharing, in-app feedback and circuit requests, purchases, and the hosted leaderboard. These services can change, fail, or be removed at any time. Trakio may also limit, reject, or remove submissions that appear abusive or broken.',
+        },
+        paidPlans: {
+          title: 'Pro purchases',
+          body:
+            'Trakio Pro is offered as a yearly auto-renewing subscription and a one-time lifetime purchase. The price shown in the app applies at checkout. Payment is charged to your Apple Account. The yearly plan renews unless canceled at least 24 hours before the end of the current period and can be managed in your App Store account. Apple handles billing, cancellations, and refunds subject to its rules and applicable law. Lifetime access covers Trakio Pro; separately sold products may not be included. Eligible early users may receive permanent Pro access based on Apple\'s original app transaction record.',
         },
         liability: {
           title: 'No warranties; limited liability',
@@ -380,7 +433,7 @@ export default {
     privacy: {
       title: 'Privacy Policy',
       subtitle: 'What Trakio stores, what it sends, and what stays on your device.',
-      updatedAt: 'April 4, 2026',
+      updatedAt: 'July 21, 2026',
       sections: {
         overview: {
           title: 'Overview',
@@ -400,7 +453,12 @@ export default {
         networkServices: {
           title: 'Services contacted over the network',
           body:
-            'Trakio may contact Open-Meteo to fetch current weather for a selected track. If you use the leaderboard feature, Trakio sends your shared lap entry to the hosted leaderboard service. If you use Instagram Story sharing, the app hands your selected content off to Instagram. If you send feedback, your device mail app is used to compose an email.',
+            'Trakio may contact Open-Meteo to fetch current weather for a selected track. If you use the leaderboard, Trakio sends your shared lap entry to the hosted leaderboard service. Instagram Story sharing hands selected content to Instagram. Feedback and circuit requests are sent from the app to Trakio\'s hosted request service.',
+        },
+        purchaseData: {
+          title: 'Purchases and entitlement data',
+          body:
+            'Trakio uses Apple\'s in-app purchase system to process purchases and determine Pro access from StoreKit-verified transactions. Apple processes payment details; Trakio does not receive your full card or bank information. The app stores product, subscription expiration, and eligible early-user access results on your device so access can continue offline. Trakio does not send purchase data to a separate third-party purchase service.',
         },
         sharing: {
           title: 'Public leaderboard sharing',

@@ -1,5 +1,7 @@
 // Feature flags for gating work that isn't ready to ship to users.
 
+import Constants from 'expo-constants';
+
 // External GPS (RaceBox) support is code-complete but unverified on hardware:
 // the BLE connect, GNSS-config write, device-info read, and reconnect paths
 // have only been unit-tested, not exercised against a real device. Keep this
@@ -30,3 +32,10 @@ export const CROSSING_RECOVERY_ENABLED: boolean = true;
 // 4 m-accuracy fixes to be discarded per event; re-anchoring caps such holes
 // at ~2 s. Rejected fixes are still quarantined for display/analysis.
 export const JUMP_REANCHOR_ENABLED: boolean = true;
+
+// Full raw telemetry is a development-only diagnostic path, not a
+// customer-facing Pro export. The extra flag cannot survive config evaluation
+// in production-classified builds, and EAS bundling classifies preview as
+// production (NODE_ENV), so in practice only dev clients ever enable it.
+export const RAW_DATA_EXPORT_ENABLED: boolean =
+  __DEV__ || Constants.expoConfig?.extra?.rawDataExportEnabled === true;

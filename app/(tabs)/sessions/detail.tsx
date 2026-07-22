@@ -35,6 +35,8 @@ import { exportSessionTimeSheetCsv, exportSessionTimeSheetPdf } from '@/services
 
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useShareSession } from '@/hooks/useShareSession';
+import { useEntitlements } from '@/contexts/EntitlementContext';
+import { RAW_DATA_EXPORT_ENABLED } from '@/constants/featureFlags';
 import { formatLapTime, formatGapSeconds, formatDateTime, formatDuration, formatSpeed } from '@/utils/format';
 import { buildDisplayPolylines, groupPointsIntoLapRuns } from '@/utils/displayLine';
 import { getBestLapRacingLine } from '@/utils/racingLine';
@@ -131,6 +133,7 @@ export default function SessionDetailScreen() {
     Awaited<ReturnType<typeof getRejectedGpsPointsForSession>>
   >([]);
   const share = useShareSession(sessionDetail);
+  const { hasProAccess } = useEntitlements();
 
   const loadSession = useCallback(async () => {
     if (!id) {
@@ -175,6 +178,37 @@ export default function SessionDetailScreen() {
     const note = await addSessionNote(db, sessionDetail.session.id, text);
     setSessionDetail({ ...sessionDetail, notes: [...sessionDetail.notes, note] });
     setNewNote('');
+  }
+
+  function handleExportData() {
+    if (!sessionDetail) {
+      return;
+    }
+
+    if (!hasProAccess) {
+      router.push('/pro');
+      return;
+    }
+
+    Alert.alert(i18n.t('sessions.exportData'), i18n.t('sessions.exportChooseFormat'), [
+      {
+        text: i18n.t('sessions.exportPdf'),
+        onPress: () => {
+          void exportSessionTimeSheetPdf(sessionDetail).then((result) => {
+            if (!result.ok) Alert.alert(i18n.t('sessions.exportFailed'));
+          });
+        },
+      },
+      {
+        text: i18n.t('sessions.exportCsv'),
+        onPress: () => {
+          void exportSessionTimeSheetCsv(sessionDetail).then((result) => {
+            if (!result.ok) Alert.alert(i18n.t('sessions.exportFailed'));
+          });
+        },
+      },
+      { text: i18n.t('common.cancel'), style: 'cancel' },
+    ]);
   }
 
   async function handleUpdateNote(noteId: string) {
@@ -756,31 +790,10 @@ export default function SessionDetailScreen() {
 
         <View className="px-5 pb-5 pt-1 flex-row gap-3">
           <Pressable
-            onPress={() => {
-              if (!sessionDetail) return;
-              Alert.alert(i18n.t('sessions.exportData'), i18n.t('sessions.exportChooseFormat'), [
-                {
-                  text: i18n.t('sessions.exportPdf'),
-                  onPress: () => {
-                    void exportSessionTimeSheetPdf(sessionDetail).then((result) => {
-                      if (!result.ok) Alert.alert(i18n.t('sessions.exportFailed'));
-                    });
-                  },
-                },
-                {
-                  text: i18n.t('sessions.exportCsv'),
-                  onPress: () => {
-                    void exportSessionTimeSheetCsv(sessionDetail).then((result) => {
-                      if (!result.ok) Alert.alert(i18n.t('sessions.exportFailed'));
-                    });
-                  },
-                },
-                { text: i18n.t('common.cancel'), style: 'cancel' },
-              ]);
-            }}
+            onPress={handleExportData}
             // Developer path: the raw JSON export (full telemetry, IMU,
             // quarantine) stays reachable behind a long-press only.
-            onLongPress={() => {
+            onLongPress={RAW_DATA_EXPORT_ENABLED ? () => {
               if (sessionDetail) {
                 void Promise.all([
                   getImuSamplesForSession(db, sessionDetail.session.id).catch(() => []),
@@ -789,11 +802,16 @@ export default function SessionDetailScreen() {
                   shareSessionDataExport(sessionDetail, imuSamples, rejectedGpsPoints)
                 );
               }
-            }}
+            } : undefined}
             disabled={!sessionDetail}
             className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center"
           >
-            <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('sessions.exportData')}</Text>
+            <View className="flex-row items-center gap-1.5">
+              {!hasProAccess ? <Ionicons name="lock-closed" size={13} color="#8b5cf6" /> : null}
+              <Text className="text-sm font-medium text-zinc-900 dark:text-white">
+                {i18n.t('sessions.exportData')}
+              </Text>
+            </View>
           </Pressable>
           <Pressable
             onPress={share.openShareSheet}

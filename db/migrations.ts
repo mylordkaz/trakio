@@ -1,4 +1,11 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import {
+  PRE_MONETIZATION_INSTALL_KEY,
+  ensureAppMetadataTable,
+  hasFreshInstallMarker,
+  markFreshDatabaseBeforeSchemaCreation,
+  preMonetizationInstallValue,
+} from '@/db/app-metadata';
 import { recoverStaleRecordingSessions, syncSessionTestSeeds } from '@/db/sessions';
 import { syncTrackSeeds } from '@/db/tracks';
 
@@ -412,7 +419,13 @@ async function migrateLegacyTrackSchema(db: SQLiteDatabase) {
 const MIGRATIONS: Migration[] = [
   {
     version: 1,
-    up: createBaseSchema,
+    up: async (db) => {
+      // Persist the install origin before creating any app tables. If first
+      // launch is interrupted later in the migration chain, this survives and
+      // prevents the partial database from looking like a legacy upgrade.
+      await markFreshDatabaseBeforeSchemaCreation(db);
+      await createBaseSchema(db);
+    },
   },
   {
     version: 2,
@@ -664,6 +677,17 @@ const MIGRATIONS: Migration[] = [
       if (!lapColumns.includes('started_longitude')) {
         await db.execAsync('ALTER TABLE laps ADD COLUMN started_longitude REAL;');
       }
+    },
+  },
+  {
+    version: 17,
+    up: async (db) => {
+      await ensureAppMetadataTable(db);
+      await db.runAsync(
+        'INSERT OR IGNORE INTO app_metadata (key, value) VALUES (?, ?);',
+        PRE_MONETIZATION_INSTALL_KEY,
+        preMonetizationInstallValue(await hasFreshInstallMarker(db)),
+      );
     },
   },
 ];

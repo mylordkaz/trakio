@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useEffect, useState } from 'react';
+import { useMemo, useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, cancelAnimation } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -11,13 +11,20 @@ import * as Battery from 'expo-battery';
 import i18n from '@/i18n';
 import Card from '@/components/Card';
 import EditableSessionTitle from '@/components/EditableSessionTitle';
+import ProLimitModal from '@/components/ProLimitModal';
 import type { TrackListItem } from '@/db';
 import { getNextSessionNumber, getOrCreateDefaultUserProfile, getTrackById, getTrackSessionSummary, listTracks } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useMenu } from '@/contexts/MenuContext';
 import { useExternalGps } from '@/contexts/ExternalGpsContext';
+import { useEntitlements } from '@/contexts/EntitlementContext';
 import { fetchTrackWeather, type TrackWeather } from '@/services/weather';
+import {
+  FREE_SESSION_LIMIT,
+  getSessionQuota,
+  type SessionQuota,
+} from '@/services/session-quota';
 import {
   getCurrentLocationSample,
   getForegroundLocationPermissionState,
@@ -75,10 +82,16 @@ export default function PreSessionScreen() {
   const gradientColors = useHeaderGradient('emerald');
   const { openMenu } = useMenu();
   const { selectedDevice } = useExternalGps();
+  const { accessStatus, hasProAccess } = useEntitlements();
   const [userCar, setUserCar] = useState<string | null>(null);
   const [customSessionTitle, setCustomSessionTitle] = useState<string | null>(null);
   const [hasManualTrackSelection, setHasManualTrackSelection] = useState(false);
   const [hasResolvedAutoSelection, setHasResolvedAutoSelection] = useState(false);
+  const [sessionQuota, setSessionQuota] = useState<SessionQuota | null>(null);
+  const [isCheckingQuota, setIsCheckingQuota] = useState(false);
+  const [showLimitModal, setShowLimitModal] = useState(false);
+  const quotaRefreshGenerationRef = useRef(0);
+  const latestQuotaRef = useRef<SessionQuota | null>(null);
   const pulseOpacity = useSharedValue(1);
   const pulseStyle = useAnimatedStyle(() => ({ opacity: pulseOpacity.value }));
 
@@ -437,23 +450,87 @@ export default function PreSessionScreen() {
     };
   }, [db, selectedCircuit, selectedDevice]);
 
+  useEffect(() => {
+    // A quota computed under the previous entitlement must not gate the next
+    // one: a just-upgraded pro user would otherwise hit a stale free-tier
+    // block from the superseded-read fallback.
+    latestQuotaRef.current = null;
+  }, [db, hasProAccess]);
+
+  const refreshQuota = useCallback(async (): Promise<SessionQuota | null> => {
+    const generation = ++quotaRefreshGenerationRef.current;
+    const quota = await getSessionQuota(db, hasProAccess);
+    if (generation !== quotaRefreshGenerationRef.current) {
+      // A superseded read means a fresher concurrent refresh won; its result
+      // must still gate the caller rather than letting null skip the check.
+      return latestQuotaRef.current;
+    }
+
+    latestQuotaRef.current = quota;
+    setSessionQuota(quota);
+    return quota;
+  }, [db, hasProAccess]);
+
   useFocusEffect(
     useCallback(() => {
       setCustomSessionTitle(null);
 
       let isMounted = true;
-      async function refreshSessionNumber() {
-        try {
-          const next = await getNextSessionNumber(db);
-          if (isMounted) setSessionNumber(next);
-        } catch {
-          if (isMounted) setSessionNumber(1);
-        }
-      }
-      void refreshSessionNumber();
+      void getNextSessionNumber(db)
+        .then((next) => {
+          if (isMounted) {
+            setSessionNumber(next);
+          }
+        })
+        .catch(() => undefined);
+
       return () => { isMounted = false; };
     }, [db])
   );
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshQuota().catch(() => undefined);
+    }, [refreshQuota]),
+  );
+
+  function navigateToRecording() {
+    if (!selectedCircuit) {
+      return;
+    }
+
+    router.push({
+      pathname: '/(tabs)/record/recording',
+      params: {
+        trackId: selectedCircuit.id,
+        sessionName: sessionTitle,
+        condition: weather?.conditionKey ?? '',
+        temperatureC: weather?.temperatureC != null ? String(weather.temperatureC) : '',
+      },
+    });
+  }
+
+  async function handleStartSession() {
+    if (!selectedCircuit || isCheckingQuota) {
+      return;
+    }
+
+    setIsCheckingQuota(true);
+    try {
+      const quota = await refreshQuota();
+      if (quota && !quota.canRecord) {
+        setShowLimitModal(true);
+        return;
+      }
+
+      navigateToRecording();
+    } catch {
+      // Quota lookup must not make GPS recording depend on a non-critical read.
+      navigateToRecording();
+    } finally {
+      setIsCheckingQuota(false);
+    }
+  }
 
   function formatTrackLength(lengthMeters: number | null) {
     if (lengthMeters === null) {
@@ -682,26 +759,28 @@ export default function PreSessionScreen() {
 
           {/* Start button */}
           <View className="mt-4">
+            {accessStatus === 'resolved_free' && sessionQuota?.limit != null ? (
+              <View className="mb-2 flex-row items-center justify-between px-1">
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {i18n.t('pro.sessionUsage', {
+                    used: sessionQuota?.used ?? 0,
+                    limit: sessionQuota?.limit ?? FREE_SESSION_LIMIT,
+                  })}
+                </Text>
+                <Pressable onPress={() => router.push('/pro')} hitSlop={8}>
+                  <Text className="text-xs font-medium text-violet-600 dark:text-violet-400">
+                    {i18n.t('pro.viewPro')}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
             <Pressable
-              onPress={() => {
-                if (!selectedCircuit) {
-                  return;
-                }
-
-                router.push({
-                  pathname: '/(tabs)/record/recording',
-                  params: {
-                    trackId: selectedCircuit.id,
-                    sessionName: sessionTitle,
-                    condition: weather?.conditionKey ?? '',
-                    temperatureC: weather?.temperatureC != null ? String(weather.temperatureC) : '',
-                  },
-                });
-              }}
-              className="w-full rounded-2xl bg-emerald-500 py-4 items-center"
+              onPress={() => void handleStartSession()}
+              disabled={isCheckingQuota}
+              className="w-full rounded-2xl bg-emerald-500 py-4 items-center disabled:opacity-60"
             >
               <Text className="text-sm font-semibold text-black">
-                {i18n.t('session.start')}
+                {isCheckingQuota ? i18n.t('common.loading') : i18n.t('session.start')}
               </Text>
             </Pressable>
           </View>
@@ -752,6 +831,20 @@ export default function PreSessionScreen() {
           </Card>
         </View>
       </ScrollView>
+      <ProLimitModal
+        visible={showLimitModal}
+        used={sessionQuota?.used ?? 0}
+        limit={sessionQuota?.limit ?? FREE_SESSION_LIMIT}
+        onClose={() => setShowLimitModal(false)}
+        onManageSessions={() => {
+          setShowLimitModal(false);
+          router.push('/(tabs)/sessions');
+        }}
+        onViewPro={() => {
+          setShowLimitModal(false);
+          router.push('/pro');
+        }}
+      />
     </View>
   );
 }

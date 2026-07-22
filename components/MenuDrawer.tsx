@@ -22,6 +22,7 @@ import { useSQLiteContext } from "expo-sqlite";
 import i18n from "@/i18n";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useMenu } from "@/contexts/MenuContext";
+import { useEntitlements } from "@/contexts/EntitlementContext";
 import ExternalGpsSection from "@/components/ExternalGpsSection";
 import { EXTERNAL_GPS_ENABLED } from "@/constants/featureFlags";
 import { getUserProfile } from "@/db";
@@ -94,6 +95,12 @@ export default function MenuDrawer() {
   } = useMenu();
   const router = useRouter();
   const db = useSQLiteContext();
+  const {
+    accessStatus,
+    canResolveGrandfathering,
+    grandfatheringStatus,
+    source,
+  } = useEntitlements();
   const [user, setUser] = useState<UserRow | null>(null);
   const progress = useSharedValue(0);
 
@@ -251,6 +258,43 @@ export default function MenuDrawer() {
               <ExternalGpsSection />
             </>
           )}
+
+          {/* Plan */}
+          <SectionHeader title={t("pro.title")} />
+          <Pressable
+            onPress={() => {
+              closeMenu();
+              router.push("/pro");
+            }}
+            className="mb-6 flex-row items-center justify-between rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 dark:border-white/10 dark:bg-white/5"
+          >
+            <View className="flex-row items-center gap-3">
+              <Ionicons
+                name="speedometer-outline"
+                size={20}
+                color={accessStatus === "resolved_free" ? "#71717a" : "#8b5cf6"}
+              />
+              <View>
+                <Text className="text-[15px] font-medium text-zinc-900 dark:text-white">
+                  {t("menu.plan")}
+                </Text>
+                <Text className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  {source
+                    ? t(`pro.sources.${source}`)
+                    : grandfatheringStatus === "pending" && canResolveGrandfathering
+                      ? t("pro.checkingEarlyAccess")
+                      : grandfatheringStatus === "pending"
+                        ? t("pro.title")
+                        : t("pro.freePlan")}
+                </Text>
+              </View>
+            </View>
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={isDark ? "#52525b" : "#a1a1aa"}
+            />
+          </Pressable>
 
           {/* Preferences */}
           <SectionHeader title={t("menu.preferences")} />

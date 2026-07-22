@@ -12,6 +12,7 @@ import i18n from '@/i18n';
 import Card from '@/components/Card';
 import LapRow from '@/components/LapRow';
 import ProgressBar from '@/components/ProgressBar';
+import ProLimitModal from '@/components/ProLimitModal';
 import { createSessionRecorder, getOrCreateDefaultUserProfile, getTrackById } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
@@ -20,10 +21,16 @@ import { createConnectionLifecycle } from '@/telemetry/sources/connection-lifecy
 import { createImuCapture } from '@/telemetry/imu-capture';
 import { IMU_CAPTURE_ENABLED } from '@/constants/featureFlags';
 import { useExternalGps } from '@/contexts/ExternalGpsContext';
+import { useEntitlements } from '@/contexts/EntitlementContext';
 import { createSessionRuntime } from '@/telemetry/session-runtime';
 import type { TrackDetail } from '@/db';
 import type { TelemetrySample, ExtendedTelemetrySample } from '@/telemetry/types';
 import { formatLapTime, formatDurationMs as formatDuration, formatSpeed } from '@/utils/format';
+import {
+  FREE_SESSION_LIMIT,
+  getSessionQuota,
+  type SessionQuota,
+} from '@/services/session-quota';
 
 function formatSectorTime(elapsedMs: number | null) {
   if (elapsedMs === null) {
@@ -103,6 +110,9 @@ export default function RecordingScreen() {
   const params = useLocalSearchParams<{ trackId?: string; sessionName?: string; condition?: string; temperatureC?: string }>();
   const gradientColors = useHeaderGradient('red');
   const { selectedDevice } = useExternalGps();
+  const { hasProAccess } = useEntitlements();
+  const hasProAccessRef = useRef(hasProAccess);
+  hasProAccessRef.current = hasProAccess;
   const selectedDeviceRef = useRef(selectedDevice);
   selectedDeviceRef.current = selectedDevice;
   const [track, setTrack] = useState<TrackDetail | null>(null);
@@ -123,6 +133,7 @@ export default function RecordingScreen() {
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
   const [wasInterrupted, setWasInterrupted] = useState(false);
+  const [limitQuota, setLimitQuota] = useState<SessionQuota | null>(null);
   const tabNavigator = useNavigation().getParent();
 
   useEffect(() => {
@@ -258,6 +269,16 @@ export default function RecordingScreen() {
         },
       });
 
+      try {
+        const quota = await getSessionQuota(db, hasProAccessRef.current);
+        if (!quota.canRecord) {
+          setLimitQuota(quota);
+          return;
+        }
+      } catch {
+        // A failed local count must not make GPS recording depend on connectivity.
+      }
+
       runtimeRef.current = runtime;
 
       const startedSnapshot = await runtime.start();
@@ -351,7 +372,7 @@ export default function RecordingScreen() {
         void activeRuntime.stop().catch(() => undefined);
       }
     };
-  }, [db, params.sessionName, params.condition, params.temperatureC, track]);
+  }, [db, params.sessionName, params.condition, params.temperatureC, router, track]);
 
   useEffect(() => {
     const sessionStartedAtMs = runtimeSnapshot?.sessionStartedAtMs;
@@ -828,6 +849,23 @@ export default function RecordingScreen() {
       </ScrollView>
     </View>
     )}
+      <ProLimitModal
+        visible={limitQuota !== null}
+        used={limitQuota?.used ?? 0}
+        limit={limitQuota?.limit ?? FREE_SESSION_LIMIT}
+        onClose={() => {
+          setLimitQuota(null);
+          router.back();
+        }}
+        onManageSessions={() => {
+          setLimitQuota(null);
+          router.replace('/(tabs)/sessions');
+        }}
+        onViewPro={() => {
+          setLimitQuota(null);
+          router.replace('/pro');
+        }}
+      />
     </View>
   );
 }

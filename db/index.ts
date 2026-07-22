@@ -1,3 +1,4 @@
+export * from './app-metadata';
 export * from './imu-samples';
 export * from './rejected-points';
 export * from './migrations';
