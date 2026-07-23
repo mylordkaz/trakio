@@ -13,6 +13,7 @@ export default {
     track: 'トラック',
     change: '変更',
     viewAll: 'すべて表示',
+    retry: '再試行',
   },
   tabs: {
     record: '録画',
@@ -322,18 +323,65 @@ export default {
     language: '言語',
     english: 'English',
     japanese: '日本語',
+    plan: 'プラン',
     about: 'アプリについて',
     version: 'バージョン',
     sendFeedback: 'フィードバックを送信',
     termsOfUse: '利用規約',
     privacyPolicy: 'プライバシーポリシー',
   },
+  pro: {
+    title: 'Trakio Pro',
+    subtitle: '走行履歴をすべて保存し、ラップタイムをPDFやCSVで活用できます。',
+    limitTitle: '無料プランの保存上限です',
+    limitMessage:
+      '%{limit}件中%{used}件のセッションが保存されています。セッションを削除すると再び記録できます。Proでは保存数が無制限になります。',
+    viewPro: 'Proを見る',
+    manageSessions: 'セッションを管理',
+    sessionUsage: '%{limit}件中%{used}件を保存',
+    checkingEarlyAccess: '早期ユーザー特典を確認中',
+    freePlan: '無料',
+    currentPlan: '現在のプラン',
+    offlineGrace: '最近確認されたProアクセスをオフラインで利用中です。',
+    manageSubscription: 'サブスクリプションを管理',
+    yearly: '年間プラン',
+    yearlyNote: '1年間のアクセス・無料トライアルなし',
+    lifetime: '買い切りプラン',
+    lifetimeNote: '1回限りの購入',
+    continue: '続ける',
+    offeringsUnavailable: 'プランを読み込めませんでした。通信状況を確認してもう一度お試しください。',
+    renewalDisclosure:
+      '年間プランは、更新の24時間前までに解約しない限り毎年自動更新されます。お支払いはApple Accountに請求されます。',
+    restore: '購入を復元',
+    benefits: {
+      unlimitedSessions: 'セッションを無制限に保存',
+      pdfExport: 'PDFラップタイムシート',
+      csvExport: 'CSVラップタイム書き出し',
+    },
+    sources: {
+      yearly: 'Pro 年間プラン',
+      lifetime: 'Pro 買い切りプラン',
+      grandfathered: '早期ユーザー Pro',
+    },
+    purchaseSuccessTitle: 'Proを利用できます',
+    purchaseSuccessMessage: 'セッションの無制限保存とデータ書き出しが利用可能になりました。',
+    purchaseDeferredTitle: '承認待ちです',
+    purchaseDeferredMessage: 'この購入は承認待ちです。承認されると自動的にProが有効になります。',
+    purchaseFailedTitle: '購入できませんでした',
+    purchaseFailedMessage: '購入を完了できませんでした。通信状況を確認してもう一度お試しください。',
+    restoreSuccessTitle: '購入を復元しました',
+    restoreSuccessMessage: 'この端末でProアクセスを利用できます。',
+    restoreEmptyTitle: '復元できる購入がありません',
+    restoreEmptyMessage: 'このApple Accountに有効なTrakio Proの購入が見つかりませんでした。',
+    restoreFailedTitle: '購入を確認できませんでした',
+    restoreFailedMessage: '通信状況を確認してもう一度お試しください。',
+  },
   legal: {
     lastUpdated: '最終更新',
     terms: {
       title: '利用規約',
       subtitle: 'Trakio を安全かつ適切に使うための、読みやすい利用ルールです。',
-      updatedAt: '2026年4月4日',
+      updatedAt: '2026年7月21日',
       sections: {
         overview: {
           title: 'Trakio の利用について',
@@ -358,7 +406,12 @@ export default {
         hostedServices: {
           title: '外部・ホスト型サービス',
           body:
-            '天気取得、Instagram ストーリー共有、メールでのフィードバック、ホストされたリーダーボードなど、一部の機能は外部サービスに依存します。これらのサービスは変更、中断、停止される場合があります。Trakio は、不正または不適切と判断したリーダーボード投稿を制限、拒否、削除する場合があります。',
+            '天気取得、Instagram ストーリー共有、アプリ内のフィードバック・サーキットリクエスト、購入、ホストされたリーダーボードなど、一部の機能は外部サービスに依存します。これらのサービスは変更、中断、停止される場合があります。Trakio は、不正または不適切と判断した送信内容を制限、拒否、削除する場合があります。',
+        },
+        paidPlans: {
+          title: 'Proの購入',
+          body:
+            'Trakio Proは、自動更新の年間プランと1回限りの買い切りプランで提供されます。購入時にはアプリに表示された価格が適用され、Apple Accountに請求されます。年間プランは、現在の期間が終了する24時間前までに解約しない限り更新され、App Storeアカウントから管理できます。請求、解約、返金はAppleの規約および適用法令に従ってAppleが処理します。買い切りプランはTrakio Proを対象とし、別売の商品は含まれない場合があります。対象となる早期ユーザーには、Appleの初回アプリ取引記録に基づき永続的なProアクセスが付与される場合があります。',
         },
         liability: {
           title: '保証なし・責任制限',
@@ -380,7 +433,7 @@ export default {
     privacy: {
       title: 'プライバシーポリシー',
       subtitle: 'Trakio が端末に保存するもの、送信するもの、送信しないものを説明します。',
-      updatedAt: '2026年4月4日',
+      updatedAt: '2026年7月21日',
       sections: {
         overview: {
           title: '概要',
@@ -400,7 +453,12 @@ export default {
         networkServices: {
           title: 'ネットワーク経由で接続するサービス',
           body:
-            'Trakio は、選択中のトラックの現在天気を取得するために Open-Meteo に接続することがあります。リーダーボード機能を使う場合、共有したラップ情報はホストされたリーダーボードサービスに送信されます。Instagram ストーリー共有を使う場合、選択したコンテンツは Instagram に引き渡されます。フィードバック送信では、端末のメールアプリを使ってメールを作成します。',
+            'Trakio は、選択中のトラックの現在天気を取得するために Open-Meteo に接続することがあります。リーダーボードを使う場合、共有したラップ情報はホストされたリーダーボードサービスに送信されます。Instagram ストーリー共有では、選択したコンテンツが Instagram に引き渡されます。フィードバックとサーキットリクエストは、アプリからTrakioのホスト型リクエストサービスに送信されます。',
+        },
+        purchaseData: {
+          title: '購入・利用権データ',
+          body:
+            'Trakioは、購入処理とProアクセスの判定にAppleのアプリ内課金システムを利用し、StoreKitで検証された取引情報を参照します。支払い情報はAppleが処理し、Trakioが完全なカード情報や銀行口座情報を受け取ることはありません。オフラインでもアクセスを継続できるよう、商品、サブスクリプションの有効期限、対象となる早期ユーザー特典の判定結果を端末内に保存します。購入データを別の第三者購入サービスへ送信することはありません。',
         },
         sharing: {
           title: '公開リーダーボード共有',

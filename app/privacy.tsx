@@ -5,6 +5,7 @@ const PRIVACY_SECTION_IDS = [
   'localData',
   'permissions',
   'networkServices',
+  'purchaseData',
   'sharing',
   'retention',
   'contact',

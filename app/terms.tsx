@@ -6,6 +6,7 @@ const TERMS_SECTION_IDS = [
   'accuracy',
   'content',
   'hostedServices',
+  'paidPlans',
   'liability',
   'changes',
   'contact',

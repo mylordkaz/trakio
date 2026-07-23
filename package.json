@@ -7,7 +7,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "lint": "expo lint",
-    "test": "jest"
+    "test": "jest",
+    "validate:ios-release": "node scripts/validate-ios-release-build.cjs",
+    "eas-build-on-success": "node scripts/validate-ios-release-build.cjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -16,11 +18,12 @@
     "@react-navigation/native": "^7.1.8",
     "expo": "~54.0.33",
     "expo-battery": "~10.0.8",
-    "expo-build-properties": "^55.0.10",
+    "expo-build-properties": "~1.0.10",
     "expo-constants": "~18.0.13",
     "expo-file-system": "~19.0.21",
     "expo-font": "~14.0.11",
     "expo-haptics": "~15.0.8",
+    "expo-iap": "^4.6.0",
     "expo-image": "~3.0.11",
     "expo-image-picker": "~17.0.10",
     "expo-keep-awake": "~15.0.7",
