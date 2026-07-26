@@ -3,7 +3,7 @@ import { Storage } from 'expo-sqlite/kv-store';
 import type { DiscoveredDevice } from '@/telemetry/sources/types';
 import { classifyDevice } from '@/telemetry/sources/device-classifier';
 import {
-  requestBlePermissions,
+  requestBleAccess,
   scanForDevices,
 } from '@/telemetry/sources/ble-transport';
 import { SIMULATED_QSTARZ_DEVICE } from '@/telemetry/sources/simulation';
@@ -44,10 +44,13 @@ function restoreStoredDevice(): DiscoveredDevice | null {
   }
 }
 
+export type ScanBlockedReason = 'permission_denied' | 'powered_off';
+
 type ExternalGpsContextValue = {
   selectedDevice: DiscoveredDevice | null;
   scanResults: DiscoveredDevice[];
   isScanning: boolean;
+  scanBlockedReason: ScanBlockedReason | null;
   startScan: () => void;
   stopScan: () => void;
   selectDevice: (device: DiscoveredDevice) => void;
@@ -58,6 +61,7 @@ const ExternalGpsContext = createContext<ExternalGpsContextValue>({
   selectedDevice: null,
   scanResults: [],
   isScanning: false,
+  scanBlockedReason: null,
   startScan: () => {},
   stopScan: () => {},
   selectDevice: () => {},
@@ -70,6 +74,7 @@ export function ExternalGpsProvider({ children }: { children: React.ReactNode })
   );
   const [scanResults, setScanResults] = useState<DiscoveredDevice[]>([]);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanBlockedReason, setScanBlockedReason] = useState<ScanBlockedReason | null>(null);
   const scanHandleRef = useRef<{ stop: () => void } | null>(null);
 
   const stopScan = useCallback(() => {
@@ -88,9 +93,11 @@ export function ExternalGpsProvider({ children }: { children: React.ReactNode })
     // The simulated device is listed even when BLE is unavailable (the iOS
     // simulator has no Bluetooth), so the pairing flow stays demoable.
     setScanResults(EXTERNAL_GPS_SIMULATION_ENABLED ? [SIMULATED_QSTARZ_DEVICE] : []);
+    setScanBlockedReason(null);
 
-    const permitted = await requestBlePermissions();
-    if (!permitted) {
+    const access = await requestBleAccess();
+    if (access !== 'granted') {
+      setScanBlockedReason(access);
       return;
     }
 
@@ -136,6 +143,7 @@ export function ExternalGpsProvider({ children }: { children: React.ReactNode })
         selectedDevice,
         scanResults,
         isScanning,
+        scanBlockedReason,
         startScan,
         stopScan,
         selectDevice,

@@ -29,7 +29,12 @@ export async function isBleAvailable(): Promise<boolean> {
   return state === State.PoweredOn;
 }
 
-export async function requestBlePermissions(): Promise<boolean> {
+export type BleAccessResult = 'granted' | 'permission_denied' | 'powered_off';
+
+// Distinguishes why scanning can't proceed: a denied permission sends the
+// user to app settings, a powered-off radio sends them to the Bluetooth
+// toggle.
+export async function requestBleAccess(): Promise<BleAccessResult> {
   if (Platform.OS === 'android' && Platform.Version >= 31) {
     const results = await PermissionsAndroid.requestMultiple([
       PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
@@ -39,15 +44,19 @@ export async function requestBlePermissions(): Promise<boolean> {
     const granted = Object.values(results).every(
       (r) => r === PermissionsAndroid.RESULTS.GRANTED
     );
-    if (!granted) return false;
+    if (!granted) return 'permission_denied';
   } else if (Platform.OS === 'android') {
     const result = await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
     );
-    if (result !== PermissionsAndroid.RESULTS.GRANTED) return false;
+    if (result !== PermissionsAndroid.RESULTS.GRANTED) return 'permission_denied';
   }
 
-  return isBleAvailable();
+  const state = await waitForBleState();
+  if (state === State.PoweredOn) {
+    return 'granted';
+  }
+  return state === State.Unauthorized ? 'permission_denied' : 'powered_off';
 }
 
 export function scanForDevices(
