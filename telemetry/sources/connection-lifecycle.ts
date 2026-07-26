@@ -12,11 +12,6 @@ import {
 } from '@/telemetry/location';
 import { createRaceBoxSource } from '@/telemetry/sources/racebox/source';
 import { createQstarzSource } from '@/telemetry/sources/qstarz/source';
-import {
-  SIMULATED_QSTARZ_DEVICE_ID,
-  createSimulatedQstarzSource,
-} from '@/telemetry/sources/simulation';
-import { EXTERNAL_GPS_SIMULATION_ENABLED } from '@/constants/featureFlags';
 import { createStreamWatchdog } from '@/telemetry/sources/stream-watchdog';
 
 // A stream this silent while nominally connected is dead: both supported
@@ -131,9 +126,6 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
   }
 
   function createSourceForDevice(device: DiscoveredDevice): TelemetrySource | null {
-    if (EXTERNAL_GPS_SIMULATION_ENABLED && device.id === SIMULATED_QSTARZ_DEVICE_ID) {
-      return createSimulatedQstarzSource();
-    }
     if (device.classification.protocol === 'racebox-binary') {
       return createRaceBoxSource(device.id, device.name);
     }

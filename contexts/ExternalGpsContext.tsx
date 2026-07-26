@@ -6,11 +6,7 @@ import {
   requestBleAccess,
   scanForDevices,
 } from '@/telemetry/sources/ble-transport';
-import { SIMULATED_QSTARZ_DEVICE } from '@/telemetry/sources/simulation';
-import {
-  EXTERNAL_GPS_ENABLED,
-  EXTERNAL_GPS_SIMULATION_ENABLED,
-} from '@/constants/featureFlags';
+import { EXTERNAL_GPS_ENABLED } from '@/constants/featureFlags';
 
 const LAST_DEVICE_KEY = 'external_gps_last_device';
 
@@ -90,9 +86,7 @@ export function ExternalGpsProvider({ children }: { children: React.ReactNode })
       return;
     }
 
-    // The simulated device is listed even when BLE is unavailable (the iOS
-    // simulator has no Bluetooth), so the pairing flow stays demoable.
-    setScanResults(EXTERNAL_GPS_SIMULATION_ENABLED ? [SIMULATED_QSTARZ_DEVICE] : []);
+    setScanResults([]);
     setScanBlockedReason(null);
 
     const access = await requestBleAccess();

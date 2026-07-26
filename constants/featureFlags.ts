@@ -9,12 +9,6 @@ import Constants from 'expo-constants';
 // validation of its connect/config/reconnect paths.
 export const EXTERNAL_GPS_ENABLED: boolean = true;
 
-// Dev-only simulated external GPS: injects a fake Qstarz device into scan
-// results and streams a synthetic 10 Hz lap across the seeded Tsukuba 2000
-// start/finish gate, so pairing and recording can be exercised in the
-// simulator (which has no Bluetooth) and without hardware.
-export const EXTERNAL_GPS_SIMULATION_ENABLED: boolean = __DEV__;
-
 // Phase 2a IMU capture (docs/kalman/phase-2-imu-fusion.md): records raw phone
 // DeviceMotion samples at ~50 Hz into imu_samples during recording sessions,
 // for offline fusion benching only. No app behavior consumes them. ON for the
