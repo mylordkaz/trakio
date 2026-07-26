@@ -26,6 +26,7 @@ import { isSessionQuotaExempt } from '@/services/entitlements';
 import { createSessionRuntime } from '@/telemetry/session-runtime';
 import type { TrackDetail } from '@/db';
 import type { TelemetrySample, ExtendedTelemetrySample } from '@/telemetry/types';
+import type { ActiveSourceInfo } from '@/telemetry/sources/types';
 import { formatLapTime, formatDurationMs as formatDuration, formatSpeed } from '@/utils/format';
 import {
   FREE_SESSION_LIMIT,
@@ -116,6 +117,7 @@ export default function RecordingScreen() {
   quotaExemptRef.current = isSessionQuotaExempt(accessStatus);
   const selectedDeviceRef = useRef(selectedDevice);
   selectedDeviceRef.current = selectedDevice;
+  const [activeSourceInfo, setActiveSourceInfo] = useState<ActiveSourceInfo | null>(null);
   const [track, setTrack] = useState<TrackDetail | null>(null);
   const [isLoadingTrack, setIsLoadingTrack] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -343,7 +345,10 @@ export default function RecordingScreen() {
 
           setLoadError('Location subscription error.');
         },
-        onActiveSourceChange: () => {},
+        onActiveSourceChange: (source) => {
+          if (!isMounted) return;
+          setActiveSourceInfo(source);
+        },
         onExternalDeviceStateChange: (state) => {
           if (!isMounted || !selectedDeviceRef.current) return;
           if (state === 'connected') {
@@ -458,6 +463,15 @@ export default function RecordingScreen() {
         ? 'Best'
         : `+${(lap.deltaToBestMs / 1000).toFixed(3)}`,
   }));
+
+  // Until the lifecycle reports, the intended device is shown while it
+  // connects; afterwards the active source is the truth — a fallback to phone
+  // GPS must not keep displaying the device name.
+  const externalSourceName = activeSourceInfo
+    ? activeSourceInfo.sourceType === 'gps'
+      ? null
+      : activeSourceInfo.deviceName
+    : (selectedDeviceRef.current?.name ?? null);
 
   const isActivelyRecording =
     runtimeSnapshot !== null &&
@@ -782,8 +796,8 @@ export default function RecordingScreen() {
               <View>
                 <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('telemetry.title')}</Text>
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {selectedDeviceRef.current
-                    ? i18n.t('telemetry.subtitleDevice', { name: selectedDeviceRef.current.name })
+                  {externalSourceName
+                    ? i18n.t('telemetry.subtitleDevice', { name: externalSourceName })
                     : i18n.t('telemetry.subtitle')}
                 </Text>
               </View>
@@ -792,7 +806,7 @@ export default function RecordingScreen() {
             <View className="gap-3">
               <ProgressBar
                 label={i18n.t('telemetry.gpsSource')}
-                value={selectedDeviceRef.current ? selectedDeviceRef.current.name : i18n.t('telemetry.phoneGps')}
+                value={externalSourceName ?? i18n.t('telemetry.phoneGps')}
                 color="bg-emerald-400"
               />
               <ProgressBar

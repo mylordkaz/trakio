@@ -4,7 +4,12 @@ import { Ionicons } from '@expo/vector-icons';
 import i18n from '@/i18n';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useExternalGps } from '@/contexts/ExternalGpsContext';
-import type { DiscoveredDevice } from '@/telemetry/sources/types';
+import type { DeviceClassification, DiscoveredDevice } from '@/telemetry/sources/types';
+
+const PROTOCOL_LABELS: Record<DeviceClassification['protocol'], string> = {
+  'racebox-binary': 'RaceBox',
+  'qstarz-ble': 'Qstarz',
+};
 
 type DeviceScanModalProps = {
   visible: boolean;
@@ -61,7 +66,7 @@ export default function DeviceScanModal({ visible, onClose }: DeviceScanModalPro
             {item.name}
           </Text>
           <Text className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-            {item.classification.sourceType === 'racebox' ? 'RaceBox' : item.classification.protocol}
+            {PROTOCOL_LABELS[item.classification.protocol]}
           </Text>
         </View>
         <Text style={{ color: getRssiColor(item.rssi), fontSize: 14, letterSpacing: 2 }}>

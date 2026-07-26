@@ -11,9 +11,22 @@ describe('classifyDevice', () => {
     expect(classifyDevice('RaceBox Micro 1234567890')?.sourceType).toBe('racebox');
   });
 
+  it('classifies each Qstarz product name', () => {
+    expect(classifyDevice('QSTARZ1DVT0003')).toEqual({
+      sourceType: 'qstarz',
+      protocol: 'qstarz-ble',
+    });
+    expect(classifyDevice('QSTARZ2DVT00F5')).toEqual({
+      sourceType: 'qstarz',
+      protocol: 'qstarz-ble',
+    });
+  });
+
   it('ignores unrelated devices', () => {
     expect(classifyDevice('Some Other Device')).toBeNull();
     expect(classifyDevice('RaceBoxMini')).toBeNull();
+    expect(classifyDevice('QSTARZ')).toBeNull();
+    expect(classifyDevice('QSTARZ3ABC0001')).toBeNull();
   });
 });
 

@@ -70,11 +70,14 @@ export function scanForDevices(
       return;
     }
 
-    if (!device?.name || !device.id || seen.has(device.id)) {
+    // iOS can deliver the advertised name only as localName while device.name
+    // is a stale cache or null.
+    const advertisedName = device?.name ?? device?.localName;
+    if (!advertisedName || !device?.id || seen.has(device.id)) {
       return;
     }
 
-    const classification = classifyDevice(device.name);
+    const classification = classifyDevice(advertisedName);
     if (!classification) {
       return;
     }
@@ -82,7 +85,7 @@ export function scanForDevices(
     seen.add(device.id);
     onDiscovered({
       id: device.id,
-      name: device.name,
+      name: advertisedName,
       rssi: device.rssi ?? -100,
       classification,
     });
@@ -114,8 +117,11 @@ export async function connectToDevice(deviceId: string): Promise<Device> {
   }
 
   const bleManager = getManager();
+  // iOS never times out CoreBluetooth connects on its own; without a bound, a
+  // powered-off device hangs the caller (and any reconnect loop) forever.
   const device = await bleManager.connectToDevice(deviceId, {
     requestMTU: 247,
+    timeout: 10000,
   });
   await device.discoverAllServicesAndCharacteristics();
 
@@ -196,11 +202,11 @@ export async function writeCharacteristic(
   );
 }
 
-export async function readCharacteristicString(
+export async function readCharacteristicBytes(
   device: Device,
   serviceUUID: string,
   characteristicUUID: string
-): Promise<string | null> {
+): Promise<Uint8Array | null> {
   const characteristic = await device.readCharacteristicForService(
     serviceUUID,
     characteristicUUID
@@ -209,7 +215,19 @@ export async function readCharacteristicString(
     return null;
   }
 
-  const bytes = base64ToBytes(characteristic.value);
+  return base64ToBytes(characteristic.value);
+}
+
+export async function readCharacteristicString(
+  device: Device,
+  serviceUUID: string,
+  characteristicUUID: string
+): Promise<string | null> {
+  const bytes = await readCharacteristicBytes(device, serviceUUID, characteristicUUID);
+  if (!bytes) {
+    return null;
+  }
+
   let result = '';
   for (let i = 0; i < bytes.length; i++) {
     result += String.fromCharCode(bytes[i]);

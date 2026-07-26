@@ -1,13 +1,48 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
 import { Storage } from 'expo-sqlite/kv-store';
 import type { DiscoveredDevice } from '@/telemetry/sources/types';
+import { classifyDevice } from '@/telemetry/sources/device-classifier';
 import {
   requestBlePermissions,
   scanForDevices,
 } from '@/telemetry/sources/ble-transport';
-import { EXTERNAL_GPS_ENABLED } from '@/constants/featureFlags';
+import { SIMULATED_QSTARZ_DEVICE } from '@/telemetry/sources/simulation';
+import {
+  EXTERNAL_GPS_ENABLED,
+  EXTERNAL_GPS_SIMULATION_ENABLED,
+} from '@/constants/featureFlags';
 
-const LAST_DEVICE_KEY = 'external_gps_last_device_id';
+const LAST_DEVICE_KEY = 'external_gps_last_device';
+
+// Classification is re-derived from the name so a device stored by an older
+// build can never carry a stale protocol; rssi is a scan-time reading with no
+// meaning after restore.
+function restoreStoredDevice(): DiscoveredDevice | null {
+  if (!EXTERNAL_GPS_ENABLED) {
+    return null;
+  }
+
+  const storedValue = Storage.getItemSync(LAST_DEVICE_KEY);
+  if (!storedValue) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(storedValue) as { id?: unknown; name?: unknown };
+    if (typeof parsed.id !== 'string' || typeof parsed.name !== 'string') {
+      return null;
+    }
+
+    const classification = classifyDevice(parsed.name);
+    if (!classification) {
+      return null;
+    }
+
+    return { id: parsed.id, name: parsed.name, rssi: -100, classification };
+  } catch {
+    return null;
+  }
+}
 
 type ExternalGpsContextValue = {
   selectedDevice: DiscoveredDevice | null;
@@ -17,7 +52,6 @@ type ExternalGpsContextValue = {
   stopScan: () => void;
   selectDevice: (device: DiscoveredDevice) => void;
   clearDevice: () => void;
-  lastSelectedDeviceId: string | null;
 };
 
 const ExternalGpsContext = createContext<ExternalGpsContextValue>({
@@ -28,16 +62,14 @@ const ExternalGpsContext = createContext<ExternalGpsContextValue>({
   stopScan: () => {},
   selectDevice: () => {},
   clearDevice: () => {},
-  lastSelectedDeviceId: null,
 });
 
 export function ExternalGpsProvider({ children }: { children: React.ReactNode }) {
-  const [selectedDevice, setSelectedDevice] = useState<DiscoveredDevice | null>(null);
+  const [selectedDevice, setSelectedDevice] = useState<DiscoveredDevice | null>(
+    () => restoreStoredDevice()
+  );
   const [scanResults, setScanResults] = useState<DiscoveredDevice[]>([]);
   const [isScanning, setIsScanning] = useState(false);
-  const [lastSelectedDeviceId, setLastSelectedDeviceId] = useState<string | null>(
-    () => Storage.getItemSync(LAST_DEVICE_KEY) ?? null
-  );
   const scanHandleRef = useRef<{ stop: () => void } | null>(null);
 
   const stopScan = useCallback(() => {
@@ -53,12 +85,15 @@ export function ExternalGpsProvider({ children }: { children: React.ReactNode })
       return;
     }
 
+    // The simulated device is listed even when BLE is unavailable (the iOS
+    // simulator has no Bluetooth), so the pairing flow stays demoable.
+    setScanResults(EXTERNAL_GPS_SIMULATION_ENABLED ? [SIMULATED_QSTARZ_DEVICE] : []);
+
     const permitted = await requestBlePermissions();
     if (!permitted) {
       return;
     }
 
-    setScanResults([]);
     setIsScanning(true);
 
     scanHandleRef.current = scanForDevices(
@@ -84,12 +119,15 @@ export function ExternalGpsProvider({ children }: { children: React.ReactNode })
   const selectDevice = useCallback((device: DiscoveredDevice) => {
     stopScan();
     setSelectedDevice(device);
-    setLastSelectedDeviceId(device.id);
-    Storage.setItemSync(LAST_DEVICE_KEY, device.id);
+    Storage.setItemSync(
+      LAST_DEVICE_KEY,
+      JSON.stringify({ id: device.id, name: device.name })
+    );
   }, [stopScan]);
 
   const clearDevice = useCallback(() => {
     setSelectedDevice(null);
+    Storage.removeItemSync(LAST_DEVICE_KEY);
   }, []);
 
   return (
@@ -102,7 +140,6 @@ export function ExternalGpsProvider({ children }: { children: React.ReactNode })
         stopScan,
         selectDevice,
         clearDevice,
-        lastSelectedDeviceId,
       }}
     >
       {children}

@@ -2,12 +2,18 @@
 
 import Constants from 'expo-constants';
 
-// External GPS (RaceBox) support is code-complete but unverified on hardware:
-// the BLE connect, GNSS-config write, device-info read, and reconnect paths
-// have only been unit-tested, not exercised against a real device. Keep this
-// off until a RaceBox is available to validate end to end, then flip to true to
-// expose device pairing. With it off, recording always uses the phone GPS.
-export const EXTERNAL_GPS_ENABLED: boolean = false;
+// External GPS device pairing (RaceBox, Qstarz BL-1000GT/BL-818GT). Enabled so
+// Qstarz can validate their devices against a release build. Both vendors'
+// BLE paths are unit-tested against vendor protocol captures but not yet
+// exercised on hardware by us; RaceBox in particular still has no on-device
+// validation of its connect/config/reconnect paths.
+export const EXTERNAL_GPS_ENABLED: boolean = true;
+
+// Dev-only simulated external GPS: injects a fake Qstarz device into scan
+// results and streams a synthetic 10 Hz lap across the seeded Tsukuba 2000
+// start/finish gate, so pairing and recording can be exercised in the
+// simulator (which has no Bluetooth) and without hardware.
+export const EXTERNAL_GPS_SIMULATION_ENABLED: boolean = __DEV__;
 
 // Phase 2a IMU capture (docs/kalman/phase-2-imu-fusion.md): records raw phone
 // DeviceMotion samples at ~50 Hz into imu_samples during recording sessions,
