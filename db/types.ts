@@ -32,6 +32,9 @@ export type TrackRow = {
   direction: TrackDirection | null;
   centerLatitude: number | null;
   centerLongitude: number | null;
+  // Closed ring tracing the track centerline; null for tracks without one.
+  path: Coordinate[] | null;
+  pathWidthMeters: number | null;
   createdAt: ISODateString;
   updatedAt: ISODateString;
 };

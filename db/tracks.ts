@@ -23,6 +23,8 @@ type DbTrackRow = {
   direction: TrackDirection | null;
   center_lat: number | null;
   center_lng: number | null;
+  path: string | null;
+  path_width_m: number | null;
   created_at: ISODateString;
   updated_at: ISODateString;
 };
@@ -70,6 +72,42 @@ function toCoordinate(latitude: number, longitude: number): Coordinate {
   return { latitude, longitude };
 }
 
+export function parseTrackPath(raw: string | null): Coordinate[] | null {
+  if (!raw) {
+    return null;
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  if (!Array.isArray(parsed)) {
+    return null;
+  }
+
+  const path: Coordinate[] = [];
+
+  for (const entry of parsed) {
+    if (!Array.isArray(entry) || entry.length < 2) {
+      return null;
+    }
+
+    const [latitude, longitude] = entry;
+
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return null;
+    }
+
+    path.push({ latitude, longitude });
+  }
+
+  return path.length >= 2 ? path : null;
+}
+
 function mapTrackRow(row: DbTrackRow): TrackRow {
   return {
     id: row.id,
@@ -83,6 +121,8 @@ function mapTrackRow(row: DbTrackRow): TrackRow {
     direction: row.direction,
     centerLatitude: row.center_lat,
     centerLongitude: row.center_lng,
+    path: parseTrackPath(row.path),
+    pathWidthMeters: row.path_width_m,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -150,8 +190,10 @@ export async function syncTrackSeeds(db: SQLiteDatabase) {
           corners,
           direction,
           center_lat,
-          center_lng
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          center_lng,
+          path,
+          path_width_m
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           slug = excluded.slug,
           name = excluded.name,
@@ -163,6 +205,8 @@ export async function syncTrackSeeds(db: SQLiteDatabase) {
           direction = excluded.direction,
           center_lat = excluded.center_lat,
           center_lng = excluded.center_lng,
+          path = excluded.path,
+          path_width_m = excluded.path_width_m,
           updated_at = CURRENT_TIMESTAMP;`,
         track.id,
         track.slug,
@@ -174,7 +218,9 @@ export async function syncTrackSeeds(db: SQLiteDatabase) {
         track.corners,
         track.direction,
         track.centerLatitude,
-        track.centerLongitude
+        track.centerLongitude,
+        track.path && track.path.length >= 2 ? JSON.stringify(track.path) : null,
+        track.pathWidthMeters ?? null
       );
 
       const validTimingLines = timingLines.filter(

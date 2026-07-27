@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -13,11 +13,18 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { Ionicons } from "@expo/vector-icons";
-import MapView, { Polyline, PROVIDER_GOOGLE } from "react-native-maps";
+import MapView, {
+  Polygon,
+  Polyline,
+  PROVIDER_GOOGLE,
+  type MapStyleElement,
+} from "react-native-maps";
+import { SCHEMATIC_MAP_STYLE } from "@/constants/mapStyle";
+import { buildTrackRibbon } from "@/utils/trackRibbon";
 import i18n from "@/i18n";
 import StatusPill from "@/components/StatusPill";
 import Card from "@/components/Card";
-import type { TrackDetail, TrackNoteRow, UserRow } from "@/db";
+import type { Coordinate, TrackDetail, TrackNoteRow, UserRow } from "@/db";
 import {
   getTrackById,
   addTrackNote,
@@ -62,12 +69,41 @@ function getMapLatitudeDelta(lengthMeters: number | null) {
   return Math.min(Math.max(lengthMeters / 450000, 0.0015), 0.0055);
 }
 
+// Margin between the track's own bounds and the edges of the map card.
+const MAP_BOUNDS_PADDING = 1.25;
+
+function getPathRegion(path: Coordinate[] | null) {
+  if (!path || path.length < 2) {
+    return null;
+  }
+
+  let minLatitude = path[0].latitude;
+  let maxLatitude = path[0].latitude;
+  let minLongitude = path[0].longitude;
+  let maxLongitude = path[0].longitude;
+
+  for (const point of path) {
+    minLatitude = Math.min(minLatitude, point.latitude);
+    maxLatitude = Math.max(maxLatitude, point.latitude);
+    minLongitude = Math.min(minLongitude, point.longitude);
+    maxLongitude = Math.max(maxLongitude, point.longitude);
+  }
+
+  return {
+    latitude: (minLatitude + maxLatitude) / 2,
+    longitude: (minLongitude + maxLongitude) / 2,
+    latitudeDelta: Math.max(maxLatitude - minLatitude, 0.0005) * MAP_BOUNDS_PADDING,
+    longitudeDelta: Math.max(maxLongitude - minLongitude, 0.0005) * MAP_BOUNDS_PADDING,
+  };
+}
+
 export default function CircuitDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const db = useSQLiteContext();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [circuit, setCircuit] = useState<TrackDetail | null>(null);
+  const [isSchematic, setIsSchematic] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserRow | null>(null);
@@ -213,16 +249,23 @@ export default function CircuitDetailScreen() {
   const sectorLines =
     circuit?.timingLines.filter((timingLine) => timingLine.type === "sector") ??
     [];
+  const trackPath = circuit?.path ?? null;
+  const trackWidthMeters = circuit?.pathWidthMeters ?? undefined;
+  const trackRibbon = useMemo(
+    () => buildTrackRibbon(trackPath, trackWidthMeters),
+    [trackPath, trackWidthMeters],
+  );
   const mapLatitudeDelta = getMapLatitudeDelta(circuit?.lengthMeters ?? null);
   const mapRegion =
-    circuit?.centerLatitude && circuit?.centerLongitude
+    getPathRegion(trackPath) ??
+    (circuit?.centerLatitude && circuit?.centerLongitude
       ? {
           latitude: circuit.centerLatitude,
           longitude: circuit.centerLongitude,
           latitudeDelta: mapLatitudeDelta,
           longitudeDelta: mapLatitudeDelta * 1.25,
         }
-      : null;
+      : null);
 
   function formatSetOnDate(iso: string): string {
     const d = new Date(iso);
@@ -297,37 +340,70 @@ export default function CircuitDetailScreen() {
             <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
               <View className="rounded-3xl border border-zinc-200 dark:border-white/10 bg-zinc-200 dark:bg-zinc-950/80 mb-3 h-80 overflow-hidden">
                 {mapRegion ? (
-                  <MapView
-                    provider={PROVIDER_GOOGLE}
-                    initialRegion={mapRegion}
-                    mapType="satellite"
-                    rotateEnabled={true}
-                    pitchEnabled={true}
-                    toolbarEnabled={false}
-                    style={{ flex: 1 }}
-                  >
-                    {sectorLines.map((sectorLine) => (
-                      <Polyline
-                        key={sectorLine.id}
-                        coordinates={[sectorLine.a, sectorLine.b]}
-                        strokeColor="#e5e7eb"
-                        strokeColors={
-                          Platform.OS === "ios" ? ["#e5e7eb"] : undefined
-                        }
-                        strokeWidth={2}
-                      />
-                    ))}
-                    {startFinishLine ? (
-                      <Polyline
-                        coordinates={[startFinishLine.a, startFinishLine.b]}
-                        strokeColor="#ef4444"
-                        strokeColors={
-                          Platform.OS === "ios" ? ["#ef4444"] : undefined
-                        }
-                        strokeWidth={3}
-                      />
-                    ) : null}
-                  </MapView>
+                  <>
+                    <MapView
+                      provider={PROVIDER_GOOGLE}
+                      initialRegion={mapRegion}
+                      mapType={isSchematic ? "standard" : "satellite"}
+                      customMapStyle={
+                        isSchematic
+                          ? (SCHEMATIC_MAP_STYLE as unknown as MapStyleElement[])
+                          : undefined
+                      }
+                      rotateEnabled={true}
+                      pitchEnabled={true}
+                      toolbarEnabled={false}
+                      style={{ flex: 1 }}
+                    >
+                      {trackRibbon?.fill.map((band, index) => (
+                        <Polygon
+                          key={`surface-${index}`}
+                          coordinates={band}
+                          fillColor="#d4d4d8"
+                          strokeWidth={0}
+                        />
+                      ))}
+                      {trackRibbon?.edges.map((edge, index) => (
+                        <Polyline
+                          key={`kerb-${index}`}
+                          coordinates={edge}
+                          strokeColor="#ffffff"
+                          strokeColors={
+                            Platform.OS === "ios" ? ["#ffffff"] : undefined
+                          }
+                          strokeWidth={2}
+                        />
+                      ))}
+                      {sectorLines.map((sectorLine) => (
+                        <Polyline
+                          key={sectorLine.id}
+                          coordinates={[sectorLine.a, sectorLine.b]}
+                          strokeColor="#e5e7eb"
+                          strokeColors={
+                            Platform.OS === "ios" ? ["#e5e7eb"] : undefined
+                          }
+                          strokeWidth={2}
+                        />
+                      ))}
+                      {startFinishLine ? (
+                        <Polyline
+                          coordinates={[startFinishLine.a, startFinishLine.b]}
+                          strokeColor="#ef4444"
+                          strokeColors={
+                            Platform.OS === "ios" ? ["#ef4444"] : undefined
+                          }
+                          strokeWidth={3}
+                        />
+                      ) : null}
+                    </MapView>
+                    <Pressable
+                      onPress={() => setIsSchematic((current) => !current)}
+                      hitSlop={8}
+                      className="absolute bottom-3 right-3 h-11 w-11 items-center justify-center rounded-full bg-black/60 border border-white/10"
+                    >
+                      <Ionicons name="layers-outline" size={20} color="#ffffff" />
+                    </Pressable>
+                  </>
                 ) : (
                   <View className="flex-1 items-center justify-center p-5">
                     <Text className="text-zinc-400 dark:text-zinc-500 text-sm">

@@ -690,6 +690,31 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    // Track outline as a JSON [[lat, lng], ...] ring, closed (last point
+    // repeats the first). Seed-owned: syncTrackSeeds rewrites it on launch,
+    // and tracks without an outline stay NULL.
+    version: 18,
+    up: async (db) => {
+      const trackColumns = await getColumnNames(db, 'tracks');
+
+      if (!trackColumns.includes('path')) {
+        await db.execAsync('ALTER TABLE tracks ADD COLUMN path TEXT;');
+      }
+    },
+  },
+  {
+    // Surface width the outline is drawn at. Narrow circuits cannot carry the
+    // default width through their tightest corners without the band pinching.
+    version: 19,
+    up: async (db) => {
+      const trackColumns = await getColumnNames(db, 'tracks');
+
+      if (!trackColumns.includes('path_width_m')) {
+        await db.execAsync('ALTER TABLE tracks ADD COLUMN path_width_m REAL;');
+      }
+    },
+  },
 ];
 
 export const DATABASE_NAME = 'trakio.db';
