@@ -6,8 +6,7 @@ import {
   MAX_UPDATE_LENGTH,
 } from '@/telemetry/sources/qstarz/constants';
 
-// With no checksum, the exact completed lengths the protocol defines (58, or
-// 60 padded + one GSV packet) are part of the framing validation.
+// 58 bare, or 60 padded + one GSV packet (1/7/13/19).
 const VALID_UPDATE_LENGTHS = new Set([
   GNSS_RECORD_LENGTH,
   ...GSV_PACKET_LENGTHS.map((gsvLength) => GSV_PADDED_RECORD_LENGTH + gsvLength),
@@ -18,9 +17,7 @@ export type QstarzPacketBufferCallbacks = {
   onError?: (error: Error) => void;
 };
 
-// The protocol has no sync bytes or checksum: an update is delimited by
-// notification lengths alone. Every 20-byte notification extends the current
-// update; the first notification of any other length completes it.
+// No sync bytes or checksum: 20-byte notifications extend an update, any other length ends it.
 export function createQstarzPacketBuffer(callbacks: QstarzPacketBufferCallbacks) {
   let fragments: Uint8Array[] = [];
   let pendingLength = 0;
@@ -40,9 +37,7 @@ export function createQstarzPacketBuffer(callbacks: QstarzPacketBufferCallbacks)
   function completeUpdate(): void {
     const update = drainPending();
 
-    // Off-length assemblies — subscribing mid-update, lost alignment, or a
-    // malformed oversize payload — are dropped; the next non-20-byte
-    // notification restores framing by itself.
+    // Off-length assemblies (mid-update join, misalignment) drop; framing self-restores.
     if (!VALID_UPDATE_LENGTHS.has(update.length)) {
       return;
     }
@@ -52,8 +47,7 @@ export function createQstarzPacketBuffer(callbacks: QstarzPacketBufferCallbacks)
       return;
     }
 
-    // Padded form: GNSS record, two zero marker bytes, then GSV satellite
-    // data (not used). Non-zero marker bytes mean misalignment.
+    // Padded form must carry the two zero marker bytes; the GSV tail is unused.
     if (update[GNSS_RECORD_LENGTH] === 0 && update[GNSS_RECORD_LENGTH + 1] === 0) {
       callbacks.onRecord(update.slice(0, GNSS_RECORD_LENGTH));
     }

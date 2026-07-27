@@ -10,9 +10,7 @@ import { EXTERNAL_GPS_ENABLED } from '@/constants/featureFlags';
 
 const LAST_DEVICE_KEY = 'external_gps_last_device';
 
-// Classification is re-derived from the name so a device stored by an older
-// build can never carry a stale protocol; rssi is a scan-time reading with no
-// meaning after restore.
+// Classification is re-derived from the name; stored rssi is meaningless after restore.
 function restoreStoredDevice(): DiscoveredDevice | null {
   if (!EXTERNAL_GPS_ENABLED) {
     return null;

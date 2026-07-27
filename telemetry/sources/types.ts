@@ -32,9 +32,7 @@ export type DiscoveredDevice = {
 
 export type TelemetrySourceCallbacks = {
   onSample: (sample: TelemetrySample) => void;
-  // Fired for every structurally valid record, fix or no fix. Stream liveness
-  // must not depend on GPS lock: a healthy device parked indoors emits no
-  // usable samples but is not dead.
+  // Fired per valid record, fix or no fix — liveness must not depend on GPS lock.
   onActivity: () => void;
   onError: (error: Error) => void;
   onStateChange: (state: SourceConnectionState) => void;

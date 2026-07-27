@@ -1,6 +1,4 @@
-// A BLE link can stay connected while its data stream dies (wrong notify
-// characteristic, device-side stall, silent subscription failure) — no
-// disconnect event ever fires, so silence is the only observable signal.
+// A BLE link can stay connected while its stream dies; silence is the only signal.
 export type StreamWatchdog = {
   // (Re)starts the silence countdown; call on connect and on every sample.
   arm: () => void;

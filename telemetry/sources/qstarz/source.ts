@@ -29,8 +29,7 @@ export function createQstarzSource(deviceId: string): TelemetrySource {
   let batteryLevel: number | undefined;
   let abortProbe: ((error: Error) => void) | null = null;
 
-  // Best-effort: a failed read keeps the last known level, an absent Battery
-  // Service leaves it undefined. Never affects the data stream.
+  // Best-effort; never affects the data stream.
   async function refreshBatteryLevel(device: Device): Promise<void> {
     try {
       const bytes = await readCharacteristicBytes(
@@ -60,11 +59,7 @@ export function createQstarzSource(deviceId: string): TelemetrySource {
   return {
     sourceType: 'qstarz',
 
-    // 'connected' is only reported once a characteristic has produced a
-    // structurally valid GNSS record — a BLE link alone proves nothing, and
-    // the wrong-but-existing notify characteristic would otherwise leave the
-    // session silently without a GPS source. Both candidates are subscribed;
-    // the first to speak the protocol wins and the loser is dropped.
+    // 'connected' requires a valid record: both notify chars are probed, first to speak wins.
     async start(callbacks: TelemetrySourceCallbacks) {
       connectionState = 'connecting';
       callbacks.onStateChange('connecting');
@@ -104,9 +99,7 @@ export function createQstarzSource(deviceId: string): TelemetrySource {
           connectionState = 'connected';
           callbacks.onStateChange('connected');
           resolveProbe();
-          // The winning record is proof of protocol, not a sample: start() has
-          // not resolved yet, so the lifecycle has not switched the session
-          // over — emitting now would race its timeline re-anchor.
+          // Emitting the winning record would race the lifecycle's switchover.
           return;
         }
 

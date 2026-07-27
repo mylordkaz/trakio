@@ -14,9 +14,7 @@ import { createRaceBoxSource } from '@/telemetry/sources/racebox/source';
 import { createQstarzSource } from '@/telemetry/sources/qstarz/source';
 import { createStreamWatchdog } from '@/telemetry/sources/stream-watchdog';
 
-// A stream this silent while nominally connected is dead: both supported
-// devices emit records at 10-25 Hz whenever notifications are on, fix or no
-// fix (liveness is fed by onActivity, so losing GPS lock is not silence).
+// Devices stream at 10-25 Hz fix-or-not, so this much silence means a dead stream.
 const EXTERNAL_STREAM_SILENCE_TIMEOUT_MS = 10000;
 
 export type ConnectionLifecycleCallbacks = {
@@ -42,10 +40,8 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
   let stopped = false;
   let reconnecting = false;
 
-  // Single monotonic timeline for the whole session. Elapsed is measured from
-  // the first forwarded sample's own clock. On a source switch that changes
-  // the clock domain (phone system time <-> device GPS time), we re-anchor so
-  // elapsed continues from where it left off instead of jumping by the offset.
+  // One session timeline; source switches change clock domain, so elapsed
+  // re-anchors to continue instead of jumping by the clock offset.
   let elapsedAnchorMs: number | null = null;
   let lastElapsedMs = 0;
   let continueTimelineOnNextSample = false;
@@ -53,9 +49,7 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
   const commitElapsedMs: TelemetryElapsedMsResolver = (recordedAt) => {
     if (elapsedAnchorMs === null) {
       elapsedAnchorMs = recordedAt;
-      // A continuation flag with no prior timeline is resolved by creating
-      // the anchor; left set, it would re-anchor on the second sample and
-      // swallow its delta.
+      // Left set, the flag would re-anchor on sample two and swallow its delta.
       continueTimelineOnNextSample = false;
     } else if (continueTimelineOnNextSample) {
       elapsedAnchorMs = recordedAt - lastElapsedMs;
@@ -65,9 +59,7 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
     return lastElapsedMs;
   };
 
-  // Fed by external-source activity; expiry is handled exactly like a BLE
-  // disconnect, because a connected-but-silent source is the same failure
-  // with no event of its own.
+  // Silence while connected is handled exactly like a disconnect.
   const streamWatchdog = createStreamWatchdog(
     config?.streamSilenceTimeoutMs ?? EXTERNAL_STREAM_SILENCE_TIMEOUT_MS,
     () => {
@@ -82,9 +74,7 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
 
   let phoneGpsStarting = false;
 
-  // Idempotent: overlapping failure paths must never stack a second
-  // subscription — the retained one would be stopped later while the orphan
-  // kept forwarding phone samples alongside the device.
+  // Idempotent: overlapping failure paths must never stack a second subscription.
   async function startPhoneGps(): Promise<void> {
     if (stopped || !callbacks || phoneGpsSubscription || phoneGpsStarting) {
       return;
@@ -135,11 +125,8 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
     return null;
   }
 
-  // Connects and, only on success, switches the session over: any live phone
-  // subscription stops, the timeline re-anchors to the device clock, and
-  // detection continuity resets. No external sample is forwarded before the
-  // switchover, so clock domains never mix. At session start nothing else is
-  // recording and the switchover steps are no-ops.
+  // On success, atomically switches the session over (phone off, re-anchor,
+  // continuity reset); no external sample is forwarded before the switchover.
   async function startExternalSource(
     device: DiscoveredDevice,
     cbs: ConnectionLifecycleCallbacks
@@ -181,18 +168,14 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
           if (stopped) {
             return;
           }
-          // Pre-switchover disconnects already reject the pending start() and
-          // reach its caller as a failed attempt; handling them here too would
-          // run two fallback paths concurrently.
+          // Pre-switchover disconnects reject the pending start(); one fallback path only.
           if (state === 'disconnected' && live) {
             void handleExternalDisconnect();
           }
         },
       });
 
-      // stop() or a pre-switchover disconnect may have landed while start was
-      // pending (a stopped source can resolve normally); activating now would
-      // resurrect a dead session or a dead link.
+      // A stopped source can resolve normally; never activate a dead session or link.
       if (stopped || externalSource !== source || source.getConnectionState() !== 'connected') {
         try {
           await source.stop();
@@ -217,8 +200,7 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
       streamWatchdog.arm();
       return true;
     } catch {
-      // Best-effort: a failure after the BLE connect (e.g. service discovery)
-      // can leave the link open with nobody owning it.
+      // A failure after the BLE connect can leave the link open with no owner.
       try {
         await source.stop();
       } catch {
@@ -262,10 +244,7 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
         externalSource = null;
       }
 
-      // Phone GPS records immediately: with the connect timeout and stream
-      // probe, reconnection can take tens of seconds, and losing that much
-      // telemetry to a background retry is worse than re-anchoring the
-      // timeline twice. Device GPS clock -> phone system clock.
+      // Phone records immediately; reconnection can take tens of seconds.
       continueTimelineOnNextSample = true;
       config?.onResetContinuity?.();
       setActiveSource({ sourceType: 'gps', deviceName: null });
@@ -289,8 +268,7 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
         }
       }
 
-      // Retries exhausted — the session stays on phone GPS, which has been
-      // recording throughout.
+      // Retries exhausted; the session stays on phone GPS.
       cbs.onExternalDeviceStateChange('disconnected');
     } finally {
       reconnecting = false;
@@ -307,10 +285,7 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
     lastElapsedMs = 0;
     continueTimelineOnNextSample = false;
 
-    // A selected device has priority: it connects and proves its stream with
-    // nothing else recording. Phone GPS is the fallback only — no device,
-    // device failed to start, or (via handleExternalDisconnect) a connected
-    // device lost mid-session.
+    // Device priority: it connects first with nothing else recording; phone is fallback only.
     if (device) {
       const connected = await startExternalSource(device, cbs);
       if (connected) {

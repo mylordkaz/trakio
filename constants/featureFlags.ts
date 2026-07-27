@@ -1,10 +1,6 @@
 // Feature flags for gating work that isn't ready to ship to users.
 
-// External GPS device pairing (RaceBox, Qstarz BL-1000GT/BL-818GT). Enabled so
-// Qstarz can validate their devices against a release build. Both vendors'
-// BLE paths are unit-tested against vendor protocol captures but not yet
-// exercised on hardware by us; RaceBox in particular still has no on-device
-// validation of its connect/config/reconnect paths.
+// External GPS pairing (RaceBox, Qstarz); on-device validation is vendor-side only.
 export const EXTERNAL_GPS_ENABLED: boolean = true;
 
 // Phase 2a IMU capture (docs/kalman/phase-2-imu-fusion.md): records raw phone
@@ -31,11 +27,6 @@ export const CROSSING_RECOVERY_ENABLED: boolean = true;
 // at ~2 s. Rejected fixes are still quarantined for display/analysis.
 export const JUMP_REANCHOR_ENABLED: boolean = true;
 
-// Full raw telemetry is a development-only diagnostic path, not a
-// customer-facing Pro export. TEMPORARILY forced on for the Qstarz validation
-// TestFlight build: vendor sessions are the only real-device Qstarz data that
-// will ever exist, and their exported JSON is the feedback channel. MUST be
-// reverted to
-//   __DEV__ || Constants.expoConfig?.extra?.rawDataExportEnabled === true
-// (with the expo-constants import) before any App Store submission.
+// TEMP for the Qstarz validation build; revert to
+// `__DEV__ || Constants.expoConfig?.extra?.rawDataExportEnabled === true` before store submission.
 export const RAW_DATA_EXPORT_ENABLED: boolean = true;

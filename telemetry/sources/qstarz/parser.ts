@@ -22,9 +22,7 @@ export type QstarzRawRecord = {
   gForceY: number;
   gForceZ: number;
   maxSnr: number;
-  // The protocol doc labels bytes 44-51 "HDOP"/"VDOP", but Qstarz confirmed
-  // by mail (2026-07) that the values are error estimates in meters — used
-  // directly, no dilution-to-meters factor.
+  // Doc says "HDOP"/"VDOP" but Qstarz confirmed these are meters, used directly.
   horizontalAccuracyM: number;
   verticalAccuracyM: number;
   satellitesInView: number;
@@ -32,15 +30,13 @@ export type QstarzRawRecord = {
   fixQuality: number;
 };
 
-// Coordinates arrive as NMEA-style DDDMM.MMMM packed in a double. Math.trunc
-// keeps the minutes term sign-correct for southern and western hemispheres.
+// NMEA-style DDDMM.MMMM in a double; Math.trunc keeps S/W hemispheres sign-correct.
 function ddmmToDegrees(value: number): number {
   const wholeDegrees = Math.trunc(value / 100);
   return wholeDegrees + (value - wholeDegrees * 100) / 60;
 }
 
-// DDDMM packing means the fractional "minutes" part can never reach 60; a
-// value that does is a misframed double, not a coordinate.
+// Minutes >= 60 is a misframed double, not a coordinate.
 function isValidDdmm(value: number, maxDdmm: number): boolean {
   return (
     Number.isFinite(value) &&
@@ -49,8 +45,7 @@ function isValidDdmm(value: number, maxDdmm: number): boolean {
   );
 }
 
-// The protocol has no checksum; these bounds are the only defense against a
-// misframed update decoding as a record.
+// No checksum in the protocol; these bounds are the only misframe defense.
 function isPlausibleRecord(record: QstarzRawRecord): boolean {
   return (
     record.fixStatus >= 1 &&

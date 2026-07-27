@@ -31,9 +31,7 @@ export async function isBleAvailable(): Promise<boolean> {
 
 export type BleAccessResult = 'granted' | 'permission_denied' | 'powered_off';
 
-// Distinguishes why scanning can't proceed: a denied permission sends the
-// user to app settings, a powered-off radio sends them to the Bluetooth
-// toggle.
+// The reason decides the guidance: app settings vs the Bluetooth toggle.
 export async function requestBleAccess(): Promise<BleAccessResult> {
   if (Platform.OS === 'android' && Platform.Version >= 31) {
     const results = await PermissionsAndroid.requestMultiple([
@@ -79,8 +77,7 @@ export function scanForDevices(
       return;
     }
 
-    // iOS can deliver the advertised name only as localName while device.name
-    // is a stale cache or null.
+    // iOS may carry the advertised name only in localName.
     const advertisedName = device?.name ?? device?.localName;
     if (!advertisedName || !device?.id || seen.has(device.id)) {
       return;
@@ -126,8 +123,7 @@ export async function connectToDevice(deviceId: string): Promise<Device> {
   }
 
   const bleManager = getManager();
-  // iOS never times out CoreBluetooth connects on its own; without a bound, a
-  // powered-off device hangs the caller (and any reconnect loop) forever.
+  // Unbounded, an absent device hangs iOS connects forever.
   const device = await bleManager.connectToDevice(deviceId, {
     requestMTU: 247,
     timeout: 10000,
