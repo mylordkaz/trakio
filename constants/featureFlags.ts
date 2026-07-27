@@ -1,7 +1,5 @@
 // Feature flags for gating work that isn't ready to ship to users.
 
-import Constants from 'expo-constants';
-
 // External GPS device pairing (RaceBox, Qstarz BL-1000GT/BL-818GT). Enabled so
 // Qstarz can validate their devices against a release build. Both vendors'
 // BLE paths are unit-tested against vendor protocol captures but not yet
@@ -34,8 +32,10 @@ export const CROSSING_RECOVERY_ENABLED: boolean = true;
 export const JUMP_REANCHOR_ENABLED: boolean = true;
 
 // Full raw telemetry is a development-only diagnostic path, not a
-// customer-facing Pro export. The extra flag cannot survive config evaluation
-// in production-classified builds, and EAS bundling classifies preview as
-// production (NODE_ENV), so in practice only dev clients ever enable it.
-export const RAW_DATA_EXPORT_ENABLED: boolean =
-  __DEV__ || Constants.expoConfig?.extra?.rawDataExportEnabled === true;
+// customer-facing Pro export. TEMPORARILY forced on for the Qstarz validation
+// TestFlight build: vendor sessions are the only real-device Qstarz data that
+// will ever exist, and their exported JSON is the feedback channel. MUST be
+// reverted to
+//   __DEV__ || Constants.expoConfig?.extra?.rawDataExportEnabled === true
+// (with the expo-constants import) before any App Store submission.
+export const RAW_DATA_EXPORT_ENABLED: boolean = true;
