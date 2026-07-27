@@ -36,10 +36,6 @@ export const MAX_FIX_QUALITY = 8;
 export const USABLE_FIX_QUALITY_MIN = 1;
 export const USABLE_FIX_QUALITY_MAX = 5;
 
-// The record reports DOP but no meter accuracy; horizontal 1-sigma error is
-// approximated as HDOP x a nominal user-equivalent range error.
-export const HDOP_TO_ACCURACY_M = 3;
-
 // A 3D fix carries GNSS-derived time; values outside this window mean the
 // record bytes are not what they claim to be (the protocol has no checksum).
 // Unfixed devices report RTC garbage here, which is fine — those records are

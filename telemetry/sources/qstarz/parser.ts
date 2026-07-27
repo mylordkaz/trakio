@@ -5,7 +5,6 @@ import {
   MAX_FIX_QUALITY,
   USABLE_FIX_QUALITY_MIN,
   USABLE_FIX_QUALITY_MAX,
-  HDOP_TO_ACCURACY_M,
   EARLIEST_VALID_FIX_UNIX_SECONDS,
   LATEST_VALID_FIX_UNIX_SECONDS,
 } from '@/telemetry/sources/qstarz/constants';
@@ -23,8 +22,11 @@ export type QstarzRawRecord = {
   gForceY: number;
   gForceZ: number;
   maxSnr: number;
-  hdop: number;
-  vdop: number;
+  // The protocol doc labels bytes 44-51 "HDOP"/"VDOP", but Qstarz confirmed
+  // by mail (2026-07) that the values are error estimates in meters — used
+  // directly, no dilution-to-meters factor.
+  horizontalAccuracyM: number;
+  verticalAccuracyM: number;
   satellitesInView: number;
   satellitesUsed: number;
   fixQuality: number;
@@ -59,10 +61,10 @@ function isPlausibleRecord(record: QstarzRawRecord): boolean {
     Number.isFinite(record.speedKmh) &&
     Number.isFinite(record.heightM) &&
     Number.isFinite(record.headingDeg) &&
-    Number.isFinite(record.hdop) &&
-    record.hdop >= 0 &&
-    Number.isFinite(record.vdop) &&
-    record.vdop >= 0 &&
+    Number.isFinite(record.horizontalAccuracyM) &&
+    record.horizontalAccuracyM >= 0 &&
+    Number.isFinite(record.verticalAccuracyM) &&
+    record.verticalAccuracyM >= 0 &&
     record.fixQuality <= MAX_FIX_QUALITY
   );
 }
@@ -87,8 +89,8 @@ export function decodeGnssRecord(record: Uint8Array): QstarzRawRecord | null {
     gForceY: view.getInt16(38, true),
     gForceZ: view.getInt16(40, true),
     maxSnr: view.getUint16(42, true),
-    hdop: view.getFloat32(44, true),
-    vdop: view.getFloat32(48, true),
+    horizontalAccuracyM: view.getFloat32(44, true),
+    verticalAccuracyM: view.getFloat32(48, true),
     satellitesInView: view.getUint8(52),
     satellitesUsed: view.getUint8(53),
     fixQuality: view.getUint8(54),
@@ -132,15 +134,14 @@ export function rawRecordToSample(
     lat: ddmmToDegrees(raw.latDdmm),
     lng: ddmmToDegrees(raw.lonDdmm),
     speedMps: raw.speedKmh / 3.6,
-    accuracyM: raw.hdop * HDOP_TO_ACCURACY_M,
+    accuracyM: raw.horizontalAccuracyM,
     headingDeg: normalizeHeading(raw.headingDeg),
     altitudeM: raw.heightM,
     source: 'qstarz',
     gForceX: raw.gForceX / 256,
     gForceY: raw.gForceY / 256,
     gForceZ: raw.gForceZ / 256,
-    // PDOP is fully determined by the reported pair: PDOP² = HDOP² + VDOP².
-    pdop: Math.hypot(raw.hdop, raw.vdop),
+    verticalAccuracyM: raw.verticalAccuracyM,
     satelliteCount: raw.satellitesUsed,
     fixType: raw.fixStatus,
     batteryLevel,

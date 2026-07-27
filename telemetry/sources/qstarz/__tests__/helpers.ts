@@ -63,8 +63,8 @@ export type GnssRecordFields = {
   gForceY: number;
   gForceZ: number;
   maxSnr: number;
-  hdop: number;
-  vdop: number;
+  horizontalAccuracyM: number;
+  verticalAccuracyM: number;
   satellitesInView: number;
   satellitesUsed: number;
   fixQuality: number;
@@ -84,8 +84,8 @@ const BASE_FIXED_RECORD: GnssRecordFields = {
   gForceY: -64,
   gForceZ: -260,
   maxSnr: 45,
-  hdop: 0.8,
-  vdop: 1.1,
+  horizontalAccuracyM: 0.8,
+  verticalAccuracyM: 1.1,
   satellitesInView: 18,
   satellitesUsed: 12,
   fixQuality: 1,
@@ -110,8 +110,8 @@ export function buildGnssRecord(overrides: Partial<GnssRecordFields> = {}): Uint
   view.setInt16(38, fields.gForceY, true);
   view.setInt16(40, fields.gForceZ, true);
   view.setUint16(42, fields.maxSnr, true);
-  view.setFloat32(44, fields.hdop, true);
-  view.setFloat32(48, fields.vdop, true);
+  view.setFloat32(44, fields.horizontalAccuracyM, true);
+  view.setFloat32(48, fields.verticalAccuracyM, true);
   view.setUint8(52, fields.satellitesInView);
   view.setUint8(53, fields.satellitesUsed);
   view.setUint8(54, fields.fixQuality);
