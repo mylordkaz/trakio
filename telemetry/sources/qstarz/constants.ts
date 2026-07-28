@@ -25,11 +25,10 @@ export const MAX_FIX_QUALITY = 8;
 export const USABLE_FIX_QUALITY_MIN = 1;
 export const USABLE_FIX_QUALITY_MAX = 5;
 
+// DOP-to-meters 1-sigma estimate; field data confirmed the record carries DOP, not meters.
+export const HDOP_TO_ACCURACY_M = 3;
+
 // A 3D fix outside this window is a misframed record (unfixed RTC garbage is gated on fix status).
 export const EARLIEST_VALID_FIX_UNIX_SECONDS = 1420070400; // 2015-01-01
 export const LATEST_VALID_FIX_UNIX_SECONDS = 4102444800; // 2100-01-01
 
-// Battery is not in the GNSS record; read from the standard Battery Service.
-export const BATTERY_SERVICE_UUID = '0000180f-0000-1000-8000-00805f9b34fb';
-export const BATTERY_LEVEL_CHARACTERISTIC_UUID = '00002a19-0000-1000-8000-00805f9b34fb';
-export const BATTERY_REFRESH_INTERVAL_MS = 60000;

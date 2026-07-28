@@ -5,7 +5,6 @@ import {
   connectToDevice,
   subscribeToCharacteristic,
   disconnectDevice,
-  readCharacteristicBytes,
 } from '@/telemetry/sources/ble-transport';
 import { QSTARZ_TX_CANDIDATE_CHARACTERISTIC_UUIDS } from '@/telemetry/sources/qstarz/constants';
 import {
@@ -18,7 +17,6 @@ jest.mock('@/telemetry/sources/ble-transport', () => ({
   connectToDevice: jest.fn(),
   subscribeToCharacteristic: jest.fn(),
   disconnectDevice: jest.fn(),
-  readCharacteristicBytes: jest.fn(),
 }));
 
 const [CHAR_0003, CHAR_0004] = QSTARZ_TX_CANDIDATE_CHARACTERISTIC_UUIDS;
@@ -34,7 +32,6 @@ function setupTransport() {
 
   (connectToDevice as jest.Mock).mockResolvedValue({ id: 'device' });
   (disconnectDevice as jest.Mock).mockResolvedValue(undefined);
-  (readCharacteristicBytes as jest.Mock).mockResolvedValue(new Uint8Array([87]));
   (subscribeToCharacteristic as jest.Mock).mockImplementation(
     (_device, _service, uuid, onData, _onError, onDisconnect) => {
       const remove = jest.fn();
@@ -100,6 +97,7 @@ it('reports connected only after a characteristic speaks the protocol', async ()
   feed(characteristics.get(CHAR_0003)!, GOLDEN_FIXED_FRAGMENTS_HEX);
   expect(samples).toHaveLength(1);
   expect(samples[0].source).toBe('qstarz');
+  expect(samples[0].batteryLevel).toBe(100);
 
   // The silent candidate is dropped, the winner keeps streaming.
   expect(characteristics.get(CHAR_0004)!.remove).toHaveBeenCalled();
@@ -165,24 +163,6 @@ it('reports activity for unfixed records without emitting samples', async () => 
   // decode reports activity even though nothing is usable as a sample.
   expect(onActivity).toHaveBeenCalledTimes(3);
   expect(samples).toHaveLength(0);
-
-  await source.stop();
-});
-
-it('stamps the battery level onto samples once read', async () => {
-  const characteristics = setupTransport();
-  const { callbacks, samples } = collectCallbacks();
-  const source = createQstarzSource('device');
-
-  const startPromise = source.start(callbacks);
-  await flush();
-
-  feed(characteristics.get(CHAR_0003)!, GOLDEN_FIXED_FRAGMENTS_HEX);
-  await startPromise;
-
-  await flush();
-  feed(characteristics.get(CHAR_0003)!, GOLDEN_FIXED_FRAGMENTS_HEX);
-  expect(samples[0].batteryLevel).toBe(87);
 
   await source.stop();
 });

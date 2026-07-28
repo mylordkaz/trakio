@@ -26,11 +26,12 @@ describe('decodeGnssRecord', () => {
     expect(raw!.gForceY).toBe(7);
     expect(raw!.gForceZ).toBe(-248);
     expect(raw!.maxSnr).toBe(15);
-    expect(raw!.horizontalAccuracyM).toBe(2.25);
-    expect(raw!.verticalAccuracyM).toBeCloseTo(1.28, 6);
+    expect(raw!.hdop).toBe(2.25);
+    expect(raw!.vdop).toBeCloseTo(1.28, 6);
     expect(raw!.satellitesInView).toBe(21);
     expect(raw!.satellitesUsed).toBe(4);
     expect(raw!.fixQuality).toBe(1);
+    expect(raw!.batteryPercent).toBe(100);
   });
 
   it('decodes an unfixed vendor record structurally', () => {
@@ -69,7 +70,7 @@ describe('decodeGnssRecord', () => {
   it('rejects non-finite measurement fields', () => {
     expect(decodeGnssRecord(buildGnssRecord({ speedKmh: NaN }))).toBeNull();
     expect(decodeGnssRecord(buildGnssRecord({ heightM: Infinity }))).toBeNull();
-    expect(decodeGnssRecord(buildGnssRecord({ horizontalAccuracyM: NaN }))).toBeNull();
+    expect(decodeGnssRecord(buildGnssRecord({ hdop: NaN }))).toBeNull();
   });
 
   it('rejects DDDMM values whose minutes reach 60', () => {
@@ -78,9 +79,9 @@ describe('decodeGnssRecord', () => {
     expect(decodeGnssRecord(buildGnssRecord({ latDdmm: 8959.99 }))).not.toBeNull();
   });
 
-  it('rejects negative accuracy values', () => {
-    expect(decodeGnssRecord(buildGnssRecord({ horizontalAccuracyM: -0.1 }))).toBeNull();
-    expect(decodeGnssRecord(buildGnssRecord({ verticalAccuracyM: -1 }))).toBeNull();
+  it('rejects negative DOP values', () => {
+    expect(decodeGnssRecord(buildGnssRecord({ hdop: -0.1 }))).toBeNull();
+    expect(decodeGnssRecord(buildGnssRecord({ vdop: -1 }))).toBeNull();
   });
 
   it('rejects fix quality values outside the protocol enum', () => {
@@ -93,7 +94,7 @@ describe('decodeGnssRecord', () => {
 describe('rawRecordToSample', () => {
   it('maps the vendor reference record to a telemetry sample', () => {
     const raw = decodeGnssRecord(goldenRecord)!;
-    const sample = rawRecordToSample(raw, (t) => t - 1533888600000, 87);
+    const sample = rawRecordToSample(raw, (t) => t - 1533888600000);
 
     expect(sample).not.toBeNull();
     expect(sample!.source).toBe('qstarz');
@@ -102,26 +103,27 @@ describe('rawRecordToSample', () => {
     expect(sample!.lat).toBeCloseTo(25.0691193, 6);
     expect(sample!.lng).toBeCloseTo(121.5905158, 6);
     expect(sample!.speedMps).toBeCloseTo(0.1954889, 6);
-    expect(sample!.accuracyM).toBe(2.25);
+    expect(sample!.accuracyM).toBe(6.75);
     expect(sample!.headingDeg).toBeCloseTo(170.78, 4);
     expect(sample!.altitudeM).toBeCloseTo(155.654, 3);
     expect(sample!.gForceX).toBeCloseTo(0.20703125, 8);
     expect(sample!.gForceY).toBeCloseTo(0.02734375, 8);
     expect(sample!.gForceZ).toBeCloseTo(-0.96875, 8);
-    expect(sample!.verticalAccuracyM).toBeCloseTo(1.28, 6);
+    expect(sample!.pdop).toBeCloseTo(2.5886097, 6);
     expect(sample!.satelliteCount).toBe(4);
     expect(sample!.fixType).toBe(3);
-    expect(sample!.batteryLevel).toBe(87);
+    expect(sample!.batteryLevel).toBe(100);
     expect(sample!.rotationRateX).toBeUndefined();
     expect(sample!.speedAccuracyMps).toBeUndefined();
-    expect(sample!.pdop).toBeUndefined();
+    expect(sample!.verticalAccuracyM).toBeUndefined();
   });
 
-  it('leaves battery undefined when no level is known', () => {
-    const raw = decodeGnssRecord(goldenRecord)!;
-    const sample = rawRecordToSample(raw, () => 0);
+  it('reads battery from the record and drops out-of-range values', () => {
+    const low = decodeGnssRecord(buildGnssRecord({ batteryPercent: 60 }))!;
+    expect(rawRecordToSample(low, () => 0)!.batteryLevel).toBe(60);
 
-    expect(sample!.batteryLevel).toBeUndefined();
+    const invalid = decodeGnssRecord(buildGnssRecord({ batteryPercent: 255 }))!;
+    expect(rawRecordToSample(invalid, () => 0)!.batteryLevel).toBeUndefined();
   });
 
   it('converts southern and western hemisphere coordinates', () => {
@@ -132,12 +134,11 @@ describe('rawRecordToSample', () => {
     expect(sample!.lng).toBeCloseTo(-47.6375, 6);
   });
 
-  it('passes the accuracy fields through as meters', () => {
-    const record = buildGnssRecord({ horizontalAccuracyM: 1.5, verticalAccuracyM: 2.5 });
+  it('derives accuracy from HDOP', () => {
+    const record = buildGnssRecord({ hdop: 1.5 });
     const sample = rawRecordToSample(decodeGnssRecord(record)!, () => 0);
 
-    expect(sample!.accuracyM).toBeCloseTo(1.5, 6);
-    expect(sample!.verticalAccuracyM).toBeCloseTo(2.5, 6);
+    expect(sample!.accuracyM).toBeCloseTo(4.5, 6);
   });
 
   it('rejects the unfixed vendor record', () => {

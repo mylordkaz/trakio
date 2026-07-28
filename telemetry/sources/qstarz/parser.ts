@@ -5,6 +5,7 @@ import {
   MAX_FIX_QUALITY,
   USABLE_FIX_QUALITY_MIN,
   USABLE_FIX_QUALITY_MAX,
+  HDOP_TO_ACCURACY_M,
   EARLIEST_VALID_FIX_UNIX_SECONDS,
   LATEST_VALID_FIX_UNIX_SECONDS,
 } from '@/telemetry/sources/qstarz/constants';
@@ -22,12 +23,14 @@ export type QstarzRawRecord = {
   gForceY: number;
   gForceZ: number;
   maxSnr: number;
-  // Doc says "HDOP"/"VDOP" but Qstarz confirmed these are meters, used directly.
-  horizontalAccuracyM: number;
-  verticalAccuracyM: number;
+  // Vendor mail claimed meters, but field data (2026-07-28 session) confirms DOP.
+  hdop: number;
+  vdop: number;
   satellitesInView: number;
   satellitesUsed: number;
   fixQuality: number;
+  // Doc says "Reserved"; vendor confirmed battery percentage in 10% steps.
+  batteryPercent: number;
 };
 
 // NMEA-style DDDMM.MMMM in a double; Math.trunc keeps S/W hemispheres sign-correct.
@@ -56,10 +59,10 @@ function isPlausibleRecord(record: QstarzRawRecord): boolean {
     Number.isFinite(record.speedKmh) &&
     Number.isFinite(record.heightM) &&
     Number.isFinite(record.headingDeg) &&
-    Number.isFinite(record.horizontalAccuracyM) &&
-    record.horizontalAccuracyM >= 0 &&
-    Number.isFinite(record.verticalAccuracyM) &&
-    record.verticalAccuracyM >= 0 &&
+    Number.isFinite(record.hdop) &&
+    record.hdop >= 0 &&
+    Number.isFinite(record.vdop) &&
+    record.vdop >= 0 &&
     record.fixQuality <= MAX_FIX_QUALITY
   );
 }
@@ -84,11 +87,12 @@ export function decodeGnssRecord(record: Uint8Array): QstarzRawRecord | null {
     gForceY: view.getInt16(38, true),
     gForceZ: view.getInt16(40, true),
     maxSnr: view.getUint16(42, true),
-    horizontalAccuracyM: view.getFloat32(44, true),
-    verticalAccuracyM: view.getFloat32(48, true),
+    hdop: view.getFloat32(44, true),
+    vdop: view.getFloat32(48, true),
     satellitesInView: view.getUint8(52),
     satellitesUsed: view.getUint8(53),
     fixQuality: view.getUint8(54),
+    batteryPercent: view.getUint8(55),
   };
 
   return isPlausibleRecord(raw) ? raw : null;
@@ -114,8 +118,7 @@ function normalizeHeading(deg: number): number | null {
 
 export function rawRecordToSample(
   raw: QstarzRawRecord,
-  resolveElapsedMs: TelemetryElapsedMsResolver,
-  batteryLevel?: number
+  resolveElapsedMs: TelemetryElapsedMsResolver
 ): ExtendedTelemetrySample | null {
   if (!hasUsableFix(raw)) {
     return null;
@@ -129,16 +132,16 @@ export function rawRecordToSample(
     lat: ddmmToDegrees(raw.latDdmm),
     lng: ddmmToDegrees(raw.lonDdmm),
     speedMps: raw.speedKmh / 3.6,
-    accuracyM: raw.horizontalAccuracyM,
+    accuracyM: raw.hdop * HDOP_TO_ACCURACY_M,
     headingDeg: normalizeHeading(raw.headingDeg),
     altitudeM: raw.heightM,
     source: 'qstarz',
     gForceX: raw.gForceX / 256,
     gForceY: raw.gForceY / 256,
     gForceZ: raw.gForceZ / 256,
-    verticalAccuracyM: raw.verticalAccuracyM,
+    pdop: Math.hypot(raw.hdop, raw.vdop),
     satelliteCount: raw.satellitesUsed,
     fixType: raw.fixStatus,
-    batteryLevel,
+    batteryLevel: raw.batteryPercent <= 100 ? raw.batteryPercent : undefined,
   };
 }

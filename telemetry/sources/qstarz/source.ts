@@ -1,4 +1,3 @@
-import type { Device } from 'react-native-ble-plx';
 import type {
   TelemetrySource,
   TelemetrySourceCallbacks,
@@ -8,7 +7,6 @@ import {
   connectToDevice,
   subscribeToCharacteristic,
   disconnectDevice,
-  readCharacteristicBytes,
 } from '@/telemetry/sources/ble-transport';
 import { createQstarzPacketBuffer } from '@/telemetry/sources/qstarz/packet-buffer';
 import { decodeGnssRecord, rawRecordToSample } from '@/telemetry/sources/qstarz/parser';
@@ -16,34 +14,13 @@ import {
   QSTARZ_UART_SERVICE_UUID,
   QSTARZ_TX_CANDIDATE_CHARACTERISTIC_UUIDS,
   STREAM_PROBE_TIMEOUT_MS,
-  BATTERY_SERVICE_UUID,
-  BATTERY_LEVEL_CHARACTERISTIC_UUID,
-  BATTERY_REFRESH_INTERVAL_MS,
 } from '@/telemetry/sources/qstarz/constants';
 
 export function createQstarzSource(deviceId: string): TelemetrySource {
   let connectionState: SourceConnectionState = 'disconnected';
   const subscriptions = new Map<string, { remove: () => void }>();
   let buffers: { reset: () => void }[] = [];
-  let batteryTimer: ReturnType<typeof setInterval> | null = null;
-  let batteryLevel: number | undefined;
   let abortProbe: ((error: Error) => void) | null = null;
-
-  // Best-effort; never affects the data stream.
-  async function refreshBatteryLevel(device: Device): Promise<void> {
-    try {
-      const bytes = await readCharacteristicBytes(
-        device,
-        BATTERY_SERVICE_UUID,
-        BATTERY_LEVEL_CHARACTERISTIC_UUID
-      );
-      if (bytes && bytes.length >= 1 && bytes[0] <= 100) {
-        batteryLevel = bytes[0];
-      }
-    } catch {
-      // Keep the previous reading.
-    }
-  }
 
   function removeAllSubscriptions(): void {
     for (const subscription of subscriptions.values()) {
@@ -103,7 +80,7 @@ export function createQstarzSource(deviceId: string): TelemetrySource {
           return;
         }
 
-        const sample = rawRecordToSample(raw, callbacks.resolveElapsedMs, batteryLevel);
+        const sample = rawRecordToSample(raw, callbacks.resolveElapsedMs);
         if (!sample) {
           return;
         }
@@ -152,21 +129,11 @@ export function createQstarzSource(deviceId: string): TelemetrySource {
         clearTimeout(probeTimeout);
         abortProbe = null;
       }
-
-      void refreshBatteryLevel(device);
-      batteryTimer = setInterval(
-        () => void refreshBatteryLevel(device),
-        BATTERY_REFRESH_INTERVAL_MS
-      );
     },
 
     async stop() {
       abortProbe?.(new Error('Source stopped'));
       abortProbe = null;
-      if (batteryTimer) {
-        clearInterval(batteryTimer);
-        batteryTimer = null;
-      }
       removeAllSubscriptions();
       await disconnectDevice(deviceId);
       connectionState = 'disconnected';

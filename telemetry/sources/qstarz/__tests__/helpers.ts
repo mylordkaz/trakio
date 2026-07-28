@@ -63,11 +63,12 @@ export type GnssRecordFields = {
   gForceY: number;
   gForceZ: number;
   maxSnr: number;
-  horizontalAccuracyM: number;
-  verticalAccuracyM: number;
+  hdop: number;
+  vdop: number;
   satellitesInView: number;
   satellitesUsed: number;
   fixQuality: number;
+  batteryPercent: number;
 };
 
 // A plausible lap at Tsukuba: 36.1513°N 140.0917°E in DDDMM.MMMM terms.
@@ -84,11 +85,12 @@ const BASE_FIXED_RECORD: GnssRecordFields = {
   gForceY: -64,
   gForceZ: -260,
   maxSnr: 45,
-  horizontalAccuracyM: 0.8,
-  verticalAccuracyM: 1.1,
+  hdop: 0.8,
+  vdop: 1.1,
   satellitesInView: 18,
   satellitesUsed: 12,
   fixQuality: 1,
+  batteryPercent: 100,
 };
 
 export function buildGnssRecord(overrides: Partial<GnssRecordFields> = {}): Uint8Array {
@@ -110,12 +112,12 @@ export function buildGnssRecord(overrides: Partial<GnssRecordFields> = {}): Uint
   view.setInt16(38, fields.gForceY, true);
   view.setInt16(40, fields.gForceZ, true);
   view.setUint16(42, fields.maxSnr, true);
-  view.setFloat32(44, fields.horizontalAccuracyM, true);
-  view.setFloat32(48, fields.verticalAccuracyM, true);
+  view.setFloat32(44, fields.hdop, true);
+  view.setFloat32(48, fields.vdop, true);
   view.setUint8(52, fields.satellitesInView);
   view.setUint8(53, fields.satellitesUsed);
   view.setUint8(54, fields.fixQuality);
-  view.setUint8(55, 100);
+  view.setUint8(55, fields.batteryPercent);
 
   return bytes;
 }
