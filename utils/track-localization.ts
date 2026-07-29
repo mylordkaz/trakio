@@ -58,7 +58,7 @@ const JAPANESE_TRACK_METADATA: Record<string, JapaneseTrackMetadata> = {
   },
   'sportsland-sugo': {
     name: 'スポーツランドSUGO',
-    layoutName: 'インターナショナルレーシングコース',
+    layoutName: 'レーシングコース',
   },
   'okayama-international-circuit': {
     name: '岡山国際サーキット',

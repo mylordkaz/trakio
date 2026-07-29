@@ -38,6 +38,18 @@ describe('track localization', () => {
       .toBe('南幌リバーサイドカートランド');
   });
 
+  it('uses a compact SUGO layout label that fits status pills', () => {
+    const localized = localizeTrack({
+      id: 'sportsland-sugo',
+      name: 'Sportsland SUGO',
+      country: 'Japan',
+      location: 'Miyagi',
+      layoutName: 'racing course',
+    }, 'ja');
+
+    expect(localized.layoutName).toBe('レーシングコース');
+  });
+
   it('keeps canonical metadata for English and unknown tracks', () => {
     expect(localizeTrack(honjo, 'en-US')).toBe(honjo);
     expect(getTrackDisplayName('unknown-track', 'Unknown Track', 'ja'))
