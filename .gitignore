@@ -48,3 +48,6 @@ yarn-error.*
 # Kalman bench: personal session data + generated reports
 bench/data/
 bench/out/
+
+#private-docs
+docs/external_gps/
