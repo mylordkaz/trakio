@@ -496,6 +496,14 @@ export default {
     failedTitle: 'Unable to send feedback',
     failedMessage: 'Check your connection and try again.',
   },
+  appUpdate: {
+    availableTitle: 'Update available',
+    availableMessage: 'Trakio %{version} is now available.',
+    requiredTitle: 'Update required',
+    requiredMessage: 'Update to Trakio %{version} to continue using the app.',
+    updateNow: 'Update',
+    later: 'Later',
+  },
   telemetry: {
     title: 'Live Telemetry',
     subtitle: 'GPS and lap timing active',

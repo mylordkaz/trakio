@@ -1,6 +1,6 @@
 import '../global.css';
 import { useEffect, useRef } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
@@ -10,6 +10,7 @@ import { MenuProvider } from '@/contexts/MenuContext';
 import { ExternalGpsProvider } from '@/contexts/ExternalGpsContext';
 import { EntitlementProvider } from '@/contexts/EntitlementContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { useAppUpdatePrompt } from '@/hooks/useAppUpdatePrompt';
 import i18n from '@/i18n';
 import { getOrCreatePublisherIdSync } from '@/services/publisher-id';
 
@@ -32,8 +33,13 @@ getOrCreatePublisherIdSync();
 
 export default function RootLayout() {
   const { colorScheme, setColorScheme } = useColorScheme();
+  const pathname = usePathname();
   const screenBackground = colorScheme === 'dark' ? '#18181b' : '#fafafa';
   const hasAppliedInitialAppearance = useRef(false);
+  const isRecording = pathname.includes('/record/recording');
+  const canPromptForUpdate = pathname !== '/' && !isRecording;
+
+  useAppUpdatePrompt(canPromptForUpdate);
 
   useEffect(() => {
     if (hasAppliedInitialAppearance.current) {

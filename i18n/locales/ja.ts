@@ -496,6 +496,14 @@ export default {
     failedTitle: 'フィードバックを送信できません',
     failedMessage: '通信状況を確認してもう一度お試しください。',
   },
+  appUpdate: {
+    availableTitle: 'アップデートがあります',
+    availableMessage: 'Trakio %{version} が利用可能です。',
+    requiredTitle: 'アップデートが必要です',
+    requiredMessage: 'アプリを引き続き使用するには、Trakio %{version} にアップデートしてください。',
+    updateNow: 'アップデート',
+    later: 'あとで',
+  },
   telemetry: {
     title: 'ライブテレメトリー',
     subtitle: 'GPS・ラップタイミング稼働中',
