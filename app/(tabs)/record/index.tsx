@@ -33,6 +33,10 @@ import {
 } from '@/telemetry/location';
 import { formatLapTime } from '@/utils/format';
 import { haversineDistanceMeters } from '@/utils/geo';
+import {
+  getTrackSearchText,
+  localizeTrack,
+} from '@/utils/track-localization';
 
 type ChecklistItemKey = 'gpsLock' | 'battery' | 'startFinishLineSet';
 
@@ -81,7 +85,7 @@ export default function PreSessionScreen() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const gradientColors = useHeaderGradient('emerald');
-  const { openMenu } = useMenu();
+  const { openMenu, locale } = useMenu();
   const { selectedDevice } = useExternalGps();
   const { accessStatus } = useEntitlements();
   const quotaExempt = isSessionQuotaExempt(accessStatus);
@@ -109,14 +113,17 @@ export default function PreSessionScreen() {
   const badgeStyle = useAnimatedStyle(() => ({ opacity: badgeOpacity.value }));
   const [circuitSearch, setCircuitSearch] = useState('');
   const sessionTitle: string = customSessionTitle ?? (i18n.t('preSession.sessionTitle', { number: sessionNumber }) as string);
+  const displaySelectedCircuit = selectedCircuit
+    ? localizeTrack(selectedCircuit, locale)
+    : null;
 
   const filteredCircuits = useMemo(() => {
     if (!circuitSearch.trim()) return circuits;
-    const query = circuitSearch.toLowerCase().trim();
-    return circuits.filter(
-      (c) => c.name.toLowerCase().includes(query) || c.country?.toLowerCase().includes(query)
+    const query = circuitSearch.toLocaleLowerCase(locale).trim();
+    return circuits.filter((circuit) =>
+      getTrackSearchText(circuit, locale).includes(query)
     );
-  }, [circuits, circuitSearch]);
+  }, [circuits, circuitSearch, locale]);
 
   useEffect(() => {
     let isMounted = true;
@@ -666,9 +673,11 @@ export default function PreSessionScreen() {
               <Pressable onPress={() => setShowCircuitPicker(true)}>
                 <View className="flex-row items-center justify-between">
                   <View className="flex-1">
-                    <Text className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-white">{selectedCircuit.name}</Text>
+                    <Text className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-white">
+                      {displaySelectedCircuit?.name}
+                    </Text>
                     <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-                      {[selectedCircuit.country, formatTrackLength(selectedCircuit.lengthMeters), i18n.t('preSession.cornersCount', { count: selectedCircuit.corners ?? 0 })]
+                      {[displaySelectedCircuit?.country, formatTrackLength(selectedCircuit.lengthMeters), i18n.t('preSession.cornersCount', { count: selectedCircuit.corners ?? 0 })]
                         .filter(Boolean)
                         .join(' · ')}
                     </Text>
@@ -727,7 +736,9 @@ export default function PreSessionScreen() {
                         }`}
                       >
                         <View>
-                          <Text className="text-sm font-medium text-zinc-900 dark:text-white">{circuit.name}</Text>
+                          <Text className="text-sm font-medium text-zinc-900 dark:text-white">
+                            {localizeTrack(circuit, locale).name}
+                          </Text>
                           <Text className="text-xs text-zinc-400 dark:text-zinc-500">
                             {formatTrackLength(circuit.lengthMeters)} · {i18n.t('preSession.cornersCount', { count: circuit.corners ?? 0 })}
                           </Text>

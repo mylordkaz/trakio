@@ -24,6 +24,8 @@ import {
   getAverageLapDeltaLabel,
   getTrendBars,
 } from "@/utils/session-analytics";
+import { useMenu } from "@/contexts/MenuContext";
+import { localizeTrack } from "@/utils/track-localization";
 
 const REVIEW_REQUESTED_KEY = "review_requested";
 const REVIEW_SESSION_THRESHOLD = 3;
@@ -53,6 +55,7 @@ export default function PostSessionScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id?: string }>();
   const gradientColors = useHeaderGradient("emerald");
+  const { locale } = useMenu();
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(
     null,
   );
@@ -127,6 +130,9 @@ export default function PostSessionScreen() {
   const topSpeedKph = getTopSpeedKph(sessionDetail);
   const trendBars = getTrendBars(sessionDetail);
   const totalLaps = getValidTimedLaps(sessionDetail).length;
+  const displayTrack = sessionDetail
+    ? localizeTrack(sessionDetail.track, locale)
+    : null;
 
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
@@ -145,7 +151,7 @@ export default function PostSessionScreen() {
         >
           <View className="flex-row items-center justify-between mb-3">
             <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-              {sessionDetail?.track.name ?? i18n.t("circuits.loadingTrack")}
+              {displayTrack?.name ?? i18n.t("circuits.loadingTrack")}
             </Text>
             <View className="flex-row items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1.5 border border-emerald-400/20">
               <View className="h-2.5 w-2.5 rounded-full bg-emerald-400" />

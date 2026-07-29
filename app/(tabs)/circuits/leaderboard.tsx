@@ -11,6 +11,8 @@ import { getOrCreatePublisherId } from '@/services/publisher-id';
 import { listLeaderboardEntries, flagEmoji, type LeaderboardEntry } from '@/services/leaderboard';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { formatLapTime, formatDeltaMs } from '@/utils/format';
+import { useMenu } from '@/contexts/MenuContext';
+import { localizeTrack } from '@/utils/track-localization';
 
 // ─── Podium ──────────────────────────────────────────────────────────────────
 
@@ -183,6 +185,7 @@ export default function LeaderboardScreen() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const { locale } = useMenu();
 
   useEffect(() => {
     if (!id) {
@@ -229,6 +232,7 @@ export default function LeaderboardScreen() {
   }, [id]);
 
   const gradientColors = useHeaderGradient('sky');
+  const displayTrack = track ? localizeTrack(track, locale) : null;
   const p1Ms = entries[0]?.lapTimeMs ?? 0;
 
   // Podium order: P2 (left), P1 (center), P3 (right)
@@ -264,8 +268,8 @@ export default function LeaderboardScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 4 }}>
             <View style={{ flex: 1, marginRight: 12 }}>
               <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 4 }}>
-                {track
-                  ? [track.name, track.layoutName].filter(Boolean).join(' · ')
+                {displayTrack
+                  ? [displayTrack.name, displayTrack.layoutName].filter(Boolean).join(' · ')
                   : i18n.t('common.track')}
               </Text>
               <Text style={{ fontSize: 28, fontWeight: '800', color: '#ffffff', letterSpacing: -0.5 }}>

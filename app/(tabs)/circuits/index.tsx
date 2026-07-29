@@ -13,6 +13,11 @@ import { useColorScheme } from "@/hooks/useColorScheme";
 import { useHeaderGradient } from "@/hooks/useHeaderGradient";
 import { useMenu } from "@/contexts/MenuContext";
 import CircuitRequestModal from "@/components/circuits/CircuitRequestModal";
+import {
+  formatTrackDisplayLocation,
+  getTrackSearchText,
+  localizeTrack,
+} from "@/utils/track-localization";
 
 const FILTER_KEYS = ["circuits.all", "circuits.recent"] as const;
 
@@ -38,7 +43,7 @@ export default function CircuitsScreen() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
   const gradientColors = useHeaderGradient("sky");
-  const { openMenu } = useMenu();
+  const { openMenu, locale } = useMenu();
 
   useEffect(() => {
     let isMounted = true;
@@ -80,10 +85,9 @@ export default function CircuitsScreen() {
   const filteredCircuits = circuits.filter((circuit) => {
     return (
       !search ||
-      circuit.name.toLowerCase().includes(search.toLowerCase()) ||
-      circuit.country?.toLowerCase().includes(search.toLowerCase()) ||
-      circuit.location?.toLowerCase().includes(search.toLowerCase()) ||
-      circuit.layoutName?.toLowerCase().includes(search.toLowerCase())
+      getTrackSearchText(circuit, locale).includes(
+        search.toLocaleLowerCase(locale),
+      )
     );
   });
 
@@ -244,16 +248,17 @@ export default function CircuitsScreen() {
               <View className="flex-row justify-between items-start mb-3">
                 <View className="flex-1 mr-3">
                   <Text className="text-base font-semibold leading-tight text-zinc-900 dark:text-white">
-                    {circuit.name}
+                    {localizeTrack(circuit, locale).name}
                   </Text>
                   <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-                    {[circuit.location, circuit.country]
-                      .filter(Boolean)
-                      .join(", ")}
+                    {formatTrackDisplayLocation(circuit, locale)}
                   </Text>
                 </View>
                 <StatusPill
-                  text={circuit.layoutName ?? i18n.t("common.track")}
+                  text={
+                    localizeTrack(circuit, locale).layoutName ??
+                    i18n.t("common.track")
+                  }
                   color="sky"
                 />
               </View>
