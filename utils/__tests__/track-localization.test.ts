@@ -50,6 +50,28 @@ describe('track localization', () => {
     expect(localized.layoutName).toBe('レーシングコース');
   });
 
+  it('localizes each Suzuka Twin Circuit layout independently', () => {
+    const fullCourse = localizeTrack({
+      id: 'suzuka-twin-circuit-full-course',
+      name: 'Suzuka Twin Circuit',
+      country: 'Japan',
+      location: 'Mie',
+      layoutName: 'Full course',
+    }, 'ja');
+    const gCourse = localizeTrack({
+      id: 'suzuka-twin-circuit-g-course',
+      name: 'Suzuka Twin Circuit',
+      country: 'Japan',
+      location: 'Mie',
+      layoutName: 'G course',
+    }, 'ja');
+
+    expect(fullCourse.name).toBe('鈴鹿ツインサーキット');
+    expect(fullCourse.layoutName).toBe('フルコース');
+    expect(gCourse.name).toBe('鈴鹿ツインサーキット');
+    expect(gCourse.layoutName).toBe('Gコース');
+  });
+
   it('keeps canonical metadata for English and unknown tracks', () => {
     expect(localizeTrack(honjo, 'en-US')).toBe(honjo);
     expect(getTrackDisplayName('unknown-track', 'Unknown Track', 'ja'))

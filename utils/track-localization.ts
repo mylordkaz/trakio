@@ -75,6 +75,14 @@ const JAPANESE_TRACK_METADATA: Record<string, JapaneseTrackMetadata> = {
   'nanporo-kartland': {
     name: '南幌リバーサイドカートランド',
   },
+  'suzuka-twin-circuit-full-course': {
+    name: '鈴鹿ツインサーキット',
+    layoutName: 'フルコース',
+  },
+  'suzuka-twin-circuit-g-course': {
+    name: '鈴鹿ツインサーキット',
+    layoutName: 'Gコース',
+  },
 };
 
 const JAPANESE_COUNTRY_NAMES: Record<string, string> = {

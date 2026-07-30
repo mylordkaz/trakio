@@ -38,6 +38,7 @@ export function useAppUpdatePrompt(enabled: boolean) {
   const checkForUpdate = useCallback(async () => {
     const installedVersion = Application.nativeApplicationVersion;
     if (
+      __DEV__ ||
       Platform.OS !== 'ios' ||
       !enabledRef.current ||
       !installedVersion ||
@@ -49,6 +50,11 @@ export function useAppUpdatePrompt(enabled: boolean) {
     isCheckingRef.current = true;
 
     try {
+      const releaseType = await Application.getIosApplicationReleaseTypeAsync();
+      if (releaseType !== Application.ApplicationReleaseType.APP_STORE) {
+        return;
+      }
+
       const update = await checkForAppUpdate({
         installedVersion,
         locale: i18n.locale,
