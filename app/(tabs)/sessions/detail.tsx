@@ -50,6 +50,11 @@ import {
   getAverageLapDeltaLabel,
   getTrendBars,
 } from '@/utils/session-analytics';
+import { useMenu } from '@/contexts/MenuContext';
+import {
+  formatTrackDisplayLocation,
+  localizeTrack,
+} from '@/utils/track-localization';
 
 const CONDITION_EMOJI: Record<string, string> = {
   clear: '☀️',
@@ -117,6 +122,7 @@ export default function SessionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const gradientColors = useHeaderGradient('violet');
   const { colorScheme } = useColorScheme();
+  const { locale } = useMenu();
   const isDark = colorScheme === 'dark';
   const scrollRef = useRef<ScrollView>(null);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
@@ -300,6 +306,12 @@ export default function SessionDetailScreen() {
     sessionDetail?.timingLines.find((timingLine) => timingLine.type === 'start_finish') ?? null;
   const sectorLines = sessionDetail?.timingLines.filter((timingLine) => timingLine.type === 'sector') ?? [];
   const bestLap = getBestLap(sessionDetail);
+  const displayTrack = sessionDetail
+    ? localizeTrack(sessionDetail.track, locale)
+    : null;
+  const displayTrackLocation = sessionDetail
+    ? formatTrackDisplayLocation(sessionDetail.track, locale)
+    : '';
 
   // Every lap's polylines are built once and stay mounted; selecting a lap
   // only swaps stroke colors. Mounting/unmounting map children on selection
@@ -363,7 +375,7 @@ export default function SessionDetailScreen() {
               <Text className="text-sm font-medium text-violet-400">{i18n.t('common.back')}</Text>
             </Pressable>
             <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-              {sessionDetail?.track.name ?? i18n.t('common.track')}
+              {displayTrack?.name ?? i18n.t('common.track')}
             </Text>
           </View>
 
@@ -839,8 +851,8 @@ export default function SessionDetailScreen() {
           >
             <SessionStoryCard
               sessionName={sessionDetail.session.name ?? i18n.t('sessions.recordedSession')}
-              circuitName={sessionDetail.track.name}
-              location={[sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', ')}
+              circuitName={displayTrack?.name ?? sessionDetail.track.name}
+              location={displayTrackLocation}
               car={sessionDetail.session.car}
               bestLap={formatLapTime(bestLapMs)}
               totalLaps={`${sessionDetail.session.totalLaps}`}
@@ -865,8 +877,8 @@ export default function SessionDetailScreen() {
           >
             <XPostCard
               sessionName={sessionDetail.session.name ?? i18n.t('sessions.recordedSession')}
-              circuitName={sessionDetail.track.name}
-              location={[sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', ')}
+              circuitName={displayTrack?.name ?? sessionDetail.track.name}
+              location={displayTrackLocation}
               car={sessionDetail.session.car}
               bestLap={formatLapTime(bestLapMs)}
               totalLaps={`${sessionDetail.session.totalLaps}`}
@@ -893,8 +905,8 @@ export default function SessionDetailScreen() {
         photoUri={share.photoUri}
         storyCardData={sessionDetail ? {
           sessionName: sessionDetail.session.name ?? i18n.t('sessions.recordedSession'),
-          circuitName: sessionDetail.track.name,
-          location: [sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', '),
+          circuitName: displayTrack?.name ?? sessionDetail.track.name,
+          location: displayTrackLocation,
           car: sessionDetail.session.car,
           bestLap: formatLapTime(bestLapMs),
           totalLaps: `${sessionDetail.session.totalLaps}`,
@@ -913,8 +925,8 @@ export default function SessionDetailScreen() {
         isSharing={share.isSharing}
         cardData={sessionDetail ? {
           sessionName: sessionDetail.session.name ?? i18n.t('sessions.recordedSession'),
-          circuitName: sessionDetail.track.name,
-          location: [sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', '),
+          circuitName: displayTrack?.name ?? sessionDetail.track.name,
+          location: displayTrackLocation,
           car: sessionDetail.session.car,
           bestLap: formatLapTime(bestLapMs),
           totalLaps: `${sessionDetail.session.totalLaps}`,

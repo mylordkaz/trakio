@@ -35,6 +35,11 @@ import { getOrCreatePublisherId } from '@/services/publisher-id';
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useHeaderGradient } from "@/hooks/useHeaderGradient";
 import { formatLapTime, formatSectorTime } from "@/utils/format";
+import { useMenu } from "@/contexts/MenuContext";
+import {
+  formatTrackDisplayLocation,
+  localizeTrack,
+} from "@/utils/track-localization";
 
 function formatTrackLength(lengthMeters: number | null) {
   if (lengthMeters === null) {
@@ -82,6 +87,7 @@ export default function CircuitDetailScreen() {
   const isDark = colorScheme === "dark";
   const scrollRef = useRef<ScrollView>(null);
   const gradientColors = useHeaderGradient("sky");
+  const { locale } = useMenu();
 
   const loadCircuit = useCallback(async () => {
     if (!id) {
@@ -204,6 +210,7 @@ export default function CircuitDetailScreen() {
     setEditingNoteText("");
   }
 
+  const displayCircuit = circuit ? localizeTrack(circuit, locale) : null;
   const personalBest = circuit?.personalBest ?? null;
   const sectorCount = circuit?.sectorCount ?? 0;
   const startFinishLine =
@@ -275,20 +282,18 @@ export default function CircuitDetailScreen() {
                   {i18n.t("circuits.circuitProfile")}
                 </Text>
                 <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
-                  {circuit?.name ?? i18n.t("common.track")}
+                  {displayCircuit?.name ?? i18n.t("common.track")}
                 </Text>
                 <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
                   {circuit
-                    ? [circuit.location, circuit.country]
-                        .filter(Boolean)
-                        .join(", ")
+                    ? formatTrackDisplayLocation(circuit, locale)
                     : isLoading
                       ? i18n.t("common.loading")
                       : i18n.t("common.track")}
                 </Text>
               </View>
               <StatusPill
-                text={circuit?.layoutName ?? i18n.t("common.track")}
+                text={displayCircuit?.layoutName ?? i18n.t("common.track")}
                 color="sky"
               />
             </View>
@@ -425,7 +430,10 @@ export default function CircuitDetailScreen() {
                   onPress={() =>
                     router.push({
                       pathname: "/(tabs)/sessions",
-                      params: { trackId: circuit?.id ?? "", trackName: circuit?.name ?? "" },
+                      params: {
+                        trackId: circuit?.id ?? "",
+                        trackName: circuit?.name ?? "",
+                      },
                     })
                   }
                 >
@@ -705,7 +713,10 @@ export default function CircuitDetailScreen() {
               onPress={() =>
                 router.push({
                   pathname: "/(tabs)/sessions",
-                  params: { trackId: circuit?.id ?? "", trackName: circuit?.name ?? "" },
+                  params: {
+                    trackId: circuit?.id ?? "",
+                    trackName: circuit?.name ?? "",
+                  },
                 })
               }
               className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center"

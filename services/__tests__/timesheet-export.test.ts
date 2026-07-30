@@ -41,7 +41,13 @@ const DETAIL = {
     startedAt: '2026-03-13T23:30:00.000Z',
     maxSpeedKph: 180,
   },
-  track: { name: 'Tsukuba Circuit 2000' },
+  track: {
+    id: 'tsukuba2000',
+    name: 'Tsukuba 2000',
+    country: 'Japan',
+    location: 'Tsukuba',
+    layoutName: 'TS2000',
+  },
   timingLines: [],
   laps: [],
   gpsPoints: [],
@@ -74,6 +80,8 @@ describe('time sheet export', () => {
     const [{ html }] = mockPrintToFileAsync.mock.calls[0];
     expect(html).toContain('2026-03-14');
     expect(html).toContain('晴れ 20°C');
+    expect(html).toContain('筑波サーキット コース2000');
+    expect(html).not.toContain('>Tsukuba 2000 ');
     expect(html).not.toContain('>clear 20°C<');
     expect(mockShareOpen).toHaveBeenCalledWith(
       expect.objectContaining({
