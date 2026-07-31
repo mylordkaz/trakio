@@ -572,14 +572,15 @@ export default function SessionDetailScreen() {
             </Card>
           ) : null}
 
-          <View className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4">
-            <View className="flex-row items-center justify-between mb-1">
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('session.bestLap')}</Text>
-              {isSharedNow ? (
+          <View className="gap-2">
+            {isSharedNow ? (
+              <View className="flex-row justify-end">
                 <Text className="text-xs font-medium text-emerald-500">
                   ✓ {i18n.t('leaderboard.timeIsLive')}
                 </Text>
-              ) : showShareButton ? (
+              </View>
+            ) : showShareButton ? (
+              <View className="flex-row justify-end">
                 <Pressable
                   onPress={handleShareBest}
                   disabled={leaderboardShare.isSharing}
@@ -597,14 +598,17 @@ export default function SessionDetailScreen() {
                       : i18n.t('leaderboard.shareToLeaderboard')}
                   </Text>
                 </Pressable>
-              ) : null}
+              </View>
+            ) : null}
+            <View className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4">
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('session.bestLap')}</Text>
+              <Text
+                className="text-zinc-900 dark:text-white text-center"
+                style={{ fontSize: 40, lineHeight: 44, fontWeight: '600', fontVariant: ['tabular-nums'] }}
+              >
+                {formatLapTime(bestLapMs)}
+              </Text>
             </View>
-            <Text
-              className="text-zinc-900 dark:text-white text-center"
-              style={{ fontSize: 40, lineHeight: 44, fontWeight: '600', fontVariant: ['tabular-nums'] }}
-            >
-              {formatLapTime(bestLapMs)}
-            </Text>
           </View>
 
           <View className="flex-row gap-3">
