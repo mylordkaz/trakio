@@ -57,7 +57,7 @@ import {
 import { useMenu } from '@/contexts/MenuContext';
 import {
   formatTrackDisplayLocation,
-  localizeTrack,
+  getTrackDisplayTitle,
 } from '@/utils/track-localization';
 
 const SEEDED_SESSION_IDS = new Set(
@@ -341,8 +341,8 @@ export default function SessionDetailScreen() {
     sessionDetail?.timingLines.find((timingLine) => timingLine.type === 'start_finish') ?? null;
   const sectorLines = sessionDetail?.timingLines.filter((timingLine) => timingLine.type === 'sector') ?? [];
   const bestLap = getBestLap(sessionDetail);
-  const displayTrack = sessionDetail
-    ? localizeTrack(sessionDetail.track, locale)
+  const displayTrackTitle = sessionDetail
+    ? getTrackDisplayTitle(sessionDetail.track, locale)
     : null;
   const displayTrackLocation = sessionDetail
     ? formatTrackDisplayLocation(sessionDetail.track, locale)
@@ -410,7 +410,7 @@ export default function SessionDetailScreen() {
               <Text className="text-sm font-medium text-violet-400">{i18n.t('common.back')}</Text>
             </Pressable>
             <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-              {displayTrack?.name ?? i18n.t('common.track')}
+              {displayTrackTitle ?? i18n.t('common.track')}
             </Text>
           </View>
 
@@ -915,7 +915,7 @@ export default function SessionDetailScreen() {
           >
             <SessionStoryCard
               sessionName={sessionDetail.session.name ?? i18n.t('sessions.recordedSession')}
-              circuitName={displayTrack?.name ?? sessionDetail.track.name}
+              circuitName={displayTrackTitle ?? sessionDetail.track.name}
               location={displayTrackLocation}
               car={sessionDetail.session.car}
               bestLap={formatLapTime(bestLapMs)}
@@ -941,7 +941,7 @@ export default function SessionDetailScreen() {
           >
             <XPostCard
               sessionName={sessionDetail.session.name ?? i18n.t('sessions.recordedSession')}
-              circuitName={displayTrack?.name ?? sessionDetail.track.name}
+              circuitName={displayTrackTitle ?? sessionDetail.track.name}
               location={displayTrackLocation}
               car={sessionDetail.session.car}
               bestLap={formatLapTime(bestLapMs)}
@@ -969,7 +969,7 @@ export default function SessionDetailScreen() {
         photoUri={share.photoUri}
         storyCardData={sessionDetail ? {
           sessionName: sessionDetail.session.name ?? i18n.t('sessions.recordedSession'),
-          circuitName: displayTrack?.name ?? sessionDetail.track.name,
+          circuitName: displayTrackTitle ?? sessionDetail.track.name,
           location: displayTrackLocation,
           car: sessionDetail.session.car,
           bestLap: formatLapTime(bestLapMs),
@@ -989,7 +989,7 @@ export default function SessionDetailScreen() {
         isSharing={share.isSharing}
         cardData={sessionDetail ? {
           sessionName: sessionDetail.session.name ?? i18n.t('sessions.recordedSession'),
-          circuitName: displayTrack?.name ?? sessionDetail.track.name,
+          circuitName: displayTrackTitle ?? sessionDetail.track.name,
           location: displayTrackLocation,
           car: sessionDetail.session.car,
           bestLap: formatLapTime(bestLapMs),

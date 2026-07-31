@@ -33,7 +33,7 @@ import {
   type SessionQuota,
 } from '@/services/session-quota';
 import { useMenu } from '@/contexts/MenuContext';
-import { localizeTrack } from '@/utils/track-localization';
+import { getTrackDisplayTitle, localizeTrack } from '@/utils/track-localization';
 
 function formatSectorTime(elapsedMs: number | null) {
   if (elapsedMs === null) {
@@ -627,7 +627,7 @@ export default function RecordingScreen() {
         {/* Header */}
         <View className="flex-row items-start justify-between mb-3">
           <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-            {displayTrack?.name ?? i18n.t('circuits.loadingTrack')}
+            {track ? getTrackDisplayTitle(track, locale) : i18n.t('circuits.loadingTrack')}
           </Text>
           <Animated.View style={{ opacity: pulseOpacity }}>
             <View className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-3 py-1.5 border border-red-400/20">
