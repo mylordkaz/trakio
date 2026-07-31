@@ -323,10 +323,6 @@ export default function SessionDetailScreen() {
     !isSharedNow &&
     shareState !== null &&
     shouldShowSessionShareButton(shareState, bestLapMs);
-  const sessionHoldsBest =
-    shareState !== null &&
-    bestLapMs !== null &&
-    bestLapMs === shareState.userBestLapMs;
 
   async function handleShareBest() {
     if (!shareState || shareState.userBestLapMs === null) return;
@@ -598,9 +594,7 @@ export default function SessionDetailScreen() {
                   >
                     {leaderboardShare.isSharing
                       ? i18n.t('leaderboard.sharing')
-                      : sessionHoldsBest
-                        ? i18n.t('leaderboard.shareToLeaderboard')
-                        : i18n.t('leaderboard.shareMyBestTime')}
+                      : i18n.t('leaderboard.shareToLeaderboard')}
                   </Text>
                 </Pressable>
               ) : null}

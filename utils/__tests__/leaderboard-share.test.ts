@@ -55,20 +55,28 @@ describe('post-session share offer', () => {
 });
 
 describe('session detail share button', () => {
-  it('shows on every session of a never-shared track', () => {
+  it('shows only on the best session of a never-shared track', () => {
+    const neverShared = { sharedLapTimeMs: null, offeredLapTimeMs: null };
+
     expect(
       shouldShowSessionShareButton(
-        { userBestLapMs: 62000, sharedLapTimeMs: null, offeredLapTimeMs: null },
-        65000,
+        { userBestLapMs: 62000, ...neverShared },
+        62000,
       ),
     ).toBe(true);
+    expect(
+      shouldShowSessionShareButton(
+        { userBestLapMs: 62000, ...neverShared },
+        65000,
+      ),
+    ).toBe(false);
   });
 
-  it('shows a declined offer without waiting for a new best', () => {
+  it('keeps the best session shareable after a declined offer', () => {
     expect(
       shouldShowSessionShareButton(
         { userBestLapMs: 62000, sharedLapTimeMs: null, offeredLapTimeMs: 62000 },
-        65000,
+        62000,
       ),
     ).toBe(true);
   });

@@ -17,17 +17,17 @@ export function shouldShowSessionShareButton(
   state: TrackLeaderboardShareState,
   sessionBestLapMs: number | null,
 ): boolean {
-  if (state.userBestLapMs === null) {
+  // Only the session holding the track best ever shows the button, so the
+  // displayed time is always the time a share uploads.
+  if (
+    state.userBestLapMs === null ||
+    sessionBestLapMs !== state.userBestLapMs
+  ) {
     return false;
   }
 
-  if (state.sharedLapTimeMs === null) {
-    return true;
-  }
-
   return (
-    sessionBestLapMs !== null &&
-    sessionBestLapMs === state.userBestLapMs &&
+    state.sharedLapTimeMs === null ||
     state.userBestLapMs < state.sharedLapTimeMs
   );
 }
