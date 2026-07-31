@@ -338,9 +338,11 @@ async function getPersonalBest(db: SQLiteDatabase, trackId: string, sectorCount:
        AND l.lap_time_ms IS NOT NULL
        AND l.is_invalid = 0
        AND l.is_out_lap = 0
+       ${USER_SESSION_FILTER}
      ORDER BY l.lap_time_ms ASC
      LIMIT 1;`,
-    trackId
+    trackId,
+    ...SEEDED_SESSION_IDS
   );
 
   if (!bestLap) return null;
@@ -367,6 +369,12 @@ async function getPersonalBest(db: SQLiteDatabase, trackId: string, sectorCount:
 
 const SEEDED_SESSION_IDS = SESSION_TEST_SEEDS.map((seed) => seed.session.id);
 
+// Demo seed laps must never count as the user's own time.
+const USER_SESSION_FILTER =
+  SEEDED_SESSION_IDS.length > 0
+    ? `AND s.id NOT IN (${SEEDED_SESSION_IDS.map(() => '?').join(', ')})`
+    : '';
+
 export type TrackLeaderboardShareState = {
   // Best valid lap the user actually drove — demo seed sessions excluded,
   // because this value is what a leaderboard share submits.
@@ -379,10 +387,6 @@ export async function getTrackLeaderboardShareState(
   db: SQLiteDatabase,
   trackId: string
 ): Promise<TrackLeaderboardShareState> {
-  const seedPlaceholders = SEEDED_SESSION_IDS.map(() => '?').join(', ');
-  const seedFilter =
-    SEEDED_SESSION_IDS.length > 0 ? `AND s.id NOT IN (${seedPlaceholders})` : '';
-
   const bestRow = await db.getFirstAsync<{ best_ms: number | null }>(
     `SELECT MIN(l.lap_time_ms) AS best_ms
      FROM laps l
@@ -391,7 +395,7 @@ export async function getTrackLeaderboardShareState(
        AND l.lap_time_ms IS NOT NULL
        AND l.is_invalid = 0
        AND l.is_out_lap = 0
-       ${seedFilter};`,
+       ${USER_SESSION_FILTER};`,
     trackId,
     ...SEEDED_SESSION_IDS
   );

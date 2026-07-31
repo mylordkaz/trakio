@@ -17,6 +17,13 @@ import type {
 type SessionDisplayStatus = 'Best' | 'Recent' | null;
 
 const SEEDED_SESSION_IDS = new Set(SESSION_TEST_SEEDS.map((seed) => seed.session.id));
+const SEEDED_SESSION_ID_LIST = [...SEEDED_SESSION_IDS];
+
+// Demo seed laps must never count as the user's own time.
+const USER_SESSION_WHERE =
+  SEEDED_SESSION_ID_LIST.length > 0
+    ? `s.id NOT IN (${SEEDED_SESSION_ID_LIST.map(() => '?').join(', ')})`
+    : '1 = 1';
 
 type DbSessionListRow = {
   id: string;
@@ -327,6 +334,7 @@ async function getBestSessionIdPerTrack(db: SQLiteDatabase): Promise<Set<string>
       FROM sessions s
       LEFT JOIN laps l
         ON l.session_id = s.id
+      WHERE ${USER_SESSION_WHERE}
       GROUP BY s.id
       HAVING computed_best_lap_ms IS NOT NULL
     ) best
@@ -340,10 +348,13 @@ async function getBestSessionIdPerTrack(db: SQLiteDatabase): Promise<Set<string>
           )
         ) AS track_best_ms
       FROM sessions s
+      WHERE ${USER_SESSION_WHERE}
       GROUP BY s.track_id
       HAVING track_best_ms IS NOT NULL
     ) tb
-      ON best.track_id = tb.track_id AND best.computed_best_lap_ms = tb.track_best_ms;`
+      ON best.track_id = tb.track_id AND best.computed_best_lap_ms = tb.track_best_ms;`,
+    ...SEEDED_SESSION_ID_LIST,
+    ...SEEDED_SESSION_ID_LIST
   );
 
   return new Set(rows.map((r) => r.id));
@@ -722,8 +733,10 @@ export async function getTrackSessionSummary(
     FROM sessions s
     LEFT JOIN laps l
       ON l.session_id = s.id
-    WHERE s.track_id = ?;`,
-    trackId
+    WHERE s.track_id = ?
+      AND ${USER_SESSION_WHERE};`,
+    trackId,
+    ...SEEDED_SESSION_ID_LIST
   );
 
   return {
