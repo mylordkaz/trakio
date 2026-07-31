@@ -690,18 +690,19 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
-  {
-    version: 18,
-    up: async (db) => {
-      const cols = await getColumnNames(db, 'tracks');
-      if (!cols.includes('leaderboard_offered_lap_time_ms')) {
-        await db.execAsync(
-          'ALTER TABLE tracks ADD COLUMN leaderboard_offered_lap_time_ms INTEGER;'
-        );
-      }
-    },
-  },
 ];
+
+// Dev devices can carry a higher user_version from parallel feature branches,
+// which silently skips a competing numbered migration. Column presence is
+// checked directly so this schema never depends on version-number coordination.
+async function ensureLeaderboardShareColumns(db: SQLiteDatabase) {
+  const cols = await getColumnNames(db, 'tracks');
+  if (!cols.includes('leaderboard_offered_lap_time_ms')) {
+    await db.execAsync(
+      'ALTER TABLE tracks ADD COLUMN leaderboard_offered_lap_time_ms INTEGER;'
+    );
+  }
+}
 
 export const DATABASE_NAME = 'trakio.db';
 export const LATEST_DATABASE_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0;
@@ -724,6 +725,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
     }
   }
 
+  await ensureLeaderboardShareColumns(db);
   await recoverStaleRecordingSessions(db);
   await syncTrackSeeds(db);
   await syncSessionTestSeeds(db);
