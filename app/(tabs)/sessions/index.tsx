@@ -14,7 +14,7 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useMenu } from '@/contexts/MenuContext';
 import { formatLapTime } from '@/utils/format';
-import { getTrackDisplayName } from '@/utils/track-localization';
+import { getTrackDisplayTitle } from '@/utils/track-localization';
 
 const FILTER_KEYS = ['sessions.all', 'sessions.recent', 'sessions.best'] as const;
 
@@ -100,13 +100,19 @@ export default function SessionListScreen() {
     }, [db])
   );
 
-  const filteredSessions = sessions.filter((session) => {
-    const dateLabel = formatSessionDate(session.startedAt);
-    const displayTrackName = getTrackDisplayName(
-      session.trackId,
-      session.trackName,
+  const sessionTrackTitle = (session: SessionListItem) =>
+    getTrackDisplayTitle(
+      {
+        id: session.trackId,
+        name: session.trackName,
+        layoutName: session.trackLayoutName,
+      },
       locale,
     );
+
+  const filteredSessions = sessions.filter((session) => {
+    const dateLabel = formatSessionDate(session.startedAt);
+    const displayTrackName = sessionTrackTitle(session);
     const matchesTrack = !activeTrackFilter || session.trackId === activeTrackFilter;
     const matchesSearch =
       !search ||
@@ -124,20 +130,19 @@ export default function SessionListScreen() {
     return matchesTrack && matchesSearch && matchesFilter;
   });
 
-  const activeTrackNameFallback = activeTrackFilter
-    ? activeTrackFilterName ??
-      sessions.find((session) => session.trackId === activeTrackFilter)
-        ?.trackName ??
-      null
+  const activeTrackSession = activeTrackFilter
+    ? sessions.find((session) => session.trackId === activeTrackFilter) ?? null
     : null;
-  const activeTrackName =
-    activeTrackFilter && activeTrackNameFallback
-      ? getTrackDisplayName(
-          activeTrackFilter,
-          activeTrackNameFallback,
-          locale,
-        )
-      : null;
+  const activeTrackName = !activeTrackFilter
+    ? null
+    : activeTrackSession
+      ? sessionTrackTitle(activeTrackSession)
+      : activeTrackFilterName
+        ? getTrackDisplayTitle(
+            { id: activeTrackFilter, name: activeTrackFilterName, layoutName: null },
+            locale,
+          )
+        : null;
 
   const handleDeleteSession = useCallback(
     (session: SessionListItem) => {
@@ -316,11 +321,7 @@ export default function SessionListScreen() {
                   <View className="flex-1 mr-3">
                     <Text className="text-base font-semibold leading-tight text-zinc-900 dark:text-white">{session.name}</Text>
                     <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-                      {getTrackDisplayName(
-                        session.trackId,
-                        session.trackName,
-                        locale,
-                      )}
+                      {sessionTrackTitle(session)}
                     </Text>
                   </View>
                   {session.displayStatus ? <StatusPill text={session.displayStatus} color="violet" /> : null}

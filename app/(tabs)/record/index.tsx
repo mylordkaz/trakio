@@ -34,6 +34,7 @@ import {
 import { formatLapTime } from '@/utils/format';
 import { haversineDistanceMeters } from '@/utils/geo';
 import {
+  getTrackDisplayTitle,
   getTrackSearchText,
   localizeTrack,
 } from '@/utils/track-localization';
@@ -674,7 +675,7 @@ export default function PreSessionScreen() {
                 <View className="flex-row items-center justify-between">
                   <View className="flex-1">
                     <Text className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-white">
-                      {displaySelectedCircuit?.name}
+                      {getTrackDisplayTitle(selectedCircuit, locale)}
                     </Text>
                     <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
                       {[displaySelectedCircuit?.country, formatTrackLength(selectedCircuit.lengthMeters), i18n.t('preSession.cornersCount', { count: selectedCircuit.corners ?? 0 })]
@@ -737,7 +738,7 @@ export default function PreSessionScreen() {
                       >
                         <View>
                           <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-                            {localizeTrack(circuit, locale).name}
+                            {getTrackDisplayTitle(circuit, locale)}
                           </Text>
                           <Text className="text-xs text-zinc-400 dark:text-zinc-500">
                             {formatTrackLength(circuit.lengthMeters)} · {i18n.t('preSession.cornersCount', { count: circuit.corners ?? 0 })}

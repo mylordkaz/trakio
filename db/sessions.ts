@@ -24,6 +24,7 @@ type DbSessionListRow = {
   user_id: string | null;
   track_id: string;
   track_name: string;
+  track_layout_name: string | null;
   started_at: ISODateString;
   ended_at: ISODateString | null;
   status: SessionStatus;
@@ -44,7 +45,6 @@ type DbSessionDetailRow = DbSessionListRow & {
   track_slug: string;
   track_country: string | null;
   track_location: string | null;
-  track_layout_name: string | null;
   track_length_m: number | null;
   track_corners: number | null;
   track_direction: TrackDirection | null;
@@ -144,6 +144,7 @@ export type SessionListItem = {
   name: string;
   trackId: string;
   trackName: string;
+  trackLayoutName: string | null;
   startedAt: ISODateString;
   bestLapMs: number | null;
   totalLaps: number;
@@ -653,6 +654,7 @@ export async function listSessions(db: SQLiteDatabase): Promise<SessionListItem[
       s.user_id,
       s.track_id,
       t.name AS track_name,
+      t.layout_name AS track_layout_name,
       s.started_at,
       s.ended_at,
       s.status,
@@ -692,6 +694,7 @@ export async function listSessions(db: SQLiteDatabase): Promise<SessionListItem[
       name: session.name ?? 'Recorded Session',
       trackId: session.trackId,
       trackName: row.track_name,
+      trackLayoutName: row.track_layout_name,
       startedAt: session.startedAt,
       bestLapMs: session.bestLapMs,
       totalLaps: session.totalLaps,
