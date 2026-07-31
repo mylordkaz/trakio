@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
-import { Storage } from "expo-sqlite/kv-store";
-import * as StoreReview from "expo-store-review";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import i18n from "@/i18n";
@@ -25,29 +23,10 @@ import {
   getTrendBars,
 } from "@/utils/session-analytics";
 import { useMenu } from "@/contexts/MenuContext";
+import { maybeRequestAppReview } from "@/services/app-review";
 import { localizeTrack } from "@/utils/track-localization";
 
-const REVIEW_REQUESTED_KEY = "review_requested";
-const REVIEW_SESSION_THRESHOLD = 3;
-
-async function maybeRequestReview(db: import("expo-sqlite").SQLiteDatabase) {
-  try {
-    if (Storage.getItemSync(REVIEW_REQUESTED_KEY)) return;
-
-    const row = await db.getFirstAsync<{ count: number }>(
-      "SELECT COUNT(*) AS count FROM sessions WHERE status = 'completed'",
-    );
-    if ((row?.count ?? 0) < REVIEW_SESSION_THRESHOLD) return;
-
-    const available = await StoreReview.isAvailableAsync();
-    if (!available) return;
-
-    await StoreReview.requestReview();
-    Storage.setItemSync(REVIEW_REQUESTED_KEY, "1");
-  } catch {
-    // best-effort — never block post-session
-  }
-}
+const REVIEW_PROMPT_DELAY_MS = 2000;
 
 export default function PostSessionScreen() {
   const router = useRouter();
@@ -73,6 +52,7 @@ export default function PostSessionScreen() {
 
   useEffect(() => {
     let isMounted = true;
+    let reviewPromptTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function loadSession() {
       if (!params.id) {
@@ -100,7 +80,9 @@ export default function PostSessionScreen() {
         setSessionDetail(nextSession);
         setLoadError(null);
 
-        maybeRequestReview(db);
+        reviewPromptTimer = setTimeout(() => {
+          void maybeRequestAppReview(db, nextSession.session);
+        }, REVIEW_PROMPT_DELAY_MS);
       } catch {
         if (!isMounted) {
           return;
@@ -118,6 +100,9 @@ export default function PostSessionScreen() {
 
     return () => {
       isMounted = false;
+      if (reviewPromptTimer) {
+        clearTimeout(reviewPromptTimer);
+      }
     };
   }, [db, params.id]);
 
