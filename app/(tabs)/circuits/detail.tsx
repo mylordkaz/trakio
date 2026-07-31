@@ -139,9 +139,13 @@ export default function CircuitDetailScreen() {
       try {
         setLeaderboardLoading(true);
         setLeaderboardError(null);
-        const shareState = await getTrackLeaderboardShareState(db, id);
-        if (!isMounted) return;
-        setUserBestLapMs(shareState.userBestLapMs);
+        try {
+          const shareState = await getTrackLeaderboardShareState(db, id);
+          if (!isMounted) return;
+          setUserBestLapMs(shareState.userBestLapMs);
+        } catch {
+          // Share state is local-only; the board still renders without it.
+        }
         const publisherId = await getOrCreatePublisherId();
         const entries = await listLeaderboardEntries(id, publisherId);
         if (!isMounted) return;
@@ -529,15 +533,16 @@ export default function CircuitDetailScreen() {
                 isLoading={leaderboardLoading}
                 loadError={leaderboardError}
                 onShareSuccess={async () => {
-                  const shareState = await getTrackLeaderboardShareState(db, circuit.id);
-                  setUserBestLapMs(shareState.userBestLapMs);
                   try {
+                    const shareState = await getTrackLeaderboardShareState(db, circuit.id);
+                    setUserBestLapMs(shareState.userBestLapMs);
                     const publisherId = await getOrCreatePublisherId();
                     const entries = await listLeaderboardEntries(circuit.id, publisherId);
                     setLeaderboardEntries(entries);
                     setLeaderboardError(null);
                   } catch {
-                    // Share succeeded; refetch is best-effort and will retry on next mount.
+                    // Share succeeded; refreshing local state and the board is
+                    // best-effort and will retry on next mount.
                   }
                 }}
                 onSeeAll={() =>
