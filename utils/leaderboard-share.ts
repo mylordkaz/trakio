@@ -7,9 +7,13 @@ export function shouldOfferLeaderboardShare(
     return false;
   }
 
+  // The best must beat everything already handled: the last offer shown
+  // (declines included) and the time known to be on the board.
   return (
-    state.offeredLapTimeMs === null ||
-    state.userBestLapMs < state.offeredLapTimeMs
+    (state.offeredLapTimeMs === null ||
+      state.userBestLapMs < state.offeredLapTimeMs) &&
+    (state.sharedLapTimeMs === null ||
+      state.userBestLapMs < state.sharedLapTimeMs)
   );
 }
 

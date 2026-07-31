@@ -43,6 +43,24 @@ describe('post-session share offer', () => {
     ).toBe(true);
   });
 
+  it('never offers a best that is already on the board', () => {
+    expect(
+      shouldOfferLeaderboardShare({
+        userBestLapMs: 62000,
+        sharedLapTimeMs: 62000,
+        offeredLapTimeMs: null,
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldOfferLeaderboardShare({
+        userBestLapMs: 61800,
+        sharedLapTimeMs: 62000,
+        offeredLapTimeMs: null,
+      }),
+    ).toBe(true);
+  });
+
   it('re-offers a shared track only on improvement', () => {
     expect(
       shouldOfferLeaderboardShare({

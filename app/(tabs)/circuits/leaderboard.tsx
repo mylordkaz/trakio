@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import i18n from '@/i18n';
-import { getTrackById } from '@/db';
+import { getTrackById, setSharedLeaderboardTime } from '@/db';
 import type { TrackDetail } from '@/db';
 import { getOrCreatePublisherId } from '@/services/publisher-id';
 import { listLeaderboardEntries, flagEmoji, type LeaderboardEntry } from '@/services/leaderboard';
@@ -13,7 +13,6 @@ import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { formatLapTime, formatDeltaMs } from '@/utils/format';
 import { useMenu } from '@/contexts/MenuContext';
 import { getTrackDisplayTitle } from '@/utils/track-localization';
-import { setSharedLeaderboardTime } from '@/db';
 
 // ─── Podium ──────────────────────────────────────────────────────────────────
 
@@ -216,7 +215,9 @@ export default function LeaderboardScreen() {
         setEntries(nextEntries);
         const ownEntry = nextEntries.find((entry) => entry.isCurrentUser);
         if (ownEntry) {
-          void setSharedLeaderboardTime(db, id, ownEntry.lapTimeMs);
+          void setSharedLeaderboardTime(db, id, ownEntry.lapTimeMs).catch(
+            () => undefined,
+          );
         }
       } catch {
         if (!isMounted) return;
@@ -234,7 +235,7 @@ export default function LeaderboardScreen() {
     return () => {
       isMounted = false;
     };
-  }, [id]);
+  }, [db, id]);
 
   const gradientColors = useHeaderGradient('sky');
   const p1Ms = entries[0]?.lapTimeMs ?? 0;

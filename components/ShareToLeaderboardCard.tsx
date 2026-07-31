@@ -34,7 +34,7 @@ export default function ShareToLeaderboardCard({
     // until a strictly better lap exists, whatever the user does with it.
     if (hasRecordedOfferRef.current) return;
     hasRecordedOfferRef.current = true;
-    void recordLeaderboardOffer(db, trackId, lapTimeMs);
+    void recordLeaderboardOffer(db, trackId, lapTimeMs).catch(() => undefined);
   }, [db, trackId, lapTimeMs]);
 
   useEffect(() => {
@@ -52,7 +52,9 @@ export default function ShareToLeaderboardCard({
         // show it as live instead of asking to reshare.
         const ownEntry = entries.find((entry) => entry.isCurrentUser);
         if (ownEntry) {
-          void setSharedLeaderboardTime(db, trackId, ownEntry.lapTimeMs);
+          void setSharedLeaderboardTime(db, trackId, ownEntry.lapTimeMs).catch(
+            () => undefined,
+          );
           if (ownEntry.lapTimeMs <= lapTimeMs) {
             setIsShared(true);
           }
@@ -67,7 +69,7 @@ export default function ShareToLeaderboardCard({
     return () => {
       isMounted = false;
     };
-  }, [trackId]);
+  }, [db, lapTimeMs, trackId]);
 
   if (isDismissed) {
     return null;

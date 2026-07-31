@@ -153,7 +153,9 @@ export default function CircuitDetailScreen() {
         setLeaderboardEntries(entries);
         const ownEntry = entries.find((entry) => entry.isCurrentUser);
         if (ownEntry) {
-          void setSharedLeaderboardTime(db, id, ownEntry.lapTimeMs);
+          void setSharedLeaderboardTime(db, id, ownEntry.lapTimeMs).catch(
+            () => undefined,
+          );
         }
       } catch {
         if (!isMounted) return;

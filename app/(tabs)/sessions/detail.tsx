@@ -26,12 +26,15 @@ import {
   deleteSessionNote,
   getSessionById,
   getTrackLeaderboardShareState,
+  setSharedLeaderboardTime,
   updateSessionCar,
   updateSessionName,
   updateSessionNote,
 } from '@/db';
 import { SESSION_TEST_SEEDS } from '@/db/test-seeds';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { listLeaderboardEntries } from '@/services/leaderboard';
+import { getOrCreatePublisherId } from '@/services/publisher-id';
 import { shareSessionDataExport } from '@/services/share';
 import { exportSessionTimeSheetCsv, exportSessionTimeSheetPdf } from '@/services/timesheet-export';
 
@@ -175,9 +178,30 @@ export default function SessionDetailScreen() {
       );
       setCarText(nextSessionDetail.session.car ?? '');
       try {
-        setShareState(
-          await getTrackLeaderboardShareState(db, nextSessionDetail.track.id)
-        );
+        const trackId = nextSessionDetail.track.id;
+        let nextShareState = await getTrackLeaderboardShareState(db, trackId);
+        if (
+          nextShareState.sharedLapTimeMs === null &&
+          shouldShowSessionShareButton(nextShareState, getBestLapMs(nextSessionDetail))
+        ) {
+          // A pre-tracking (1.3.1) share may exist only on the server; adopt
+          // it before showing a reshare button.
+          try {
+            const publisherId = await getOrCreatePublisherId();
+            const entries = await listLeaderboardEntries(trackId, publisherId);
+            const ownEntry = entries.find((entry) => entry.isCurrentUser);
+            if (ownEntry) {
+              await setSharedLeaderboardTime(db, trackId, ownEntry.lapTimeMs);
+              nextShareState = {
+                ...nextShareState,
+                sharedLapTimeMs: ownEntry.lapTimeMs,
+              };
+            }
+          } catch {
+            // Offline — the button may show; a share is a harmless upsert.
+          }
+        }
+        setShareState(nextShareState);
       } catch {
         // The share button is optional; session detail renders regardless.
       }
