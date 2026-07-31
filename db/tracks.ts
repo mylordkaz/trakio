@@ -338,6 +338,7 @@ async function getPersonalBest(db: SQLiteDatabase, trackId: string, sectorCount:
        AND l.lap_time_ms IS NOT NULL
        AND l.is_invalid = 0
        AND l.is_out_lap = 0
+       AND l.is_in_lap = 0
        ${USER_SESSION_FILTER}
      ORDER BY l.lap_time_ms ASC
      LIMIT 1;`,
@@ -395,6 +396,7 @@ export async function getTrackLeaderboardShareState(
        AND l.lap_time_ms IS NOT NULL
        AND l.is_invalid = 0
        AND l.is_out_lap = 0
+       AND l.is_in_lap = 0
        ${USER_SESSION_FILTER};`,
     trackId,
     ...SEEDED_SESSION_IDS

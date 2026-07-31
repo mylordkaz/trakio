@@ -34,6 +34,7 @@ describe('track leaderboard share state', () => {
 
     const [bestQuery, ...bestParams] = getFirstAsync.mock.calls[0];
     expect(bestQuery).toContain('NOT IN');
+    expect(bestQuery).toContain('l.is_in_lap = 0');
     expect(bestParams).toEqual([
       'tsukuba2000',
       ...SESSION_TEST_SEEDS.map((seed) => seed.session.id),

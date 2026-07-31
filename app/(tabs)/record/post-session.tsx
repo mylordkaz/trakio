@@ -83,11 +83,15 @@ export default function PostSessionScreen() {
         setSessionDetail(nextSession);
         setLoadError(null);
 
+        let willOfferShare = false;
         try {
           const nextShareState = await getTrackLeaderboardShareState(
             db,
             nextSession.track.id,
           );
+          willOfferShare =
+            nextShareState.userBestLapMs !== null &&
+            shouldOfferLeaderboardShare(nextShareState);
           if (isMounted) {
             setShareState(nextShareState);
           }
@@ -95,9 +99,13 @@ export default function PostSessionScreen() {
           // The share offer is optional; the session summary renders regardless.
         }
 
-        reviewPromptTimer = setTimeout(() => {
-          void maybeRequestAppReview(db, nextSession.session);
-        }, REVIEW_PROMPT_DELAY_MS);
+        // The share offer and the App Store review dialog must not stack on
+        // one visit; the review request retries on a later session.
+        if (!willOfferShare) {
+          reviewPromptTimer = setTimeout(() => {
+            void maybeRequestAppReview(db, nextSession.session);
+          }, REVIEW_PROMPT_DELAY_MS);
+        }
       } catch {
         if (!isMounted) {
           return;

@@ -18,28 +18,28 @@ export function useLeaderboardShare(trackId: string | undefined) {
         return false;
       }
 
-      const profile = await getOrCreateDefaultUserProfile(db);
-      const isProfileComplete =
-        profile.username.trim().length > 0 &&
-        (profile.car?.trim().length ?? 0) > 0;
-
-      if (!isProfileComplete) {
-        Alert.alert(
-          i18n.t('leaderboard.completeProfileTitle'),
-          i18n.t('leaderboard.completeProfileMessage'),
-          [
-            { text: i18n.t('common.cancel'), style: 'cancel' },
-            {
-              text: i18n.t('leaderboard.goToProfile'),
-              onPress: () => router.push('/profile'),
-            },
-          ],
-        );
-        return false;
-      }
-
       try {
         setIsSharing(true);
+        const profile = await getOrCreateDefaultUserProfile(db);
+        const isProfileComplete =
+          profile.username.trim().length > 0 &&
+          (profile.car?.trim().length ?? 0) > 0;
+
+        if (!isProfileComplete) {
+          Alert.alert(
+            i18n.t('leaderboard.completeProfileTitle'),
+            i18n.t('leaderboard.completeProfileMessage'),
+            [
+              { text: i18n.t('common.cancel'), style: 'cancel' },
+              {
+                text: i18n.t('leaderboard.goToProfile'),
+                onPress: () => router.push('/profile'),
+              },
+            ],
+          );
+          return false;
+        }
+
         const publisherId = await getOrCreatePublisherId();
         await shareLeaderboardTime({
           trackId,
