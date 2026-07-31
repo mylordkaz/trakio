@@ -4,6 +4,7 @@ import {
   getTrackLeaderboardShareState,
   recordLeaderboardOffer,
   recordLeaderboardShare,
+  setSharedLeaderboardTime,
 } from '../tracks';
 
 function createDbMock() {
@@ -52,6 +53,16 @@ describe('track leaderboard share state', () => {
       61800,
       'tsukuba2000',
     );
+  });
+
+  it('adopts a server time without touching the offered watermark', async () => {
+    const { db, runAsync } = createDbMock();
+
+    await setSharedLeaderboardTime(db, 'tsukuba2000', 76820);
+
+    const [query] = runAsync.mock.calls[0];
+    expect(query).toContain('leaderboard_lap_time_ms =');
+    expect(query).not.toContain('leaderboard_offered_lap_time_ms');
   });
 
   it('records an offer without touching the shared column', async () => {

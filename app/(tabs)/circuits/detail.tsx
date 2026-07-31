@@ -21,6 +21,7 @@ import type { TrackDetail, TrackNoteRow } from "@/db";
 import {
   getTrackById,
   getTrackLeaderboardShareState,
+  setSharedLeaderboardTime,
   addTrackNote,
   updateTrackNote,
   deleteTrackNote,
@@ -150,6 +151,10 @@ export default function CircuitDetailScreen() {
         const entries = await listLeaderboardEntries(id, publisherId);
         if (!isMounted) return;
         setLeaderboardEntries(entries);
+        const ownEntry = entries.find((entry) => entry.isCurrentUser);
+        if (ownEntry) {
+          void setSharedLeaderboardTime(db, id, ownEntry.lapTimeMs);
+        }
       } catch {
         if (!isMounted) return;
         setLeaderboardError(i18n.t('leaderboard.unableToLoad'));

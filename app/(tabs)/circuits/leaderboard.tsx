@@ -13,6 +13,7 @@ import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { formatLapTime, formatDeltaMs } from '@/utils/format';
 import { useMenu } from '@/contexts/MenuContext';
 import { getTrackDisplayTitle } from '@/utils/track-localization';
+import { setSharedLeaderboardTime } from '@/db';
 
 // ─── Podium ──────────────────────────────────────────────────────────────────
 
@@ -213,6 +214,10 @@ export default function LeaderboardScreen() {
         const nextEntries = await listLeaderboardEntries(id, publisherId);
         if (!isMounted) return;
         setEntries(nextEntries);
+        const ownEntry = nextEntries.find((entry) => entry.isCurrentUser);
+        if (ownEntry) {
+          void setSharedLeaderboardTime(db, id, ownEntry.lapTimeMs);
+        }
       } catch {
         if (!isMounted) return;
         setEntries([]);

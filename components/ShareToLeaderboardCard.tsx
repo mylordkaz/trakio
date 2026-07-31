@@ -4,7 +4,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import Card from '@/components/Card';
 import i18n from '@/i18n';
 import { formatLapTime } from '@/utils/format';
-import { recordLeaderboardOffer } from '@/db';
+import { recordLeaderboardOffer, setSharedLeaderboardTime } from '@/db';
 import { getOrCreatePublisherId } from '@/services/publisher-id';
 import { listLeaderboardEntries } from '@/services/leaderboard';
 import { useLeaderboardShare } from '@/hooks/useLeaderboardShare';
@@ -44,8 +44,18 @@ export default function ShareToLeaderboardCard({
       try {
         const publisherId = await getOrCreatePublisherId();
         const entries = await listLeaderboardEntries(trackId, publisherId);
-        if (isMounted) {
-          setBoardIsEmpty(entries.length === 0);
+        if (!isMounted) return;
+        setBoardIsEmpty(entries.length === 0);
+
+        // Pre-tracking shares (1.3.1) exist only on the server: adopt the
+        // user's entry locally, and when the board already has this best,
+        // show it as live instead of asking to reshare.
+        const ownEntry = entries.find((entry) => entry.isCurrentUser);
+        if (ownEntry) {
+          void setSharedLeaderboardTime(db, trackId, ownEntry.lapTimeMs);
+          if (ownEntry.lapTimeMs <= lapTimeMs) {
+            setIsShared(true);
+          }
         }
       } catch {
         // Offline or board unavailable — keep the generic message.

@@ -436,6 +436,23 @@ export async function recordLeaderboardShare(
   );
 }
 
+// Syncs the locally known board time from a fetched server entry. The offered
+// watermark is left untouched so recorded declines keep suppressing the card.
+export async function setSharedLeaderboardTime(
+  db: SQLiteDatabase,
+  trackId: string,
+  lapTimeMs: number
+): Promise<void> {
+  await db.runAsync(
+    `UPDATE tracks
+     SET leaderboard_lap_time_ms = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?;`,
+    lapTimeMs,
+    trackId
+  );
+}
+
 export async function recordLeaderboardOffer(
   db: SQLiteDatabase,
   trackId: string,
