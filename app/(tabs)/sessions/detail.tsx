@@ -17,7 +17,7 @@ import XPostCard from '@/components/share/XPostCard';
 import ShareSheetModal from '@/components/share/ShareSheetModal';
 import StoryPreviewModal from '@/components/share/StoryPreviewModal';
 import XPostPreviewModal from '@/components/share/XPostPreviewModal';
-import type { SessionDetail, SessionNoteRow } from '@/db';
+import type { SessionDetail, SessionNoteRow, TrackLeaderboardShareState } from '@/db';
 import {
   addSessionNote,
   deleteSession,
@@ -25,16 +25,20 @@ import {
   getRejectedGpsPointsForSession,
   deleteSessionNote,
   getSessionById,
+  getTrackLeaderboardShareState,
   updateSessionCar,
   updateSessionName,
   updateSessionNote,
 } from '@/db';
+import { SESSION_TEST_SEEDS } from '@/db/test-seeds';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { shareSessionDataExport } from '@/services/share';
 import { exportSessionTimeSheetCsv, exportSessionTimeSheetPdf } from '@/services/timesheet-export';
 
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
+import { useLeaderboardShare } from '@/hooks/useLeaderboardShare';
 import { useShareSession } from '@/hooks/useShareSession';
+import { shouldShowSessionShareButton } from '@/utils/leaderboard-share';
 import { useEntitlements } from '@/contexts/EntitlementContext';
 import { RAW_DATA_EXPORT_ENABLED } from '@/constants/featureFlags';
 import { formatLapTime, formatGapSeconds, formatDateTime, formatDuration, formatSpeed } from '@/utils/format';
@@ -55,6 +59,10 @@ import {
   formatTrackDisplayLocation,
   localizeTrack,
 } from '@/utils/track-localization';
+
+const SEEDED_SESSION_IDS = new Set(
+  SESSION_TEST_SEEDS.map((seed) => seed.session.id),
+);
 
 const CONDITION_EMOJI: Record<string, string> = {
   clear: '☀️',
@@ -126,6 +134,8 @@ export default function SessionDetailScreen() {
   const isDark = colorScheme === 'dark';
   const scrollRef = useRef<ScrollView>(null);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
+  const [shareState, setShareState] = useState<TrackLeaderboardShareState | null>(null);
+  const [isSharedNow, setIsSharedNow] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -140,6 +150,7 @@ export default function SessionDetailScreen() {
   >([]);
   const share = useShareSession(sessionDetail);
   const { hasProAccess } = useEntitlements();
+  const leaderboardShare = useLeaderboardShare(sessionDetail?.track.id);
 
   const loadSession = useCallback(async () => {
     if (!id) {
@@ -163,6 +174,13 @@ export default function SessionDetailScreen() {
         await getRejectedGpsPointsForSession(db, nextSessionDetail.session.id).catch(() => [])
       );
       setCarText(nextSessionDetail.session.car ?? '');
+      try {
+        setShareState(
+          await getTrackLeaderboardShareState(db, nextSessionDetail.track.id)
+        );
+      } catch {
+        // The share button is optional; session detail renders regardless.
+      }
       setLoadError(null);
     } catch {
       setLoadError(i18n.t('sessions.unableToLoadSession'));
@@ -297,6 +315,23 @@ export default function SessionDetailScreen() {
   }
 
   const bestLapMs = getBestLapMs(sessionDetail);
+  const isSeededSession = sessionDetail
+    ? SEEDED_SESSION_IDS.has(sessionDetail.session.id)
+    : false;
+  const showShareButton =
+    !isSeededSession &&
+    !isSharedNow &&
+    shareState !== null &&
+    shouldShowSessionShareButton(shareState, bestLapMs);
+
+  async function handleShareBest() {
+    if (!shareState || shareState.userBestLapMs === null) return;
+    const shared = await leaderboardShare.share(shareState.userBestLapMs);
+    if (shared) {
+      setIsSharedNow(true);
+    }
+  }
+
   const topSpeedKph = getTopSpeedKph(sessionDetail);
   const theoreticalBestMs = getTheoreticalBestMs(sessionDetail);
   const lapBreakdownItems = getLapBreakdownItems(sessionDetail);
@@ -538,7 +573,32 @@ export default function SessionDetailScreen() {
           ) : null}
 
           <View className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4">
-            <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('session.bestLap')}</Text>
+            <View className="flex-row items-center justify-between mb-1">
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('session.bestLap')}</Text>
+              {isSharedNow ? (
+                <Text className="text-xs font-medium text-emerald-500">
+                  ✓ {i18n.t('leaderboard.timeIsLive')}
+                </Text>
+              ) : showShareButton ? (
+                <Pressable
+                  onPress={handleShareBest}
+                  disabled={leaderboardShare.isSharing}
+                  hitSlop={8}
+                >
+                  <Text
+                    className={`text-xs font-medium ${
+                      leaderboardShare.isSharing
+                        ? 'text-zinc-400 dark:text-zinc-500'
+                        : 'text-sky-500'
+                    }`}
+                  >
+                    {leaderboardShare.isSharing
+                      ? i18n.t('leaderboard.sharing')
+                      : i18n.t('leaderboard.shareToLeaderboard')}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
             <Text
               className="text-zinc-900 dark:text-white text-center"
               style={{ fontSize: 40, lineHeight: 44, fontWeight: '600', fontVariant: ['tabular-nums'] }}

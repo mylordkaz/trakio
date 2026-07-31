@@ -8,8 +8,9 @@ import i18n from "@/i18n";
 import Card from "@/components/Card";
 import EditableSessionTitle from "@/components/EditableSessionTitle";
 import ProgressBar from "@/components/ProgressBar";
-import { getSessionById, updateSessionName } from "@/db";
-import type { SessionDetail } from "@/db";
+import ShareToLeaderboardCard from "@/components/ShareToLeaderboardCard";
+import { getSessionById, getTrackLeaderboardShareState, updateSessionName } from "@/db";
+import type { SessionDetail, TrackLeaderboardShareState } from "@/db";
 import { useHeaderGradient } from "@/hooks/useHeaderGradient";
 import { formatLapTime, formatSectorTime, formatDuration, formatSpeed } from "@/utils/format";
 import {
@@ -24,7 +25,8 @@ import {
 } from "@/utils/session-analytics";
 import { useMenu } from "@/contexts/MenuContext";
 import { maybeRequestAppReview } from "@/services/app-review";
-import { localizeTrack } from "@/utils/track-localization";
+import { shouldOfferLeaderboardShare } from "@/utils/leaderboard-share";
+import { getTrackDisplayTitle } from "@/utils/track-localization";
 
 const REVIEW_PROMPT_DELAY_MS = 2000;
 
@@ -40,6 +42,7 @@ export default function PostSessionScreen() {
   );
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [shareState, setShareState] = useState<TrackLeaderboardShareState | null>(null);
 
   async function handleChangeTitle(newTitle: string) {
     if (!sessionDetail) return;
@@ -80,6 +83,18 @@ export default function PostSessionScreen() {
         setSessionDetail(nextSession);
         setLoadError(null);
 
+        try {
+          const nextShareState = await getTrackLeaderboardShareState(
+            db,
+            nextSession.track.id,
+          );
+          if (isMounted) {
+            setShareState(nextShareState);
+          }
+        } catch {
+          // The share offer is optional; the session summary renders regardless.
+        }
+
         reviewPromptTimer = setTimeout(() => {
           void maybeRequestAppReview(db, nextSession.session);
         }, REVIEW_PROMPT_DELAY_MS);
@@ -115,9 +130,6 @@ export default function PostSessionScreen() {
   const topSpeedKph = getTopSpeedKph(sessionDetail);
   const trendBars = getTrendBars(sessionDetail);
   const totalLaps = getValidTimedLaps(sessionDetail).length;
-  const displayTrack = sessionDetail
-    ? localizeTrack(sessionDetail.track, locale)
-    : null;
 
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
@@ -136,7 +148,9 @@ export default function PostSessionScreen() {
         >
           <View className="flex-row items-center justify-between mb-3">
             <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-              {displayTrack?.name ?? i18n.t("circuits.loadingTrack")}
+              {sessionDetail
+                ? getTrackDisplayTitle(sessionDetail.track, locale)
+                : i18n.t("circuits.loadingTrack")}
             </Text>
             <View className="flex-row items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1.5 border border-emerald-400/20">
               <View className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
@@ -216,6 +230,20 @@ export default function PostSessionScreen() {
         </LinearGradient>
 
         <View className="px-5 py-4 gap-4">
+          {sessionDetail &&
+          shareState &&
+          shareState.userBestLapMs !== null &&
+          shouldOfferLeaderboardShare(shareState) ? (
+            <ShareToLeaderboardCard
+              trackId={sessionDetail.track.id}
+              trackTitle={getTrackDisplayTitle(sessionDetail.track, locale)}
+              lapTimeMs={shareState.userBestLapMs}
+              isNewBest={
+                bestLapMs !== null && bestLapMs === shareState.userBestLapMs
+              }
+            />
+          ) : null}
+
           <View className="flex-row gap-3">
             {[
               [i18n.t("session.topSpeed"), formatSpeed(topSpeedKph)],

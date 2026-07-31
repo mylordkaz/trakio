@@ -690,6 +690,17 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 18,
+    up: async (db) => {
+      const cols = await getColumnNames(db, 'tracks');
+      if (!cols.includes('leaderboard_offered_lap_time_ms')) {
+        await db.execAsync(
+          'ALTER TABLE tracks ADD COLUMN leaderboard_offered_lap_time_ms INTEGER;'
+        );
+      }
+    },
+  },
 ];
 
 export const DATABASE_NAME = 'trakio.db';
