@@ -17,7 +17,7 @@ import XPostCard from '@/components/share/XPostCard';
 import ShareSheetModal from '@/components/share/ShareSheetModal';
 import StoryPreviewModal from '@/components/share/StoryPreviewModal';
 import XPostPreviewModal from '@/components/share/XPostPreviewModal';
-import type { SessionDetail, SessionNoteRow } from '@/db';
+import type { SessionDetail, SessionNoteRow, TrackLeaderboardShareState } from '@/db';
 import {
   addSessionNote,
   deleteSession,
@@ -25,16 +25,23 @@ import {
   getRejectedGpsPointsForSession,
   deleteSessionNote,
   getSessionById,
+  getTrackLeaderboardShareState,
+  setSharedLeaderboardTime,
   updateSessionCar,
   updateSessionName,
   updateSessionNote,
 } from '@/db';
+import { SESSION_TEST_SEEDS } from '@/db/test-seeds';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { listLeaderboardEntries } from '@/services/leaderboard';
+import { getOrCreatePublisherId } from '@/services/publisher-id';
 import { shareSessionDataExport } from '@/services/share';
 import { exportSessionTimeSheetCsv, exportSessionTimeSheetPdf } from '@/services/timesheet-export';
 
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
+import { useLeaderboardShare } from '@/hooks/useLeaderboardShare';
 import { useShareSession } from '@/hooks/useShareSession';
+import { shouldShowSessionShareButton } from '@/utils/leaderboard-share';
 import { useEntitlements } from '@/contexts/EntitlementContext';
 import { RAW_DATA_EXPORT_ENABLED } from '@/constants/featureFlags';
 import { formatLapTime, formatGapSeconds, formatDateTime, formatDuration, formatSpeed } from '@/utils/format';
@@ -50,6 +57,15 @@ import {
   getAverageLapDeltaLabel,
   getTrendBars,
 } from '@/utils/session-analytics';
+import { useMenu } from '@/contexts/MenuContext';
+import {
+  formatTrackDisplayLocation,
+  getTrackDisplayTitle,
+} from '@/utils/track-localization';
+
+const SEEDED_SESSION_IDS = new Set(
+  SESSION_TEST_SEEDS.map((seed) => seed.session.id),
+);
 
 const CONDITION_EMOJI: Record<string, string> = {
   clear: '☀️',
@@ -117,9 +133,12 @@ export default function SessionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const gradientColors = useHeaderGradient('violet');
   const { colorScheme } = useColorScheme();
+  const { locale } = useMenu();
   const isDark = colorScheme === 'dark';
   const scrollRef = useRef<ScrollView>(null);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
+  const [shareState, setShareState] = useState<TrackLeaderboardShareState | null>(null);
+  const [isSharedNow, setIsSharedNow] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -134,6 +153,7 @@ export default function SessionDetailScreen() {
   >([]);
   const share = useShareSession(sessionDetail);
   const { hasProAccess } = useEntitlements();
+  const leaderboardShare = useLeaderboardShare(sessionDetail?.track.id);
 
   const loadSession = useCallback(async () => {
     if (!id) {
@@ -157,6 +177,34 @@ export default function SessionDetailScreen() {
         await getRejectedGpsPointsForSession(db, nextSessionDetail.session.id).catch(() => [])
       );
       setCarText(nextSessionDetail.session.car ?? '');
+      try {
+        const trackId = nextSessionDetail.track.id;
+        let nextShareState = await getTrackLeaderboardShareState(db, trackId);
+        if (
+          nextShareState.sharedLapTimeMs === null &&
+          shouldShowSessionShareButton(nextShareState, getBestLapMs(nextSessionDetail))
+        ) {
+          // A pre-tracking (1.3.1) share may exist only on the server; adopt
+          // it before showing a reshare button.
+          try {
+            const publisherId = await getOrCreatePublisherId();
+            const entries = await listLeaderboardEntries(trackId, publisherId);
+            const ownEntry = entries.find((entry) => entry.isCurrentUser);
+            if (ownEntry) {
+              await setSharedLeaderboardTime(db, trackId, ownEntry.lapTimeMs);
+              nextShareState = {
+                ...nextShareState,
+                sharedLapTimeMs: ownEntry.lapTimeMs,
+              };
+            }
+          } catch {
+            // Offline — the button may show; a share is a harmless upsert.
+          }
+        }
+        setShareState(nextShareState);
+      } catch {
+        // The share button is optional; session detail renders regardless.
+      }
       setLoadError(null);
     } catch {
       setLoadError(i18n.t('sessions.unableToLoadSession'));
@@ -291,6 +339,23 @@ export default function SessionDetailScreen() {
   }
 
   const bestLapMs = getBestLapMs(sessionDetail);
+  const isSeededSession = sessionDetail
+    ? SEEDED_SESSION_IDS.has(sessionDetail.session.id)
+    : false;
+  const showShareButton =
+    !isSeededSession &&
+    !isSharedNow &&
+    shareState !== null &&
+    shouldShowSessionShareButton(shareState, bestLapMs);
+
+  async function handleShareBest() {
+    if (!shareState || shareState.userBestLapMs === null) return;
+    const shared = await leaderboardShare.share(shareState.userBestLapMs);
+    if (shared) {
+      setIsSharedNow(true);
+    }
+  }
+
   const topSpeedKph = getTopSpeedKph(sessionDetail);
   const theoreticalBestMs = getTheoreticalBestMs(sessionDetail);
   const lapBreakdownItems = getLapBreakdownItems(sessionDetail);
@@ -300,6 +365,12 @@ export default function SessionDetailScreen() {
     sessionDetail?.timingLines.find((timingLine) => timingLine.type === 'start_finish') ?? null;
   const sectorLines = sessionDetail?.timingLines.filter((timingLine) => timingLine.type === 'sector') ?? [];
   const bestLap = getBestLap(sessionDetail);
+  const displayTrackTitle = sessionDetail
+    ? getTrackDisplayTitle(sessionDetail.track, locale)
+    : null;
+  const displayTrackLocation = sessionDetail
+    ? formatTrackDisplayLocation(sessionDetail.track, locale)
+    : '';
 
   // Every lap's polylines are built once and stay mounted; selecting a lap
   // only swaps stroke colors. Mounting/unmounting map children on selection
@@ -363,7 +434,7 @@ export default function SessionDetailScreen() {
               <Text className="text-sm font-medium text-violet-400">{i18n.t('common.back')}</Text>
             </Pressable>
             <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-              {sessionDetail?.track.name ?? i18n.t('common.track')}
+              {displayTrackTitle ?? i18n.t('common.track')}
             </Text>
           </View>
 
@@ -525,14 +596,43 @@ export default function SessionDetailScreen() {
             </Card>
           ) : null}
 
-          <View className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4">
-            <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('session.bestLap')}</Text>
-            <Text
-              className="text-zinc-900 dark:text-white text-center"
-              style={{ fontSize: 40, lineHeight: 44, fontWeight: '600', fontVariant: ['tabular-nums'] }}
-            >
-              {formatLapTime(bestLapMs)}
-            </Text>
+          <View className="gap-2">
+            {isSharedNow ? (
+              <View className="flex-row justify-end">
+                <Text className="text-xs font-medium text-emerald-500">
+                  ✓ {i18n.t('leaderboard.timeIsLive')}
+                </Text>
+              </View>
+            ) : showShareButton ? (
+              <View className="flex-row justify-end">
+                <Pressable
+                  onPress={handleShareBest}
+                  disabled={leaderboardShare.isSharing}
+                  hitSlop={8}
+                >
+                  <Text
+                    className={`text-xs font-medium ${
+                      leaderboardShare.isSharing
+                        ? 'text-zinc-400 dark:text-zinc-500'
+                        : 'text-sky-500'
+                    }`}
+                  >
+                    {leaderboardShare.isSharing
+                      ? i18n.t('leaderboard.sharing')
+                      : i18n.t('leaderboard.shareToLeaderboard')}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+            <View className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4">
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('session.bestLap')}</Text>
+              <Text
+                className="text-zinc-900 dark:text-white text-center"
+                style={{ fontSize: 40, lineHeight: 44, fontWeight: '600', fontVariant: ['tabular-nums'] }}
+              >
+                {formatLapTime(bestLapMs)}
+              </Text>
+            </View>
           </View>
 
           <View className="flex-row gap-3">
@@ -839,8 +939,8 @@ export default function SessionDetailScreen() {
           >
             <SessionStoryCard
               sessionName={sessionDetail.session.name ?? i18n.t('sessions.recordedSession')}
-              circuitName={sessionDetail.track.name}
-              location={[sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', ')}
+              circuitName={displayTrackTitle ?? sessionDetail.track.name}
+              location={displayTrackLocation}
               car={sessionDetail.session.car}
               bestLap={formatLapTime(bestLapMs)}
               totalLaps={`${sessionDetail.session.totalLaps}`}
@@ -865,8 +965,8 @@ export default function SessionDetailScreen() {
           >
             <XPostCard
               sessionName={sessionDetail.session.name ?? i18n.t('sessions.recordedSession')}
-              circuitName={sessionDetail.track.name}
-              location={[sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', ')}
+              circuitName={displayTrackTitle ?? sessionDetail.track.name}
+              location={displayTrackLocation}
               car={sessionDetail.session.car}
               bestLap={formatLapTime(bestLapMs)}
               totalLaps={`${sessionDetail.session.totalLaps}`}
@@ -893,8 +993,8 @@ export default function SessionDetailScreen() {
         photoUri={share.photoUri}
         storyCardData={sessionDetail ? {
           sessionName: sessionDetail.session.name ?? i18n.t('sessions.recordedSession'),
-          circuitName: sessionDetail.track.name,
-          location: [sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', '),
+          circuitName: displayTrackTitle ?? sessionDetail.track.name,
+          location: displayTrackLocation,
           car: sessionDetail.session.car,
           bestLap: formatLapTime(bestLapMs),
           totalLaps: `${sessionDetail.session.totalLaps}`,
@@ -913,8 +1013,8 @@ export default function SessionDetailScreen() {
         isSharing={share.isSharing}
         cardData={sessionDetail ? {
           sessionName: sessionDetail.session.name ?? i18n.t('sessions.recordedSession'),
-          circuitName: sessionDetail.track.name,
-          location: [sessionDetail.track.location, sessionDetail.track.country].filter(Boolean).join(', '),
+          circuitName: displayTrackTitle ?? sessionDetail.track.name,
+          location: displayTrackLocation,
           car: sessionDetail.session.car,
           bestLap: formatLapTime(bestLapMs),
           totalLaps: `${sessionDetail.session.totalLaps}`,

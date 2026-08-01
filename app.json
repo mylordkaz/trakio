@@ -11,7 +11,7 @@
     "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "com.trakio.mobile",
-      "buildNumber": "56",
+      "buildNumber": "61",
       "supportsTablet": false,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Trakio uses your location to record lap times and GPS traces on track.",

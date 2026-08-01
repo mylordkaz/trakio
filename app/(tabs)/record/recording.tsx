@@ -33,6 +33,8 @@ import {
   getSessionQuota,
   type SessionQuota,
 } from '@/services/session-quota';
+import { useMenu } from '@/contexts/MenuContext';
+import { getTrackDisplayTitle, localizeTrack } from '@/utils/track-localization';
 
 function formatSectorTime(elapsedMs: number | null) {
   if (elapsedMs === null) {
@@ -112,6 +114,7 @@ export default function RecordingScreen() {
   const params = useLocalSearchParams<{ trackId?: string; sessionName?: string; condition?: string; temperatureC?: string }>();
   const gradientColors = useHeaderGradient('red');
   const { selectedDevice } = useExternalGps();
+  const { locale } = useMenu();
   const { accessStatus } = useEntitlements();
   const quotaExemptRef = useRef(isSessionQuotaExempt(accessStatus));
   quotaExemptRef.current = isSessionQuotaExempt(accessStatus);
@@ -119,6 +122,7 @@ export default function RecordingScreen() {
   selectedDeviceRef.current = selectedDevice;
   const [activeSourceInfo, setActiveSourceInfo] = useState<ActiveSourceInfo | null>(null);
   const [track, setTrack] = useState<TrackDetail | null>(null);
+  const displayTrack = track ? localizeTrack(track, locale) : null;
   const [isLoadingTrack, setIsLoadingTrack] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -636,7 +640,9 @@ export default function RecordingScreen() {
       >
         {/* Header */}
         <View className="flex-row items-start justify-between mb-3">
-          <Text className="text-xs text-zinc-500 dark:text-zinc-400">{track?.name ?? i18n.t('circuits.loadingTrack')}</Text>
+          <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+            {track ? getTrackDisplayTitle(track, locale) : i18n.t('circuits.loadingTrack')}
+          </Text>
           <Animated.View style={{ opacity: pulseOpacity }}>
             <View className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-3 py-1.5 border border-red-400/20">
               <View className="h-2.5 w-2.5 rounded-full bg-red-400" />
@@ -650,7 +656,9 @@ export default function RecordingScreen() {
           <View className="flex-1 mr-3">
             <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('recording.sessionRecording')}</Text>
             <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
-              {params.sessionName ?? track?.layoutName ?? i18n.t('recording.sessionRecording')}
+              {params.sessionName ??
+                displayTrack?.layoutName ??
+                i18n.t('recording.sessionRecording')}
             </Text>
           </View>
           <Text className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mt-0.5 pr-1">
