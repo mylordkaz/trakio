@@ -110,6 +110,11 @@ export default {
     sharing: 'Sharing...',
     shareFailedTitle: 'Share Failed',
     shareFailedMessage: 'Unable to share your time. Please check your connection and try again.',
+    shareToLeaderboard: 'Share to Leaderboard',
+    notNow: 'Not Now',
+    offerNewBestMessage: 'New best! Share %{time} to the %{track} leaderboard?',
+    offerBestMessage: 'Share your best %{time} to the %{track} leaderboard?',
+    offerBeFirstMessage: 'No times on the %{track} leaderboard yet — share %{time} and be the first!',
   },
   circuits: {
     title: 'Track Database',

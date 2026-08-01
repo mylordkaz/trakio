@@ -17,18 +17,18 @@ import MapView, { Polyline, PROVIDER_GOOGLE } from "react-native-maps";
 import i18n from "@/i18n";
 import StatusPill from "@/components/StatusPill";
 import Card from "@/components/Card";
-import type { TrackDetail, TrackNoteRow, UserRow } from "@/db";
+import type { TrackDetail, TrackNoteRow } from "@/db";
 import {
   getTrackById,
+  getTrackLeaderboardShareState,
+  setSharedLeaderboardTime,
   addTrackNote,
   updateTrackNote,
   deleteTrackNote,
-  getOrCreateDefaultUserProfile,
 } from "@/db";
 import LeaderboardPreviewCard from "@/components/LeaderboardPreviewCard";
 import {
   listLeaderboardEntries,
-  shareLeaderboardTime,
   type LeaderboardEntry,
 } from '@/services/leaderboard';
 import { getOrCreatePublisherId } from '@/services/publisher-id';
@@ -75,10 +75,10 @@ export default function CircuitDetailScreen() {
   const [circuit, setCircuit] = useState<TrackDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [userProfile, setUserProfile] = useState<UserRow | null>(null);
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+  const [userBestLapMs, setUserBestLapMs] = useState<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -128,10 +128,6 @@ export default function CircuitDetailScreen() {
   }, [loadCircuit]);
 
   useEffect(() => {
-    void getOrCreateDefaultUserProfile(db).then(setUserProfile);
-  }, [db]);
-
-  useEffect(() => {
     if (!id) {
       setLeaderboardEntries([]);
       setLeaderboardError(null);
@@ -144,10 +140,23 @@ export default function CircuitDetailScreen() {
       try {
         setLeaderboardLoading(true);
         setLeaderboardError(null);
+        try {
+          const shareState = await getTrackLeaderboardShareState(db, id);
+          if (!isMounted) return;
+          setUserBestLapMs(shareState.userBestLapMs);
+        } catch {
+          // Share state is local-only; the board still renders without it.
+        }
         const publisherId = await getOrCreatePublisherId();
         const entries = await listLeaderboardEntries(id, publisherId);
         if (!isMounted) return;
         setLeaderboardEntries(entries);
+        const ownEntry = entries.find((entry) => entry.isCurrentUser);
+        if (ownEntry) {
+          void setSharedLeaderboardTime(db, id, ownEntry.lapTimeMs).catch(
+            () => undefined,
+          );
+        }
       } catch {
         if (!isMounted) return;
         setLeaderboardError(i18n.t('leaderboard.unableToLoad'));
@@ -164,7 +173,7 @@ export default function CircuitDetailScreen() {
     return () => {
       isMounted = false;
     };
-  }, [id]);
+  }, [db, id]);
 
   async function handleAddNote() {
     const text = newNote.trim();
@@ -523,41 +532,31 @@ export default function CircuitDetailScreen() {
             </Card>
 
             {/* Leaderboard */}
-            {userProfile ? (
+            {circuit ? (
               <LeaderboardPreviewCard
-                personalBestMs={circuit?.personalBest?.lapTimeMs ?? null}
-                isProfileComplete={
-                  userProfile.username.trim().length > 0 &&
-                  (userProfile.car?.trim().length ?? 0) > 0
-                }
+                trackId={circuit.id}
+                personalBestMs={userBestLapMs}
                 entries={leaderboardEntries}
                 isLoading={leaderboardLoading}
                 loadError={leaderboardError}
-                onShared={async (lapTimeMs) => {
-                  if (!circuit) return;
-                  const publisherId = await getOrCreatePublisherId();
-                  await shareLeaderboardTime({
-                    trackId: circuit.id,
-                    publisherId,
-                    username: userProfile.username,
-                    countryCode: userProfile.countryCode,
-                    car: userProfile.car ?? null,
-                    lapTimeMs,
-                    submittedAt: new Date().toISOString(),
-                  });
+                onShareSuccess={async () => {
                   try {
+                    const shareState = await getTrackLeaderboardShareState(db, circuit.id);
+                    setUserBestLapMs(shareState.userBestLapMs);
+                    const publisherId = await getOrCreatePublisherId();
                     const entries = await listLeaderboardEntries(circuit.id, publisherId);
                     setLeaderboardEntries(entries);
                     setLeaderboardError(null);
                   } catch {
-                    // Share succeeded; refetch is best-effort and will retry on next mount.
+                    // Share succeeded; refreshing local state and the board is
+                    // best-effort and will retry on next mount.
                   }
                 }}
                 onSeeAll={() =>
                   router.push({
                     pathname: '/(tabs)/circuits/leaderboard',
                     params: {
-                      id: circuit?.id ?? '',
+                      id: circuit.id,
                     },
                   })
                 }

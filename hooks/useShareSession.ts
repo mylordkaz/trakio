@@ -7,7 +7,7 @@ import i18n from '@/i18n';
 import type { SessionDetail } from '@/db';
 import { shareSessionToInstagramStory, shareImageWithText } from '@/services/share';
 import { formatLapTime } from '@/utils/format';
-import { getTrackDisplayName } from '@/utils/track-localization';
+import { getTrackDisplayTitle } from '@/utils/track-localization';
 
 type StoryTemplate = 'dark' | 'transparent' | 'photo' | 'line';
 
@@ -132,11 +132,7 @@ export function useShareSession(sessionDetail: SessionDetail | null) {
         result: 'tmpfile',
       });
 
-      const track = getTrackDisplayName(
-        sessionDetail.track.id,
-        sessionDetail.track.name,
-        i18n.locale,
-      );
+      const track = getTrackDisplayTitle(sessionDetail.track, i18n.locale);
       const bestLapMs = sessionDetail.session.bestLapMs;
       const car = sessionDetail.session.car;
       const tweetText = i18n.t('sessions.xTweetText', {

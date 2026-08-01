@@ -2,6 +2,7 @@ import { TRACK_SEED_DRAFTS } from '@/db/seeds';
 import {
   formatTrackDisplayLocation,
   getTrackDisplayName,
+  getTrackDisplayTitle,
   getTrackSearchText,
   hasJapaneseTrackMetadata,
   localizeTrack,
@@ -48,6 +49,54 @@ describe('track localization', () => {
     }, 'ja');
 
     expect(localized.layoutName).toBe('レーシングコース');
+  });
+
+  it('localizes each Suzuka Twin Circuit layout independently', () => {
+    const fullCourse = localizeTrack({
+      id: 'suzuka-twin-circuit-full-course',
+      name: 'Suzuka Twin Circuit',
+      country: 'Japan',
+      location: 'Mie',
+      layoutName: 'Full course',
+    }, 'ja');
+    const gCourse = localizeTrack({
+      id: 'suzuka-twin-circuit-g-course',
+      name: 'Suzuka Twin Circuit',
+      country: 'Japan',
+      location: 'Mie',
+      layoutName: 'G course',
+    }, 'ja');
+
+    expect(fullCourse.name).toBe('鈴鹿ツインサーキット');
+    expect(fullCourse.layoutName).toBe('フルコース');
+    expect(gCourse.name).toBe('鈴鹿ツインサーキット');
+    expect(gCourse.layoutName).toBe('Gコース');
+  });
+
+  it('omits placeholder layout names from display titles', () => {
+    expect(getTrackDisplayTitle(honjo, 'en-US')).toBe('Honjo circuit');
+    expect(getTrackDisplayTitle(honjo, 'ja')).toBe('本庄サーキット');
+    expect(getTrackDisplayTitle(
+      { id: 'unknown-track', name: 'Unknown Track', layoutName: null },
+      'en-US',
+    )).toBe('Unknown Track');
+  });
+
+  it('joins circuit and layout names in display titles per locale', () => {
+    const fullCourse = {
+      id: 'suzuka-twin-circuit-full-course',
+      name: 'Suzuka Twin Circuit',
+      layoutName: 'Full course',
+    };
+    const gCourse = {
+      id: 'suzuka-twin-circuit-g-course',
+      name: 'Suzuka Twin Circuit',
+      layoutName: 'G course',
+    };
+
+    expect(getTrackDisplayTitle(fullCourse, 'en-US')).toBe('Suzuka Twin Circuit · Full course');
+    expect(getTrackDisplayTitle(fullCourse, 'ja')).toBe('鈴鹿ツインサーキット・フルコース');
+    expect(getTrackDisplayTitle(gCourse, 'ja')).toBe('鈴鹿ツインサーキット・Gコース');
   });
 
   it('keeps canonical metadata for English and unknown tracks', () => {

@@ -4,10 +4,14 @@ function createFetchMock({
   storeVersion,
   minimumVersion,
   releaseNotes = 'New circuits are available.',
+  bundleId = 'com.trakio.mobile',
+  trackId = 6760278416,
 }: {
   storeVersion: string;
   minimumVersion?: string;
   releaseNotes?: string;
+  bundleId?: string;
+  trackId?: number;
 }) {
   return jest.fn(async (input: string | URL | Request) => {
     const url = String(input);
@@ -17,8 +21,10 @@ function createFetchMock({
         ok: true,
         json: async () => ({
           results: [{
+            bundleId,
             version: storeVersion,
             releaseNotes,
+            trackId,
             trackViewUrl: 'https://apps.apple.com/jp/app/trakio/id6760278416',
           }],
         }),
@@ -118,6 +124,26 @@ describe('app update checks', () => {
     const fetcher = createFetchMock({
       storeVersion: '1.3.1',
       minimumVersion: '1.3',
+    });
+
+    await expect(checkForAppUpdate({
+      installedVersion: '1.3.1',
+      locale: 'en-US',
+      fetcher: fetcher as typeof fetch,
+    })).resolves.toBeNull();
+
+    await expect(checkForAppUpdate({
+      installedVersion: '1.3.2',
+      locale: 'en-US',
+      fetcher: fetcher as typeof fetch,
+    })).resolves.toBeNull();
+  });
+
+  it('rejects an App Store response that is not explicitly for Trakio', async () => {
+    const fetcher = createFetchMock({
+      storeVersion: '99.0',
+      minimumVersion: '1.3',
+      bundleId: 'com.example.wrong-app',
     });
 
     await expect(checkForAppUpdate({

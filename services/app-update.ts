@@ -1,4 +1,5 @@
 const APP_STORE_ID = '6760278416';
+const APP_BUNDLE_ID = 'com.trakio.mobile';
 const APP_STORE_PAGE_URL = `https://apps.apple.com/app/id${APP_STORE_ID}`;
 const UPDATE_POLICY_URL =
   'https://raw.githubusercontent.com/mylordkaz/trakio/main/config/app-update-policy.json';
@@ -6,8 +7,10 @@ const UPDATE_POLICY_URL =
 type Fetcher = typeof fetch;
 
 type AppStoreLookupResult = {
+  bundleId?: unknown;
   version?: unknown;
   releaseNotes?: unknown;
+  trackId?: unknown;
   trackViewUrl?: unknown;
 };
 
@@ -107,9 +110,19 @@ async function fetchAppStoreRelease(
   }
 
   const result = payload.results[0];
-  return result && typeof result === 'object'
-    ? (result as AppStoreLookupResult)
-    : null;
+  if (!result || typeof result !== 'object') {
+    return null;
+  }
+
+  const app = result as AppStoreLookupResult;
+  if (
+    app.bundleId !== APP_BUNDLE_ID ||
+    app.trackId !== Number(APP_STORE_ID)
+  ) {
+    return null;
+  }
+
+  return app;
 }
 
 async function fetchMinimumSupportedVersion(fetcher: Fetcher): Promise<string | null> {

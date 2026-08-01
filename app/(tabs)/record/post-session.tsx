@@ -2,16 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
-import { Storage } from "expo-sqlite/kv-store";
-import * as StoreReview from "expo-store-review";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import i18n from "@/i18n";
 import Card from "@/components/Card";
 import EditableSessionTitle from "@/components/EditableSessionTitle";
 import ProgressBar from "@/components/ProgressBar";
-import { getSessionById, updateSessionName } from "@/db";
-import type { SessionDetail } from "@/db";
+import ShareToLeaderboardCard from "@/components/ShareToLeaderboardCard";
+import { getSessionById, getTrackLeaderboardShareState, updateSessionName } from "@/db";
+import type { SessionDetail, TrackLeaderboardShareState } from "@/db";
 import { useHeaderGradient } from "@/hooks/useHeaderGradient";
 import { formatLapTime, formatSectorTime, formatDuration, formatSpeed } from "@/utils/format";
 import {
@@ -25,29 +24,11 @@ import {
   getTrendBars,
 } from "@/utils/session-analytics";
 import { useMenu } from "@/contexts/MenuContext";
-import { localizeTrack } from "@/utils/track-localization";
+import { maybeRequestAppReview } from "@/services/app-review";
+import { shouldOfferLeaderboardShare } from "@/utils/leaderboard-share";
+import { getTrackDisplayTitle } from "@/utils/track-localization";
 
-const REVIEW_REQUESTED_KEY = "review_requested";
-const REVIEW_SESSION_THRESHOLD = 3;
-
-async function maybeRequestReview(db: import("expo-sqlite").SQLiteDatabase) {
-  try {
-    if (Storage.getItemSync(REVIEW_REQUESTED_KEY)) return;
-
-    const row = await db.getFirstAsync<{ count: number }>(
-      "SELECT COUNT(*) AS count FROM sessions WHERE status = 'completed'",
-    );
-    if ((row?.count ?? 0) < REVIEW_SESSION_THRESHOLD) return;
-
-    const available = await StoreReview.isAvailableAsync();
-    if (!available) return;
-
-    await StoreReview.requestReview();
-    Storage.setItemSync(REVIEW_REQUESTED_KEY, "1");
-  } catch {
-    // best-effort — never block post-session
-  }
-}
+const REVIEW_PROMPT_DELAY_MS = 2000;
 
 export default function PostSessionScreen() {
   const router = useRouter();
@@ -61,6 +42,7 @@ export default function PostSessionScreen() {
   );
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [shareState, setShareState] = useState<TrackLeaderboardShareState | null>(null);
 
   async function handleChangeTitle(newTitle: string) {
     if (!sessionDetail) return;
@@ -73,6 +55,7 @@ export default function PostSessionScreen() {
 
   useEffect(() => {
     let isMounted = true;
+    let reviewPromptTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function loadSession() {
       if (!params.id) {
@@ -100,7 +83,29 @@ export default function PostSessionScreen() {
         setSessionDetail(nextSession);
         setLoadError(null);
 
-        maybeRequestReview(db);
+        let willOfferShare = false;
+        try {
+          const nextShareState = await getTrackLeaderboardShareState(
+            db,
+            nextSession.track.id,
+          );
+          willOfferShare =
+            nextShareState.userBestLapMs !== null &&
+            shouldOfferLeaderboardShare(nextShareState);
+          if (isMounted) {
+            setShareState(nextShareState);
+          }
+        } catch {
+          // The share offer is optional; the session summary renders regardless.
+        }
+
+        // The share offer and the App Store review dialog must not stack on
+        // one visit; the review request retries on a later session.
+        if (!willOfferShare) {
+          reviewPromptTimer = setTimeout(() => {
+            void maybeRequestAppReview(db, nextSession.session);
+          }, REVIEW_PROMPT_DELAY_MS);
+        }
       } catch {
         if (!isMounted) {
           return;
@@ -118,6 +123,9 @@ export default function PostSessionScreen() {
 
     return () => {
       isMounted = false;
+      if (reviewPromptTimer) {
+        clearTimeout(reviewPromptTimer);
+      }
     };
   }, [db, params.id]);
 
@@ -130,9 +138,6 @@ export default function PostSessionScreen() {
   const topSpeedKph = getTopSpeedKph(sessionDetail);
   const trendBars = getTrendBars(sessionDetail);
   const totalLaps = getValidTimedLaps(sessionDetail).length;
-  const displayTrack = sessionDetail
-    ? localizeTrack(sessionDetail.track, locale)
-    : null;
 
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
@@ -151,7 +156,9 @@ export default function PostSessionScreen() {
         >
           <View className="flex-row items-center justify-between mb-3">
             <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-              {displayTrack?.name ?? i18n.t("circuits.loadingTrack")}
+              {sessionDetail
+                ? getTrackDisplayTitle(sessionDetail.track, locale)
+                : i18n.t("circuits.loadingTrack")}
             </Text>
             <View className="flex-row items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1.5 border border-emerald-400/20">
               <View className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
@@ -231,6 +238,20 @@ export default function PostSessionScreen() {
         </LinearGradient>
 
         <View className="px-5 py-4 gap-4">
+          {sessionDetail &&
+          shareState &&
+          shareState.userBestLapMs !== null &&
+          shouldOfferLeaderboardShare(shareState) ? (
+            <ShareToLeaderboardCard
+              trackId={sessionDetail.track.id}
+              trackTitle={getTrackDisplayTitle(sessionDetail.track, locale)}
+              lapTimeMs={shareState.userBestLapMs}
+              isNewBest={
+                bestLapMs !== null && bestLapMs === shareState.userBestLapMs
+              }
+            />
+          ) : null}
+
           <View className="flex-row gap-3">
             {[
               [i18n.t("session.topSpeed"), formatSpeed(topSpeedKph)],

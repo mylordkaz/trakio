@@ -110,6 +110,11 @@ export default {
     sharing: '共有中...',
     shareFailedTitle: '共有に失敗しました',
     shareFailedMessage: 'タイムを共有できませんでした。通信状況を確認してもう一度お試しください。',
+    shareToLeaderboard: 'ランキングに共有',
+    notNow: '今はしない',
+    offerNewBestMessage: '新記録！%{time} を%{track}のランキングに共有しますか？',
+    offerBestMessage: 'ベストタイム %{time} を%{track}のランキングに共有しますか？',
+    offerBeFirstMessage: '%{track}のランキングにはまだ記録がありません。%{time} を共有して最初のドライバーになりましょう！',
   },
   circuits: {
     title: 'トラックデータベース',

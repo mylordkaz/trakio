@@ -6,6 +6,12 @@ type TrackDisplaySource = {
   layoutName: string | null;
 };
 
+type TrackTitleSource = {
+  id: string;
+  name: string;
+  layoutName: string | null;
+};
+
 type JapaneseTrackMetadata = {
   name: string;
   layoutName?: string;
@@ -75,6 +81,14 @@ const JAPANESE_TRACK_METADATA: Record<string, JapaneseTrackMetadata> = {
   'nanporo-kartland': {
     name: '南幌リバーサイドカートランド',
   },
+  'suzuka-twin-circuit-full-course': {
+    name: '鈴鹿ツインサーキット',
+    layoutName: 'フルコース',
+  },
+  'suzuka-twin-circuit-g-course': {
+    name: '鈴鹿ツインサーキット',
+    layoutName: 'Gコース',
+  },
 };
 
 const JAPANESE_COUNTRY_NAMES: Record<string, string> = {
@@ -135,6 +149,33 @@ export function getTrackDisplayName(
   }
 
   return JAPANESE_TRACK_METADATA[trackId]?.name ?? fallbackName;
+}
+
+// 'normal' tags single-layout circuits; it disambiguates nothing, so titles omit it.
+const GENERIC_LAYOUT_NAME = 'normal';
+
+export function getTrackDisplayTitle(
+  track: TrackTitleSource,
+  locale: string,
+): string {
+  const localized = localizeTrack(
+    {
+      id: track.id,
+      name: track.name,
+      country: null,
+      location: null,
+      layoutName: track.layoutName,
+    },
+    locale,
+  );
+
+  if (!track.layoutName || track.layoutName === GENERIC_LAYOUT_NAME) {
+    return localized.name;
+  }
+
+  return [localized.name, localized.layoutName]
+    .filter((part): part is string => Boolean(part))
+    .join(isJapaneseLocale(locale) ? '・' : ' · ');
 }
 
 export function localizeTrack<T extends TrackDisplaySource>(
