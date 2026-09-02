@@ -6,6 +6,7 @@ import type { SessionDetail } from '@/db/sessions';
 import i18n from '@/i18n';
 import { utf8ToBase64 } from '@/utils/base64';
 import { buildTimeSheetCsv, buildTimeSheetHtml, type TimeSheetLabels } from '@/utils/timesheet';
+import { getTrackDisplayTitle, localizeTrack } from '@/utils/track-localization';
 
 // User-facing session export: a lap time sheet as PDF or CSV. The raw JSON
 // export (services/share.ts) stays developer-only behind a long-press.
@@ -44,10 +45,21 @@ function sheetLabels(detail: SessionDetail): TimeSheetLabels {
   };
 }
 
+function withLocalizedTrack(detail: SessionDetail): SessionDetail {
+  return {
+    ...detail,
+    track: {
+      ...localizeTrack(detail.track, i18n.locale),
+      name: getTrackDisplayTitle(detail.track, i18n.locale),
+    },
+  };
+}
+
 export async function exportSessionTimeSheetPdf(detail: SessionDetail): Promise<ExportResult> {
   try {
+    const displayDetail = withLocalizedTrack(detail);
     const { uri } = await Print.printToFileAsync({
-      html: buildTimeSheetHtml(detail, sheetLabels(detail), {
+      html: buildTimeSheetHtml(displayDetail, sheetLabels(detail), {
         timeZone: getCalendars()[0]?.timeZone ?? undefined,
       }),
     });

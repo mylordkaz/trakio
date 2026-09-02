@@ -2,7 +2,7 @@
   "expo": {
     "name": "Trakio",
     "slug": "trakio",
-    "version": "1.3.0",
+    "version": "1.3.2",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "trakio",
@@ -11,7 +11,7 @@
     "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "com.trakio.mobile",
-      "buildNumber": "56",
+      "buildNumber": "61",
       "supportsTablet": false,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Trakio uses your location to record lap times and GPS traces on track.",

@@ -18,6 +18,13 @@ import type {
 type SessionDisplayStatus = 'Best' | 'Recent' | null;
 
 const SEEDED_SESSION_IDS = new Set(SESSION_TEST_SEEDS.map((seed) => seed.session.id));
+const SEEDED_SESSION_ID_LIST = [...SEEDED_SESSION_IDS];
+
+// Demo seed laps must never count as the user's own time.
+const USER_SESSION_WHERE =
+  SEEDED_SESSION_ID_LIST.length > 0
+    ? `s.id NOT IN (${SEEDED_SESSION_ID_LIST.map(() => '?').join(', ')})`
+    : '1 = 1';
 
 type DbSessionListRow = {
   id: string;
@@ -25,6 +32,7 @@ type DbSessionListRow = {
   user_id: string | null;
   track_id: string;
   track_name: string;
+  track_layout_name: string | null;
   started_at: ISODateString;
   ended_at: ISODateString | null;
   status: SessionStatus;
@@ -45,7 +53,6 @@ type DbSessionDetailRow = DbSessionListRow & {
   track_slug: string;
   track_country: string | null;
   track_location: string | null;
-  track_layout_name: string | null;
   track_length_m: number | null;
   track_corners: number | null;
   track_direction: TrackDirection | null;
@@ -147,6 +154,7 @@ export type SessionListItem = {
   name: string;
   trackId: string;
   trackName: string;
+  trackLayoutName: string | null;
   startedAt: ISODateString;
   bestLapMs: number | null;
   totalLaps: number;
@@ -331,6 +339,7 @@ async function getBestSessionIdPerTrack(db: SQLiteDatabase): Promise<Set<string>
       FROM sessions s
       LEFT JOIN laps l
         ON l.session_id = s.id
+      WHERE ${USER_SESSION_WHERE}
       GROUP BY s.id
       HAVING computed_best_lap_ms IS NOT NULL
     ) best
@@ -344,10 +353,13 @@ async function getBestSessionIdPerTrack(db: SQLiteDatabase): Promise<Set<string>
           )
         ) AS track_best_ms
       FROM sessions s
+      WHERE ${USER_SESSION_WHERE}
       GROUP BY s.track_id
       HAVING track_best_ms IS NOT NULL
     ) tb
-      ON best.track_id = tb.track_id AND best.computed_best_lap_ms = tb.track_best_ms;`
+      ON best.track_id = tb.track_id AND best.computed_best_lap_ms = tb.track_best_ms;`,
+    ...SEEDED_SESSION_ID_LIST,
+    ...SEEDED_SESSION_ID_LIST
   );
 
   return new Set(rows.map((r) => r.id));
@@ -658,6 +670,7 @@ export async function listSessions(db: SQLiteDatabase): Promise<SessionListItem[
       s.user_id,
       s.track_id,
       t.name AS track_name,
+      t.layout_name AS track_layout_name,
       s.started_at,
       s.ended_at,
       s.status,
@@ -697,6 +710,7 @@ export async function listSessions(db: SQLiteDatabase): Promise<SessionListItem[
       name: session.name ?? 'Recorded Session',
       trackId: session.trackId,
       trackName: row.track_name,
+      trackLayoutName: row.track_layout_name,
       startedAt: session.startedAt,
       bestLapMs: session.bestLapMs,
       totalLaps: session.totalLaps,
@@ -724,8 +738,10 @@ export async function getTrackSessionSummary(
     FROM sessions s
     LEFT JOIN laps l
       ON l.session_id = s.id
-    WHERE s.track_id = ?;`,
-    trackId
+    WHERE s.track_id = ?
+      AND ${USER_SESSION_WHERE};`,
+    trackId,
+    ...SEEDED_SESSION_ID_LIST
   );
 
   return {

@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { TRACK_SEED_DRAFTS } from '@/db/seeds';
+import { SESSION_TEST_SEEDS } from '@/db/test-seeds';
 import type {
   Coordinate,
   ISODateString,
@@ -383,9 +384,12 @@ async function getPersonalBest(db: SQLiteDatabase, trackId: string, sectorCount:
        AND l.lap_time_ms IS NOT NULL
        AND l.is_invalid = 0
        AND l.is_out_lap = 0
+       AND l.is_in_lap = 0
+       ${USER_SESSION_FILTER}
      ORDER BY l.lap_time_ms ASC
      LIMIT 1;`,
-    trackId
+    trackId,
+    ...SEEDED_SESSION_IDS
   );
 
   if (!bestLap) return null;
@@ -408,6 +412,106 @@ async function getPersonalBest(db: SQLiteDatabase, trackId: string, sectorCount:
     setOn: bestLap.started_at,
     sectors,
   };
+}
+
+const SEEDED_SESSION_IDS = SESSION_TEST_SEEDS.map((seed) => seed.session.id);
+
+// Demo seed laps must never count as the user's own time.
+const USER_SESSION_FILTER =
+  SEEDED_SESSION_IDS.length > 0
+    ? `AND s.id NOT IN (${SEEDED_SESSION_IDS.map(() => '?').join(', ')})`
+    : '';
+
+export type TrackLeaderboardShareState = {
+  // Best valid lap the user actually drove — demo seed sessions excluded,
+  // because this value is what a leaderboard share submits.
+  userBestLapMs: number | null;
+  sharedLapTimeMs: number | null;
+  offeredLapTimeMs: number | null;
+};
+
+export async function getTrackLeaderboardShareState(
+  db: SQLiteDatabase,
+  trackId: string
+): Promise<TrackLeaderboardShareState> {
+  const bestRow = await db.getFirstAsync<{ best_ms: number | null }>(
+    `SELECT MIN(l.lap_time_ms) AS best_ms
+     FROM laps l
+     INNER JOIN sessions s ON s.id = l.session_id
+     WHERE s.track_id = ?
+       AND l.lap_time_ms IS NOT NULL
+       AND l.is_invalid = 0
+       AND l.is_out_lap = 0
+       AND l.is_in_lap = 0
+       ${USER_SESSION_FILTER};`,
+    trackId,
+    ...SEEDED_SESSION_IDS
+  );
+
+  const trackRow = await db.getFirstAsync<{
+    leaderboard_lap_time_ms: number | null;
+    leaderboard_offered_lap_time_ms: number | null;
+  }>(
+    `SELECT leaderboard_lap_time_ms, leaderboard_offered_lap_time_ms
+     FROM tracks
+     WHERE id = ?;`,
+    trackId
+  );
+
+  return {
+    userBestLapMs: bestRow?.best_ms ?? null,
+    sharedLapTimeMs: trackRow?.leaderboard_lap_time_ms ?? null,
+    offeredLapTimeMs: trackRow?.leaderboard_offered_lap_time_ms ?? null,
+  };
+}
+
+export async function recordLeaderboardShare(
+  db: SQLiteDatabase,
+  trackId: string,
+  lapTimeMs: number
+): Promise<void> {
+  await db.runAsync(
+    `UPDATE tracks
+     SET leaderboard_lap_time_ms = ?,
+         leaderboard_offered_lap_time_ms = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?;`,
+    lapTimeMs,
+    lapTimeMs,
+    trackId
+  );
+}
+
+// Syncs the locally known board time from a fetched server entry. The offered
+// watermark is left untouched so recorded declines keep suppressing the card.
+export async function setSharedLeaderboardTime(
+  db: SQLiteDatabase,
+  trackId: string,
+  lapTimeMs: number
+): Promise<void> {
+  await db.runAsync(
+    `UPDATE tracks
+     SET leaderboard_lap_time_ms = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?;`,
+    lapTimeMs,
+    trackId
+  );
+}
+
+export async function recordLeaderboardOffer(
+  db: SQLiteDatabase,
+  trackId: string,
+  lapTimeMs: number
+): Promise<void> {
+  await db.runAsync(
+    `UPDATE tracks
+     SET leaderboard_offered_lap_time_ms = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?;`,
+    lapTimeMs,
+    trackId
+  );
 }
 
 export async function getTrackById(db: SQLiteDatabase, trackId: string): Promise<TrackDetail | null> {

@@ -1,18 +1,17 @@
-import { useState } from 'react';
-import { Alert, View, Text, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
+import { View, Text, Pressable } from 'react-native';
 import Card from '@/components/Card';
 import i18n from '@/i18n';
 import { formatLapTime, formatDeltaMs } from '@/utils/format';
 import { flagEmoji, rankLabel, type LeaderboardEntry } from '@/services/leaderboard';
+import { useLeaderboardShare } from '@/hooks/useLeaderboardShare';
 
 type LeaderboardPreviewCardProps = {
+  trackId: string;
   personalBestMs: number | null;
-  isProfileComplete: boolean;
   entries: LeaderboardEntry[];
   isLoading?: boolean;
   loadError?: string | null;
-  onShared: (lapTimeMs: number) => Promise<void>;
+  onShareSuccess: () => Promise<void>;
   onSeeAll?: () => void;
 };
 
@@ -70,16 +69,15 @@ function LeaderboardRow({ entry, p1Ms }: { entry: LeaderboardEntry; p1Ms: number
 }
 
 export default function LeaderboardPreviewCard({
+  trackId,
   personalBestMs,
-  isProfileComplete,
   entries,
   isLoading = false,
   loadError = null,
-  onShared,
+  onShareSuccess,
   onSeeAll,
 }: LeaderboardPreviewCardProps) {
-  const router = useRouter();
-  const [isSharing, setIsSharing] = useState(false);
+  const { isSharing, share } = useLeaderboardShare(trackId);
   const p1Ms = entries[0]?.lapTimeMs ?? 0;
   const top3 = entries.slice(0, 3);
   const userEntry = entries.find(e => e.isCurrentUser) ?? null;
@@ -92,30 +90,11 @@ export default function LeaderboardPreviewCard({
   const buttonDisabled = isUpToDate || isSharing;
 
   async function handleShare() {
-    if (isSharing) return;
-    if (!isProfileComplete) {
-      Alert.alert(
-        i18n.t('leaderboard.completeProfileTitle'),
-        i18n.t('leaderboard.completeProfileMessage'),
-        [
-          { text: i18n.t('common.cancel'), style: 'cancel' },
-          { text: i18n.t('leaderboard.goToProfile'), onPress: () => router.push('/profile') },
-        ],
-      );
-      return;
-    }
     if (personalBestMs === null) return;
 
-    try {
-      setIsSharing(true);
-      await onShared(personalBestMs);
-    } catch {
-      Alert.alert(
-        i18n.t('leaderboard.shareFailedTitle'),
-        i18n.t('leaderboard.shareFailedMessage'),
-      );
-    } finally {
-      setIsSharing(false);
+    const shared = await share(personalBestMs);
+    if (shared) {
+      await onShareSuccess();
     }
   }
 

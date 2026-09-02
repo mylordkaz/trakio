@@ -5,12 +5,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import i18n from '@/i18n';
-import { getTrackById } from '@/db';
+import { getTrackById, setSharedLeaderboardTime } from '@/db';
 import type { TrackDetail } from '@/db';
 import { getOrCreatePublisherId } from '@/services/publisher-id';
 import { listLeaderboardEntries, flagEmoji, type LeaderboardEntry } from '@/services/leaderboard';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { formatLapTime, formatDeltaMs } from '@/utils/format';
+import { useMenu } from '@/contexts/MenuContext';
+import { getTrackDisplayTitle } from '@/utils/track-localization';
 
 // ─── Podium ──────────────────────────────────────────────────────────────────
 
@@ -183,6 +185,7 @@ export default function LeaderboardScreen() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const { locale } = useMenu();
 
   useEffect(() => {
     if (!id) {
@@ -210,6 +213,12 @@ export default function LeaderboardScreen() {
         const nextEntries = await listLeaderboardEntries(id, publisherId);
         if (!isMounted) return;
         setEntries(nextEntries);
+        const ownEntry = nextEntries.find((entry) => entry.isCurrentUser);
+        if (ownEntry) {
+          void setSharedLeaderboardTime(db, id, ownEntry.lapTimeMs).catch(
+            () => undefined,
+          );
+        }
       } catch {
         if (!isMounted) return;
         setEntries([]);
@@ -226,7 +235,7 @@ export default function LeaderboardScreen() {
     return () => {
       isMounted = false;
     };
-  }, [id]);
+  }, [db, id]);
 
   const gradientColors = useHeaderGradient('sky');
   const p1Ms = entries[0]?.lapTimeMs ?? 0;
@@ -265,7 +274,7 @@ export default function LeaderboardScreen() {
             <View style={{ flex: 1, marginRight: 12 }}>
               <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 4 }}>
                 {track
-                  ? [track.name, track.layoutName].filter(Boolean).join(' · ')
+                  ? getTrackDisplayTitle(track, locale)
                   : i18n.t('common.track')}
               </Text>
               <Text style={{ fontSize: 28, fontWeight: '800', color: '#ffffff', letterSpacing: -0.5 }}>
