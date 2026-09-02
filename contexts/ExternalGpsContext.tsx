@@ -1,43 +1,74 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
 import { Storage } from 'expo-sqlite/kv-store';
 import type { DiscoveredDevice } from '@/telemetry/sources/types';
+import { classifyDevice } from '@/telemetry/sources/device-classifier';
 import {
-  requestBlePermissions,
+  requestBleAccess,
   scanForDevices,
 } from '@/telemetry/sources/ble-transport';
 import { EXTERNAL_GPS_ENABLED } from '@/constants/featureFlags';
 
-const LAST_DEVICE_KEY = 'external_gps_last_device_id';
+const LAST_DEVICE_KEY = 'external_gps_last_device';
+
+// Classification is re-derived from the name; stored rssi is meaningless after restore.
+function restoreStoredDevice(): DiscoveredDevice | null {
+  if (!EXTERNAL_GPS_ENABLED) {
+    return null;
+  }
+
+  const storedValue = Storage.getItemSync(LAST_DEVICE_KEY);
+  if (!storedValue) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(storedValue) as { id?: unknown; name?: unknown };
+    if (typeof parsed.id !== 'string' || typeof parsed.name !== 'string') {
+      return null;
+    }
+
+    const classification = classifyDevice(parsed.name);
+    if (!classification) {
+      return null;
+    }
+
+    return { id: parsed.id, name: parsed.name, rssi: -100, classification };
+  } catch {
+    return null;
+  }
+}
+
+export type ScanBlockedReason = 'permission_denied' | 'powered_off';
 
 type ExternalGpsContextValue = {
   selectedDevice: DiscoveredDevice | null;
   scanResults: DiscoveredDevice[];
   isScanning: boolean;
+  scanBlockedReason: ScanBlockedReason | null;
   startScan: () => void;
   stopScan: () => void;
   selectDevice: (device: DiscoveredDevice) => void;
   clearDevice: () => void;
-  lastSelectedDeviceId: string | null;
 };
 
 const ExternalGpsContext = createContext<ExternalGpsContextValue>({
   selectedDevice: null,
   scanResults: [],
   isScanning: false,
+  scanBlockedReason: null,
   startScan: () => {},
   stopScan: () => {},
   selectDevice: () => {},
   clearDevice: () => {},
-  lastSelectedDeviceId: null,
 });
 
 export function ExternalGpsProvider({ children }: { children: React.ReactNode }) {
-  const [selectedDevice, setSelectedDevice] = useState<DiscoveredDevice | null>(null);
+  const [selectedDevice, setSelectedDevice] = useState<DiscoveredDevice | null>(
+    () => restoreStoredDevice()
+  );
   const [scanResults, setScanResults] = useState<DiscoveredDevice[]>([]);
   const [isScanning, setIsScanning] = useState(false);
-  const [lastSelectedDeviceId, setLastSelectedDeviceId] = useState<string | null>(
-    () => Storage.getItemSync(LAST_DEVICE_KEY) ?? null
-  );
+  const [scanBlockedReason, setScanBlockedReason] = useState<ScanBlockedReason | null>(null);
   const scanHandleRef = useRef<{ stop: () => void } | null>(null);
 
   const stopScan = useCallback(() => {
@@ -53,12 +84,15 @@ export function ExternalGpsProvider({ children }: { children: React.ReactNode })
       return;
     }
 
-    const permitted = await requestBlePermissions();
-    if (!permitted) {
+    setScanResults([]);
+    setScanBlockedReason(null);
+
+    const access = await requestBleAccess();
+    if (access !== 'granted') {
+      setScanBlockedReason(access);
       return;
     }
 
-    setScanResults([]);
     setIsScanning(true);
 
     scanHandleRef.current = scanForDevices(
@@ -84,12 +118,15 @@ export function ExternalGpsProvider({ children }: { children: React.ReactNode })
   const selectDevice = useCallback((device: DiscoveredDevice) => {
     stopScan();
     setSelectedDevice(device);
-    setLastSelectedDeviceId(device.id);
-    Storage.setItemSync(LAST_DEVICE_KEY, device.id);
+    Storage.setItemSync(
+      LAST_DEVICE_KEY,
+      JSON.stringify({ id: device.id, name: device.name })
+    );
   }, [stopScan]);
 
   const clearDevice = useCallback(() => {
     setSelectedDevice(null);
+    Storage.removeItemSync(LAST_DEVICE_KEY);
   }, []);
 
   return (
@@ -98,11 +135,11 @@ export function ExternalGpsProvider({ children }: { children: React.ReactNode })
         selectedDevice,
         scanResults,
         isScanning,
+        scanBlockedReason,
         startScan,
         stopScan,
         selectDevice,
         clearDevice,
-        lastSelectedDeviceId,
       }}
     >
       {children}

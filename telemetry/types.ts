@@ -1,4 +1,4 @@
-export type TelemetrySampleSource = 'gps' | 'racebox';
+export type TelemetrySampleSource = 'gps' | 'racebox' | 'qstarz';
 
 export type TelemetrySample = {
   recordedAt: number;

@@ -20,6 +20,16 @@ const DEVICE_RULES: DeviceRule[] = [
     namePrefix: 'RaceBox Micro ',
     classification: { sourceType: 'racebox', protocol: 'racebox-binary' },
   },
+  {
+    // BL-1000GT: QSTARZ1 + serial, no separator.
+    namePrefix: 'QSTARZ1',
+    classification: { sourceType: 'qstarz', protocol: 'qstarz-ble' },
+  },
+  {
+    // BL-818GT: QSTARZ2 + serial, no separator.
+    namePrefix: 'QSTARZ2',
+    classification: { sourceType: 'qstarz', protocol: 'qstarz-ble' },
+  },
 ];
 
 export function classifyDevice(name: string): DeviceClassification | null {

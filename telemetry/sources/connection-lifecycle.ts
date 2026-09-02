@@ -11,6 +11,11 @@ import {
   stopLocationSubscription,
 } from '@/telemetry/location';
 import { createRaceBoxSource } from '@/telemetry/sources/racebox/source';
+import { createQstarzSource } from '@/telemetry/sources/qstarz/source';
+import { createStreamWatchdog } from '@/telemetry/sources/stream-watchdog';
+
+// Devices stream at 10-25 Hz fix-or-not, so this much silence means a dead stream.
+const EXTERNAL_STREAM_SILENCE_TIMEOUT_MS = 10000;
 
 export type ConnectionLifecycleCallbacks = {
   onSample: (sample: TelemetrySample) => void;
@@ -22,6 +27,7 @@ export type ConnectionLifecycleCallbacks = {
 export type ConnectionLifecycleConfig = {
   retryAttempts?: number;
   reconnectDelayMs?: number;
+  streamSilenceTimeoutMs?: number;
   onResetContinuity?: () => void;
 };
 
@@ -34,10 +40,8 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
   let stopped = false;
   let reconnecting = false;
 
-  // Single monotonic timeline for the whole session. Elapsed is measured from
-  // the first forwarded sample's own clock. On a source switch that changes the
-  // clock domain (device GPS time -> phone system time), we re-anchor so elapsed
-  // continues from where it left off instead of jumping by the clock offset.
+  // One session timeline; source switches change clock domain, so elapsed
+  // re-anchors to continue instead of jumping by the clock offset.
   let elapsedAnchorMs: number | null = null;
   let lastElapsedMs = 0;
   let continueTimelineOnNextSample = false;
@@ -45,6 +49,8 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
   const commitElapsedMs: TelemetryElapsedMsResolver = (recordedAt) => {
     if (elapsedAnchorMs === null) {
       elapsedAnchorMs = recordedAt;
+      // Left set, the flag would re-anchor on sample two and swallow its delta.
+      continueTimelineOnNextSample = false;
     } else if (continueTimelineOnNextSample) {
       elapsedAnchorMs = recordedAt - lastElapsedMs;
       continueTimelineOnNextSample = false;
@@ -53,69 +59,32 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
     return lastElapsedMs;
   };
 
-  const standbyElapsedMs: TelemetryElapsedMsResolver = (recordedAt) => {
-    // Warm-standby samples are not forwarded, so they must neither advance nor
-    // re-anchor the timeline.
-    return elapsedAnchorMs === null ? 0 : Math.max(0, recordedAt - elapsedAnchorMs);
-  };
+  // Silence while connected is handled exactly like a disconnect.
+  const streamWatchdog = createStreamWatchdog(
+    config?.streamSilenceTimeoutMs ?? EXTERNAL_STREAM_SILENCE_TIMEOUT_MS,
+    () => {
+      void handleExternalDisconnect();
+    }
+  );
 
   function setActiveSource(source: ActiveSourceInfo): void {
     activeSource = source;
     callbacks?.onActiveSourceChange(source);
   }
 
-  async function startPhoneGps(forward: boolean): Promise<void> {
-    if (stopped || !callbacks) {
+  let phoneGpsStarting = false;
+
+  // Idempotent: overlapping failure paths must never stack a second subscription.
+  async function startPhoneGps(): Promise<void> {
+    if (stopped || !callbacks || phoneGpsSubscription || phoneGpsStarting) {
       return;
     }
+    phoneGpsStarting = true;
 
     const cbs = callbacks;
 
-    phoneGpsSubscription = await startLocationSubscription({
-      resolveElapsedMs: forward ? commitElapsedMs : standbyElapsedMs,
-      onSample: (sample) => {
-        if (stopped || !forward) {
-          return;
-        }
-        cbs.onSample(sample);
-      },
-      onError: (error) => {
-        if (stopped) {
-          return;
-        }
-        cbs.onError(error);
-      },
-    });
-  }
-
-  function stopPhoneGps(): void {
-    stopLocationSubscription(phoneGpsSubscription);
-    phoneGpsSubscription = null;
-  }
-
-  function createSourceForDevice(device: DiscoveredDevice): TelemetrySource | null {
-    if (device.classification.protocol === 'racebox-binary') {
-      return createRaceBoxSource(device.id, device.name);
-    }
-    return null;
-  }
-
-  async function startExternalSource(
-    device: DiscoveredDevice,
-    cbs: ConnectionLifecycleCallbacks
-  ): Promise<boolean> {
-    const source = createSourceForDevice(device);
-    if (!source) {
-      return false;
-    }
-
-    externalSource = source;
-    externalDevice = device;
-
     try {
-      cbs.onExternalDeviceStateChange('connecting');
-
-      await source.start({
+      const subscription = await startLocationSubscription({
         resolveElapsedMs: commitElapsedMs,
         onSample: (sample) => {
           if (stopped) {
@@ -129,22 +98,118 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
           }
           cbs.onError(error);
         },
+      });
+
+      if (stopped) {
+        stopLocationSubscription(subscription);
+        return;
+      }
+      phoneGpsSubscription = subscription;
+    } finally {
+      phoneGpsStarting = false;
+    }
+  }
+
+  function stopPhoneGps(): void {
+    stopLocationSubscription(phoneGpsSubscription);
+    phoneGpsSubscription = null;
+  }
+
+  function createSourceForDevice(device: DiscoveredDevice): TelemetrySource | null {
+    if (device.classification.protocol === 'racebox-binary') {
+      return createRaceBoxSource(device.id, device.name);
+    }
+    if (device.classification.protocol === 'qstarz-ble') {
+      return createQstarzSource(device.id);
+    }
+    return null;
+  }
+
+  // On success, atomically switches the session over (phone off, re-anchor,
+  // continuity reset); no external sample is forwarded before the switchover.
+  async function startExternalSource(
+    device: DiscoveredDevice,
+    cbs: ConnectionLifecycleCallbacks
+  ): Promise<boolean> {
+    const source = createSourceForDevice(device);
+    if (!source) {
+      return false;
+    }
+
+    externalSource = source;
+    externalDevice = device;
+    let live = false;
+
+    try {
+      cbs.onExternalDeviceStateChange('connecting');
+
+      await source.start({
+        resolveElapsedMs: commitElapsedMs,
+        onActivity: () => {
+          if (stopped || !live) {
+            return;
+          }
+          streamWatchdog.arm();
+        },
+        onSample: (sample) => {
+          if (stopped || !live) {
+            return;
+          }
+          streamWatchdog.arm();
+          cbs.onSample(sample);
+        },
+        onError: (error) => {
+          if (stopped) {
+            return;
+          }
+          cbs.onError(error);
+        },
         onStateChange: (state) => {
           if (stopped) {
             return;
           }
-          if (state === 'disconnected') {
+          // Pre-switchover disconnects reject the pending start(); one fallback path only.
+          if (state === 'disconnected' && live) {
             void handleExternalDisconnect();
           }
         },
       });
 
+      // A stopped source can resolve normally; never activate a dead session or link.
+      if (stopped || externalSource !== source || source.getConnectionState() !== 'connected') {
+        try {
+          await source.stop();
+        } catch {
+          // Already torn down.
+        }
+        if (externalSource === source) {
+          externalSource = null;
+          externalDevice = null;
+        }
+        cbs.onExternalDeviceStateChange('disconnected');
+        return false;
+      }
+
+      stopPhoneGps();
+      // Phone system clock -> device GPS clock.
+      continueTimelineOnNextSample = true;
+      config?.onResetContinuity?.();
+      live = true;
       cbs.onExternalDeviceStateChange('connected');
       setActiveSource({ sourceType: source.sourceType, deviceName: device.name });
+      streamWatchdog.arm();
       return true;
     } catch {
-      externalSource = null;
-      externalDevice = null;
+      // A failure after the BLE connect can leave the link open with no owner.
+      try {
+        await source.stop();
+      } catch {
+        // Already torn down.
+      }
+      if (externalSource === source) {
+        externalSource = null;
+        externalDevice = null;
+      }
       cbs.onExternalDeviceStateChange('disconnected');
       return false;
     }
@@ -155,11 +220,12 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
       return;
     }
     // Guard against overlapping runs: a rapid disconnect/reconnect could
-    // otherwise start two warm-standby subscriptions and leak one.
+    // otherwise start two phone subscriptions and leak one.
     if (reconnecting) {
       return;
     }
     reconnecting = true;
+    streamWatchdog.disarm();
 
     try {
       const cbs = callbacks;
@@ -178,8 +244,12 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
         externalSource = null;
       }
 
+      // Phone records immediately; reconnection can take tens of seconds.
+      continueTimelineOnNextSample = true;
+      config?.onResetContinuity?.();
+      setActiveSource({ sourceType: 'gps', deviceName: null });
       stopPhoneGps();
-      await startPhoneGps(false);
+      await startPhoneGps();
 
       for (let attempt = 0; attempt < retryAttempts; attempt++) {
         if (stopped) {
@@ -194,24 +264,12 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
 
         const reconnected = await startExternalSource(device, cbs);
         if (reconnected) {
-          // Same device, same clock domain: detection continuity resets but the
-          // elapsed timeline continues unchanged across the gap.
-          config?.onResetContinuity?.();
-          stopPhoneGps();
           return;
         }
       }
 
-      // Retries exhausted — phone GPS becomes the active source. Its system
-      // clock differs from the device's GPS clock, so continue the elapsed
-      // timeline across the switch rather than letting it jump.
-      continueTimelineOnNextSample = true;
-      config?.onResetContinuity?.();
-      setActiveSource({ sourceType: 'gps', deviceName: null });
+      // Retries exhausted; the session stays on phone GPS.
       cbs.onExternalDeviceStateChange('disconnected');
-
-      stopPhoneGps();
-      await startPhoneGps(true);
     } finally {
       reconnecting = false;
     }
@@ -227,6 +285,7 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
     lastElapsedMs = 0;
     continueTimelineOnNextSample = false;
 
+    // Device priority: it connects first with nothing else recording; phone is fallback only.
     if (device) {
       const connected = await startExternalSource(device, cbs);
       if (connected) {
@@ -236,11 +295,12 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
 
     setActiveSource({ sourceType: 'gps', deviceName: null });
     cbs.onExternalDeviceStateChange('disconnected');
-    await startPhoneGps(true);
+    await startPhoneGps();
   }
 
   async function stop(): Promise<void> {
     stopped = true;
+    streamWatchdog.disarm();
     stopPhoneGps();
 
     if (externalSource) {
