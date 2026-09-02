@@ -1,5 +1,7 @@
 // Feature flags for gating work that isn't ready to ship to users.
 
+import Constants from 'expo-constants';
+
 // External GPS pairing (RaceBox, Qstarz); on-device validation is vendor-side only.
 export const EXTERNAL_GPS_ENABLED: boolean = true;
 
@@ -27,6 +29,9 @@ export const CROSSING_RECOVERY_ENABLED: boolean = true;
 // at ~2 s. Rejected fixes are still quarantined for display/analysis.
 export const JUMP_REANCHOR_ENABLED: boolean = true;
 
-// TEMP for the Qstarz validation build; revert to
-// `__DEV__ || Constants.expoConfig?.extra?.rawDataExportEnabled === true` before store submission.
-export const RAW_DATA_EXPORT_ENABLED: boolean = true;
+// Full raw telemetry is a development-only diagnostic path, not a
+// customer-facing Pro export. The extra flag cannot survive config evaluation
+// in production-classified builds, and EAS bundling classifies preview as
+// production (NODE_ENV), so in practice only dev clients ever enable it.
+export const RAW_DATA_EXPORT_ENABLED: boolean =
+  __DEV__ || Constants.expoConfig?.extra?.rawDataExportEnabled === true;
