@@ -20,7 +20,7 @@ export type ActiveSourceInfo = {
 
 export type DeviceClassification = {
   sourceType: TelemetrySampleSource;
-  protocol: 'racebox-binary';
+  protocol: 'racebox-binary' | 'qstarz-ble';
 };
 
 export type DiscoveredDevice = {
@@ -32,6 +32,8 @@ export type DiscoveredDevice = {
 
 export type TelemetrySourceCallbacks = {
   onSample: (sample: TelemetrySample) => void;
+  // Fired per valid record, fix or no fix — liveness must not depend on GPS lock.
+  onActivity: () => void;
   onError: (error: Error) => void;
   onStateChange: (state: SourceConnectionState) => void;
   resolveElapsedMs: TelemetryElapsedMsResolver;

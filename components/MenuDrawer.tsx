@@ -251,7 +251,6 @@ export default function MenuDrawer() {
             </View>
           </Pressable>
 
-          {/* External GPS — gated until validated on hardware (EXTERNAL_GPS_ENABLED). */}
           {EXTERNAL_GPS_ENABLED && (
             <>
               <SectionHeader title={t("menu.externalGps")} />

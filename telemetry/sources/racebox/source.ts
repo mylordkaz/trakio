@@ -161,6 +161,8 @@ export function createRaceBoxSource(
               return;
             }
 
+            callbacks.onActivity();
+
             const sample = rawDataToSample(raw, callbacks.resolveElapsedMs, deviceModel);
             if (!sample) {
               return;

@@ -359,10 +359,13 @@ export default function PreSessionScreen() {
       };
 
       if (selectedDevice) {
+        // The device only connects once recording starts, so selection is the
+        // strongest pre-session signal; a failed connect falls back to phone
+        // GPS in the recording flow.
         gpsItem = {
           key: 'gpsLock',
           value: selectedDevice.name,
-          status: 'warning',
+          status: 'ready',
         };
       } else {
         try {

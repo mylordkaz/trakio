@@ -29,7 +29,10 @@ export async function isBleAvailable(): Promise<boolean> {
   return state === State.PoweredOn;
 }
 
-export async function requestBlePermissions(): Promise<boolean> {
+export type BleAccessResult = 'granted' | 'permission_denied' | 'powered_off';
+
+// The reason decides the guidance: app settings vs the Bluetooth toggle.
+export async function requestBleAccess(): Promise<BleAccessResult> {
   if (Platform.OS === 'android' && Platform.Version >= 31) {
     const results = await PermissionsAndroid.requestMultiple([
       PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
@@ -39,15 +42,19 @@ export async function requestBlePermissions(): Promise<boolean> {
     const granted = Object.values(results).every(
       (r) => r === PermissionsAndroid.RESULTS.GRANTED
     );
-    if (!granted) return false;
+    if (!granted) return 'permission_denied';
   } else if (Platform.OS === 'android') {
     const result = await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
     );
-    if (result !== PermissionsAndroid.RESULTS.GRANTED) return false;
+    if (result !== PermissionsAndroid.RESULTS.GRANTED) return 'permission_denied';
   }
 
-  return isBleAvailable();
+  const state = await waitForBleState();
+  if (state === State.PoweredOn) {
+    return 'granted';
+  }
+  return state === State.Unauthorized ? 'permission_denied' : 'powered_off';
 }
 
 export function scanForDevices(
@@ -70,11 +77,13 @@ export function scanForDevices(
       return;
     }
 
-    if (!device?.name || !device.id || seen.has(device.id)) {
+    // iOS may carry the advertised name only in localName.
+    const advertisedName = device?.name ?? device?.localName;
+    if (!advertisedName || !device?.id || seen.has(device.id)) {
       return;
     }
 
-    const classification = classifyDevice(device.name);
+    const classification = classifyDevice(advertisedName);
     if (!classification) {
       return;
     }
@@ -82,7 +91,7 @@ export function scanForDevices(
     seen.add(device.id);
     onDiscovered({
       id: device.id,
-      name: device.name,
+      name: advertisedName,
       rssi: device.rssi ?? -100,
       classification,
     });
@@ -114,8 +123,10 @@ export async function connectToDevice(deviceId: string): Promise<Device> {
   }
 
   const bleManager = getManager();
+  // Unbounded, an absent device hangs iOS connects forever.
   const device = await bleManager.connectToDevice(deviceId, {
     requestMTU: 247,
+    timeout: 10000,
   });
   await device.discoverAllServicesAndCharacteristics();
 
@@ -196,11 +207,11 @@ export async function writeCharacteristic(
   );
 }
 
-export async function readCharacteristicString(
+export async function readCharacteristicBytes(
   device: Device,
   serviceUUID: string,
   characteristicUUID: string
-): Promise<string | null> {
+): Promise<Uint8Array | null> {
   const characteristic = await device.readCharacteristicForService(
     serviceUUID,
     characteristicUUID
@@ -209,7 +220,19 @@ export async function readCharacteristicString(
     return null;
   }
 
-  const bytes = base64ToBytes(characteristic.value);
+  return base64ToBytes(characteristic.value);
+}
+
+export async function readCharacteristicString(
+  device: Device,
+  serviceUUID: string,
+  characteristicUUID: string
+): Promise<string | null> {
+  const bytes = await readCharacteristicBytes(device, serviceUUID, characteristicUUID);
+  if (!bytes) {
+    return null;
+  }
+
   let result = '';
   for (let i = 0; i < bytes.length; i++) {
     result += String.fromCharCode(bytes[i]);

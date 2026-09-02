@@ -11,7 +11,7 @@ import { haversineDistanceMeters, toRadians } from '@/utils/geo';
 export const DEFAULT_DETECTION_CONFIG: TelemetryDetectionConfig = {
   debounceMs: 1500,
   minLapTimeMs: 15000,
-  minCrossingSpeedMps: 5,
+  minCrossingSpeedMps: 1.5,
   // Recovery is opt-in (the app opts in via CROSSING_RECOVERY_ENABLED).
   recoveryEnabled: false,
   recoveryMinGapMs: 4000,
@@ -105,39 +105,41 @@ export function segmentTimingLineFraction(
   return hit.movementFraction;
 }
 
-// A stationary car sitting on a timing line jitters back and forth across it;
-// requiring plausible movement speed keeps those phantom crossings out.
+// Doppler speed separates a real crossing from parked-on-the-line jitter; the
+// jittery chord speed is trusted only when neither sample reports speed.
 function hasSufficientCrossingSpeed(
   previousSample: TelemetrySample,
   currentSample: TelemetrySample,
   config: TelemetryDetectionConfig
 ) {
-  const speedCandidates: number[] = [];
+  const reportedSpeeds: number[] = [];
 
   if (previousSample.speedMps !== null) {
-    speedCandidates.push(previousSample.speedMps);
+    reportedSpeeds.push(previousSample.speedMps);
   }
 
   if (currentSample.speedMps !== null) {
-    speedCandidates.push(currentSample.speedMps);
+    reportedSpeeds.push(currentSample.speedMps);
+  }
+
+  if (reportedSpeeds.length > 0) {
+    return Math.max(...reportedSpeeds) >= config.minCrossingSpeedMps;
   }
 
   const elapsedSeconds = (currentSample.recordedAt - previousSample.recordedAt) / 1000;
-  if (elapsedSeconds > 0) {
-    const distanceMeters = haversineDistanceMeters(
+  if (elapsedSeconds <= 0) {
+    return true;
+  }
+
+  const chordSpeedMps =
+    haversineDistanceMeters(
       previousSample.lat,
       previousSample.lng,
       currentSample.lat,
       currentSample.lng
-    );
-    speedCandidates.push(distanceMeters / elapsedSeconds);
-  }
+    ) / elapsedSeconds;
 
-  if (speedCandidates.length === 0) {
-    return true;
-  }
-
-  return Math.max(...speedCandidates) >= config.minCrossingSpeedMps;
+  return chordSpeedMps >= config.minCrossingSpeedMps;
 }
 
 function isDebounced(

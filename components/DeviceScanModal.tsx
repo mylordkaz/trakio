@@ -1,10 +1,15 @@
 import { useEffect } from 'react';
-import { Modal, Pressable, View, Text, ActivityIndicator, FlatList } from 'react-native';
+import { Modal, Pressable, View, Text, ActivityIndicator, FlatList, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import i18n from '@/i18n';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useExternalGps } from '@/contexts/ExternalGpsContext';
-import type { DiscoveredDevice } from '@/telemetry/sources/types';
+import type { DeviceClassification, DiscoveredDevice } from '@/telemetry/sources/types';
+
+const PROTOCOL_LABELS: Record<DeviceClassification['protocol'], string> = {
+  'racebox-binary': 'RaceBox',
+  'qstarz-ble': 'Qstarz',
+};
 
 type DeviceScanModalProps = {
   visible: boolean;
@@ -26,7 +31,8 @@ function getRssiColor(rssi: number): string {
 export default function DeviceScanModal({ visible, onClose }: DeviceScanModalProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const { scanResults, isScanning, startScan, stopScan, selectDevice } = useExternalGps();
+  const { scanResults, isScanning, scanBlockedReason, startScan, stopScan, selectDevice } =
+    useExternalGps();
 
   useEffect(() => {
     if (visible) {
@@ -61,7 +67,7 @@ export default function DeviceScanModal({ visible, onClose }: DeviceScanModalPro
             {item.name}
           </Text>
           <Text className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-            {item.classification.sourceType === 'racebox' ? 'RaceBox' : item.classification.protocol}
+            {PROTOCOL_LABELS[item.classification.protocol]}
           </Text>
         </View>
         <Text style={{ color: getRssiColor(item.rssi), fontSize: 14, letterSpacing: 2 }}>
@@ -110,9 +116,23 @@ export default function DeviceScanModal({ visible, onClose }: DeviceScanModalPro
           {!isScanning && scanResults.length === 0 && (
             <View className="items-center py-8">
               <Ionicons name="bluetooth-outline" size={32} color={isDark ? '#52525b' : '#a1a1aa'} />
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-3">
-                {i18n.t('menu.noDevicesFound')}
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-3 text-center px-4">
+                {scanBlockedReason === 'permission_denied'
+                  ? i18n.t('menu.bluetoothPermissionDenied')
+                  : scanBlockedReason === 'powered_off'
+                    ? i18n.t('menu.bluetoothOff')
+                    : i18n.t('menu.noDevicesFound')}
               </Text>
+              {scanBlockedReason === 'permission_denied' && (
+                <Pressable
+                  onPress={() => void Linking.openSettings()}
+                  className="mt-4 rounded-xl bg-emerald-500/10 px-4 py-2"
+                >
+                  <Text className="text-sm font-semibold text-emerald-500">
+                    {i18n.t('menu.openSettings')}
+                  </Text>
+                </Pressable>
+              )}
             </View>
           )}
 
