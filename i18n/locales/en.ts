@@ -337,6 +337,17 @@ export default {
     sendFeedback: 'Send Feedback',
     termsOfUse: 'Terms of Use',
     privacyPolicy: 'Privacy Policy',
+    dataLicences: 'Data Licences',
+  },
+  dataLicences: {
+    title: 'Data Licences',
+    subtitle: 'Sources and licences for data included in Trakio.',
+    circuitGeometry: 'Circuit geometry',
+    circuitGeometryBody:
+      'Circuit centerline geometry is derived from OpenStreetMap data.',
+    attribution: '© OpenStreetMap contributors',
+    licence: 'Open Database License (ODbL) 1.0',
+    viewDetails: 'View copyright and licence information',
   },
   pro: {
     title: 'Trakio Pro',

@@ -337,6 +337,17 @@ export default {
     sendFeedback: 'フィードバックを送信',
     termsOfUse: '利用規約',
     privacyPolicy: 'プライバシーポリシー',
+    dataLicences: 'データライセンス',
+  },
+  dataLicences: {
+    title: 'データライセンス',
+    subtitle: 'Trakio に含まれるデータの出典とライセンスです。',
+    circuitGeometry: 'サーキット形状データ',
+    circuitGeometryBody:
+      'サーキットの中心線データは OpenStreetMap のデータを基に作成されています。',
+    attribution: '© OpenStreetMap contributors',
+    licence: 'Open Database License (ODbL) 1.0',
+    viewDetails: '著作権とライセンス情報を見る',
   },
   pro: {
     title: 'Trakio Pro',
