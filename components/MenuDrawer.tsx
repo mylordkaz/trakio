@@ -17,7 +17,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import i18n from "@/i18n";
 import { useColorScheme } from "@/hooks/useColorScheme";
@@ -441,10 +441,28 @@ export default function MenuDrawer() {
                 closeMenu();
                 router.push("/privacy");
               }}
-              className="flex-row items-center justify-between px-4 py-3.5"
+              className="flex-row items-center justify-between px-4 py-3.5 border-b border-zinc-100 dark:border-white/5"
             >
               <Text className="text-[15px] font-medium text-zinc-900 dark:text-white">
                 {t("menu.privacyPolicy")}
+              </Text>
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={isDark ? "#52525b" : "#a1a1aa"}
+              />
+            </Pressable>
+
+            {/* Data Licences */}
+            <Pressable
+              onPress={() => {
+                closeMenu();
+                router.push("/data-licenses" as Href);
+              }}
+              className="flex-row items-center justify-between px-4 py-3.5"
+            >
+              <Text className="text-[15px] font-medium text-zinc-900 dark:text-white">
+                {t("menu.dataLicences")}
               </Text>
               <Ionicons
                 name="chevron-forward"

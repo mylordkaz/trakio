@@ -704,6 +704,22 @@ async function ensureLeaderboardShareColumns(db: SQLiteDatabase) {
   }
 }
 
+// Track outline as a JSON [[lat, lng], ...] ring, closed (last point repeats
+// the first), plus the surface width it is drawn at: narrow circuits cannot
+// carry the default width through their tightest corners without the band
+// pinching. Seed-owned: syncTrackSeeds rewrites both on launch, and tracks
+// without an outline stay NULL. Must run before syncTrackSeeds, which writes
+// these columns.
+async function ensureTrackPathColumns(db: SQLiteDatabase) {
+  const cols = await getColumnNames(db, 'tracks');
+  if (!cols.includes('path')) {
+    await db.execAsync('ALTER TABLE tracks ADD COLUMN path TEXT;');
+  }
+  if (!cols.includes('path_width_m')) {
+    await db.execAsync('ALTER TABLE tracks ADD COLUMN path_width_m REAL;');
+  }
+}
+
 export const DATABASE_NAME = 'trakio.db';
 export const LATEST_DATABASE_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0;
 
@@ -726,6 +742,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   }
 
   await ensureLeaderboardShareColumns(db);
+  await ensureTrackPathColumns(db);
   await recoverStaleRecordingSessions(db);
   await syncTrackSeeds(db);
   await syncSessionTestSeeds(db);

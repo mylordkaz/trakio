@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { SESSION_TEST_SEEDS } from '@/db/test-seeds';
+import { parseTrackPath } from '@/db/tracks';
 import type {
   GpsPointRow,
   ISODateString,
@@ -57,6 +58,8 @@ type DbSessionDetailRow = DbSessionListRow & {
   track_direction: TrackDirection | null;
   track_center_lat: number | null;
   track_center_lng: number | null;
+  track_path: string | null;
+  track_path_width_m: number | null;
 };
 
 type DbTimingLineRow = {
@@ -215,6 +218,8 @@ function mapTrackRow(row: DbSessionDetailRow): TrackRow {
     direction: row.track_direction,
     centerLatitude: row.track_center_lat,
     centerLongitude: row.track_center_lng,
+    path: parseTrackPath(row.track_path),
+    pathWidthMeters: row.track_path_width_m,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -802,7 +807,9 @@ export async function getSessionById(
       t.corners AS track_corners,
       t.direction AS track_direction,
       t.center_lat AS track_center_lat,
-      t.center_lng AS track_center_lng
+      t.center_lng AS track_center_lng,
+      t.path AS track_path,
+      t.path_width_m AS track_path_width_m
     FROM sessions s
     INNER JOIN tracks t
       ON t.id = s.track_id
