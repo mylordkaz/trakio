@@ -690,31 +690,6 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
-  {
-    // Track outline as a JSON [[lat, lng], ...] ring, closed (last point
-    // repeats the first). Seed-owned: syncTrackSeeds rewrites it on launch,
-    // and tracks without an outline stay NULL.
-    version: 18,
-    up: async (db) => {
-      const trackColumns = await getColumnNames(db, 'tracks');
-
-      if (!trackColumns.includes('path')) {
-        await db.execAsync('ALTER TABLE tracks ADD COLUMN path TEXT;');
-      }
-    },
-  },
-  {
-    // Surface width the outline is drawn at. Narrow circuits cannot carry the
-    // default width through their tightest corners without the band pinching.
-    version: 19,
-    up: async (db) => {
-      const trackColumns = await getColumnNames(db, 'tracks');
-
-      if (!trackColumns.includes('path_width_m')) {
-        await db.execAsync('ALTER TABLE tracks ADD COLUMN path_width_m REAL;');
-      }
-    },
-  },
 ];
 
 // Dev devices can carry a higher user_version from parallel feature branches,
@@ -726,6 +701,22 @@ async function ensureLeaderboardShareColumns(db: SQLiteDatabase) {
     await db.execAsync(
       'ALTER TABLE tracks ADD COLUMN leaderboard_offered_lap_time_ms INTEGER;'
     );
+  }
+}
+
+// Track outline as a JSON [[lat, lng], ...] ring, closed (last point repeats
+// the first), plus the surface width it is drawn at: narrow circuits cannot
+// carry the default width through their tightest corners without the band
+// pinching. Seed-owned: syncTrackSeeds rewrites both on launch, and tracks
+// without an outline stay NULL. Must run before syncTrackSeeds, which writes
+// these columns.
+async function ensureTrackPathColumns(db: SQLiteDatabase) {
+  const cols = await getColumnNames(db, 'tracks');
+  if (!cols.includes('path')) {
+    await db.execAsync('ALTER TABLE tracks ADD COLUMN path TEXT;');
+  }
+  if (!cols.includes('path_width_m')) {
+    await db.execAsync('ALTER TABLE tracks ADD COLUMN path_width_m REAL;');
   }
 }
 
@@ -751,6 +742,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   }
 
   await ensureLeaderboardShareColumns(db);
+  await ensureTrackPathColumns(db);
   await recoverStaleRecordingSessions(db);
   await syncTrackSeeds(db);
   await syncSessionTestSeeds(db);

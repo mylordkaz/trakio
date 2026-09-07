@@ -370,11 +370,16 @@ export default function CircuitDetailScreen() {
                       style={{ flex: 1 }}
                     >
                       {trackRibbon?.fill.map((band, index) => (
+                        // A zero stroke width is falsy to the iOS Google
+                        // provider, which then keeps its default 1pt black
+                        // outline; stroking in the fill colour is what keeps
+                        // the band cuts invisible.
                         <Polygon
                           key={`surface-${index}`}
                           coordinates={band}
                           fillColor="#d4d4d8"
-                          strokeWidth={0}
+                          strokeColor="#d4d4d8"
+                          strokeWidth={1}
                         />
                       ))}
                       {trackRibbon?.edges.map((edge, index) => (
@@ -392,9 +397,9 @@ export default function CircuitDetailScreen() {
                         <Polyline
                           key={sectorLine.id}
                           coordinates={[sectorLine.a, sectorLine.b]}
-                          strokeColor="#e5e7eb"
+                          strokeColor="#18181b"
                           strokeColors={
-                            Platform.OS === "ios" ? ["#e5e7eb"] : undefined
+                            Platform.OS === "ios" ? ["#18181b"] : undefined
                           }
                           strokeWidth={2}
                         />
@@ -435,7 +440,7 @@ export default function CircuitDetailScreen() {
                     </Text>
                   </View>
                   <View className="flex-row items-center gap-1.5">
-                    <View className="h-px w-3 rounded-full bg-zinc-200" />
+                    <View className="h-0.5 w-3 rounded-full bg-zinc-900 dark:bg-zinc-950 dark:border dark:border-white/30" />
                     <Text className="text-xs text-zinc-500 dark:text-zinc-400">
                       {i18n.t("circuits.sectors")}
                     </Text>
