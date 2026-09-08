@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, FlatList, TextInput, Pressable } from "react-native";
+import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  View,
+  Text,
+  FlatList,
+  ScrollView,
+  TextInput,
+  Pressable,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { FontAwesome6, Ionicons } from "@expo/vector-icons";
@@ -58,7 +65,8 @@ export default function CircuitsScreen() {
     longitude: number;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [circuitsError, setCircuitsError] = useState<string | null>(null);
+  const [recentError, setRecentError] = useState<string | null>(null);
   const [isRequestOpen, setIsRequestOpen] = useState(false);
   const [requestCircuitName, setRequestCircuitName] = useState("");
   const { colorScheme } = useColorScheme();
@@ -66,142 +74,140 @@ export default function CircuitsScreen() {
   const gradientColors = useHeaderGradient("sky");
   const { openMenu, locale } = useMenu();
 
-  useEffect(() => {
-    let isMounted = true;
+  // Every focus-effect run starts a new refresh generation; a completion from
+  // an older generation may not touch state, so a request left over from a
+  // previous mode cannot apply data or an error to the current one.
+  const refreshGenerationRef = useRef(0);
+  const hasLoadedOnceRef = useRef(false);
 
-    async function loadCircuits() {
+  // Each source owns its error slot, so concurrent refreshes cannot erase one
+  // another's failures. Success always clears the owner's slot, so a transient
+  // failure cannot outlive the retry that recovered from it; quiet refreshes
+  // leave an existing error in place rather than surfacing new ones over
+  // stale-but-usable data.
+  const refreshCircuits = useCallback(
+    async (generation: number, surfaceError: boolean) => {
       try {
-        setIsLoading(true);
-        const nextCircuits = await listTracks(db);
+        const tracks = await listTracks(db);
 
-        if (!isMounted) {
+        if (generation !== refreshGenerationRef.current) {
           return;
         }
 
-        setCircuits(nextCircuits);
-        setLoadError(null);
+        setCircuits(tracks);
+        setCircuitsError(null);
       } catch {
-        if (!isMounted) {
+        if (generation !== refreshGenerationRef.current) {
           return;
         }
 
-        setLoadError(i18n.t("circuits.loadError"));
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
+        if (surfaceError) {
+          setCircuitsError(i18n.t("circuits.loadError"));
         }
       }
-    }
-
-    void loadCircuits();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [db]);
-
-  // Favorites can change on the detail screen; refresh silently on focus so
-  // returning to the list reflects them without a loading state.
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-
-      void listTracks(db)
-        .then((tracks) => {
-          if (active) {
-            setCircuits(tracks);
-          }
-        })
-        .catch(() => undefined);
-
-      if (mode === "recent") {
-        void listRecentTracks(db)
-          .then((tracks) => {
-            if (active) {
-              setRecentCircuits(tracks);
-            }
-          })
-          .catch(() => undefined);
-      }
-
-      return () => {
-        active = false;
-      };
-    }, [db, mode]),
+    },
+    [db],
   );
 
-  useEffect(() => {
-    if (mode !== "recent") {
-      return;
-    }
+  const refreshRecentCircuits = useCallback(
+    async (generation: number, surfaceError: boolean) => {
+      try {
+        const tracks = await listRecentTracks(db);
 
-    let isMounted = true;
-
-    listRecentTracks(db)
-      .then((tracks) => {
-        if (isMounted) {
-          setRecentCircuits(tracks);
+        if (generation !== refreshGenerationRef.current) {
+          return;
         }
-      })
-      .catch(() => {
-        if (isMounted) {
-          setLoadError(i18n.t("circuits.loadError"));
+
+        setRecentCircuits(tracks);
+        setRecentError(null);
+      } catch {
+        if (generation !== refreshGenerationRef.current) {
+          return;
+        }
+
+        if (surfaceError) {
+          setRecentError(i18n.t("circuits.loadError"));
+        }
+      }
+    },
+    [db],
+  );
+
+  // Each request bumps the generation and only the newest may write state, so
+  // a re-render cannot cancel its own request the way an effect cleanup would,
+  // and every switch to Nearby refreshes the fix instead of trusting an old one.
+  const locationGenerationRef = useRef(0);
+
+  const requestLocation = useCallback(async () => {
+    const generation = ++locationGenerationRef.current;
+
+    setLocationStatus("loading");
+    setPosition(null);
+
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+
+      if (generation !== locationGenerationRef.current) {
+        return;
+      }
+
+      if (!permission.granted) {
+        setLocationStatus("denied");
+        return;
+      }
+
+      const fix =
+        (await Location.getLastKnownPositionAsync({ maxAge: 60_000 })) ??
+        (await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        }));
+
+      if (generation !== locationGenerationRef.current) {
+        return;
+      }
+
+      setPosition({
+        latitude: fix.coords.latitude,
+        longitude: fix.coords.longitude,
+      });
+      setLocationStatus("ready");
+    } catch {
+      if (generation === locationGenerationRef.current) {
+        setLocationStatus("denied");
+      }
+    }
+  }, []);
+
+  // The single owner of the refresh lifecycle: it runs on first mount, on
+  // every mode change while focused, and whenever the screen regains focus
+  // (favorites can change on the detail screen). One owner means no duplicate
+  // requests to race each other; the generation stamps out the stragglers.
+  useFocusEffect(
+    useCallback(() => {
+      const generation = ++refreshGenerationRef.current;
+      const isFirstLoad = !hasLoadedOnceRef.current;
+
+      hasLoadedOnceRef.current = true;
+
+      if (isFirstLoad) {
+        setIsLoading(true);
+      }
+
+      void refreshCircuits(generation, isFirstLoad).finally(() => {
+        if (isFirstLoad) {
+          setIsLoading(false);
         }
       });
 
-    return () => {
-      isMounted = false;
-    };
-  }, [db, mode]);
-
-  useEffect(() => {
-    if (mode !== "nearby" || locationStatus !== "idle") {
-      return;
-    }
-
-    let isMounted = true;
-
-    async function locate() {
-      setLocationStatus("loading");
-
-      try {
-        const permission = await Location.requestForegroundPermissionsAsync();
-
-        if (!permission.granted) {
-          if (isMounted) {
-            setLocationStatus("denied");
-          }
-          return;
-        }
-
-        const fix =
-          (await Location.getLastKnownPositionAsync()) ??
-          (await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          }));
-
-        if (!isMounted) {
-          return;
-        }
-
-        setPosition({
-          latitude: fix.coords.latitude,
-          longitude: fix.coords.longitude,
-        });
-        setLocationStatus("ready");
-      } catch {
-        if (isMounted) {
-          setLocationStatus("denied");
-        }
+      if (mode === "recent") {
+        void refreshRecentCircuits(generation, true);
       }
-    }
 
-    void locate();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [mode, locationStatus]);
+      if (mode === "nearby") {
+        void requestLocation();
+      }
+    }, [mode, refreshCircuits, refreshRecentCircuits, requestLocation]),
+  );
 
   const countryOptions = useMemo(() => {
     const codes = new Set<string>();
@@ -247,35 +253,45 @@ export default function CircuitsScreen() {
       ? base.filter((circuit) => circuit.countryCode === countryCode)
       : base;
 
-    if (search.trim()) {
-      return filterAndRankTracks(scoped, search, locale);
-    }
-
-    if (mode === "nearby") {
-      return [...scoped].sort((a, b) => {
-        const distanceA = distances?.get(a.id) ?? Number.POSITIVE_INFINITY;
-        const distanceB = distances?.get(b.id) ?? Number.POSITIVE_INFINITY;
-
-        return distanceA - distanceB;
-      });
-    }
-
-    if (mode === "recent") {
-      return scoped;
-    }
-
     const listed =
       mode === "favorites"
         ? scoped.filter((circuit) => circuit.isFavorite)
         : scoped;
 
-    return [...listed].sort(
-      (a, b) =>
-        localizeTrack(a, locale).name.localeCompare(
-          localizeTrack(b, locale).name,
-          locale,
-        ) * (sortAscending ? 1 : -1),
-    );
+    let ordered: TrackListItem[];
+
+    if (mode === "nearby") {
+      // Without a usable position there are no distances; fall back to the
+      // promised name order instead of whatever order the base list carries.
+      ordered = distances
+        ? [...listed].sort((a, b) => {
+            const distanceA = distances.get(a.id) ?? Number.POSITIVE_INFINITY;
+            const distanceB = distances.get(b.id) ?? Number.POSITIVE_INFINITY;
+
+            return distanceA - distanceB;
+          })
+        : [...listed].sort((a, b) =>
+            localizeTrack(a, locale).name.localeCompare(
+              localizeTrack(b, locale).name,
+              locale,
+            ),
+          );
+    } else if (mode === "recent") {
+      ordered = listed;
+    } else {
+      ordered = [...listed].sort(
+        (a, b) =>
+          localizeTrack(a, locale).name.localeCompare(
+            localizeTrack(b, locale).name,
+            locale,
+          ) * (sortAscending ? 1 : -1),
+      );
+    }
+
+    // Ranking is stable, so within a rank the mode's own order survives.
+    return search.trim()
+      ? filterAndRankTracks(ordered, search, locale)
+      : ordered;
   }, [
     circuits,
     recentCircuits,
@@ -287,6 +303,7 @@ export default function CircuitsScreen() {
     sortAscending,
   ]);
 
+  const loadError = mode === "recent" ? recentError : circuitsError;
   const isEmpty = !isLoading && !loadError && visibleCircuits.length === 0;
 
   const handleToggleFavorite = useCallback(
@@ -408,11 +425,17 @@ export default function CircuitsScreen() {
           />
         </View>
 
-        <View className="flex-row gap-2 pt-3">
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 8, paddingTop: 12 }}
+        >
           {MODES.map(({ key, labelKey }) => (
             <Pressable
               key={key}
               onPress={() => setMode(key)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: mode === key }}
               className={pillClassName(mode === key)}
             >
               <Text className={pillTextClassName(mode === key)}>
@@ -420,7 +443,7 @@ export default function CircuitsScreen() {
               </Text>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
 
         {mode === "nearby" && locationStatus === "loading" ? (
           <Text className="pt-2 text-xs text-zinc-500 dark:text-zinc-400">
@@ -517,17 +540,22 @@ export default function CircuitsScreen() {
         ) : null}
       </View>
 
-      <Pressable
-        onPress={() => setSortAscending((ascending) => !ascending)}
-        hitSlop={4}
-        className="items-center justify-center rounded-2xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-3"
-      >
-        <FontAwesome6
-          name={sortAscending ? "arrow-down-a-z" : "arrow-up-a-z"}
-          size={15}
-          color={isDark ? "#e4e4e7" : "#18181b"}
-        />
-      </Pressable>
+      {mode === "all" || mode === "favorites" ? (
+        <Pressable
+          onPress={() => setSortAscending((ascending) => !ascending)}
+          hitSlop={4}
+          accessibilityRole="button"
+          accessibilityLabel={i18n.t("circuits.sortOrder")}
+          accessibilityValue={{ text: sortAscending ? "A → Z" : "Z → A" }}
+          className="items-center justify-center rounded-2xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-3"
+        >
+          <FontAwesome6
+            name={sortAscending ? "arrow-down-a-z" : "arrow-up-a-z"}
+            size={15}
+            color={isDark ? "#e4e4e7" : "#18181b"}
+          />
+        </Pressable>
+      ) : null}
       </View>
     </LinearGradient>
   );

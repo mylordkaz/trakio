@@ -130,6 +130,8 @@ export default {
     fullCourse: 'フルコース',
     searchPlaceholder: 'サーキット、国、レイアウトで検索',
     allCountries: 'すべての国',
+    sortOrder: '並び替え',
+    toggleFavorite: 'お気に入りを切り替え',
     locatingYou: '現在地を取得中…',
     locationUnavailable: '位置情報を利用できないため、名前順で表示しています',
     all: 'すべて',

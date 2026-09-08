@@ -360,7 +360,13 @@ export default function CircuitDetailScreen() {
                 </Text>
               </View>
               <View className="items-end gap-2">
-                <Pressable onPress={handleToggleFavorite} hitSlop={8}>
+                <Pressable
+                  onPress={handleToggleFavorite}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={i18n.t("circuits.toggleFavorite")}
+                  accessibilityState={{ selected: circuit?.isFavorite ?? false }}
+                >
                   <FontAwesome6
                     name="star"
                     solid={circuit?.isFavorite ?? false}

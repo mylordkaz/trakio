@@ -130,6 +130,8 @@ export default {
     fullCourse: 'Full Course',
     searchPlaceholder: 'Search circuits, country, or layout',
     allCountries: 'All countries',
+    sortOrder: 'Sort order',
+    toggleFavorite: 'Toggle favorite',
     locatingYou: 'Finding your location…',
     locationUnavailable: 'Location unavailable — sorted by name',
     all: 'All',
