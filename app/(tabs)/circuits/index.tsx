@@ -3,12 +3,12 @@ import { View, Text, FlatList, TextInput, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { FontAwesome6, Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import * as Location from "expo-location";
 import i18n from "@/i18n";
 import type { TrackListItem } from "@/db";
-import { listTracks, listRecentTracks } from "@/db";
+import { listTracks, listRecentTracks, setTrackFavorite } from "@/db";
 import { haversineDistanceMeters } from "@/utils/geo";
 import { filterAndRankTracks } from "@/utils/trackSearch";
 import { useColorScheme } from "@/hooks/useColorScheme";
@@ -18,10 +18,11 @@ import { localizeTrack } from "@/utils/track-localization";
 import CircuitCard from "@/components/circuits/CircuitCard";
 import CircuitRequestModal from "@/components/circuits/CircuitRequestModal";
 
-type ListMode = "all" | "recent" | "nearby";
+type ListMode = "all" | "favorites" | "recent" | "nearby";
 
 const MODES: { key: ListMode; labelKey: string }[] = [
   { key: "all", labelKey: "circuits.all" },
+  { key: "favorites", labelKey: "circuits.favorites" },
   { key: "recent", labelKey: "circuits.recent" },
   { key: "nearby", labelKey: "circuits.nearby" },
 ];
@@ -98,6 +99,36 @@ export default function CircuitsScreen() {
       isMounted = false;
     };
   }, [db]);
+
+  // Favorites can change on the detail screen; refresh silently on focus so
+  // returning to the list reflects them without a loading state.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      void listTracks(db)
+        .then((tracks) => {
+          if (active) {
+            setCircuits(tracks);
+          }
+        })
+        .catch(() => undefined);
+
+      if (mode === "recent") {
+        void listRecentTracks(db)
+          .then((tracks) => {
+            if (active) {
+              setRecentCircuits(tracks);
+            }
+          })
+          .catch(() => undefined);
+      }
+
+      return () => {
+        active = false;
+      };
+    }, [db, mode]),
+  );
 
   useEffect(() => {
     if (mode !== "recent") {
@@ -233,7 +264,12 @@ export default function CircuitsScreen() {
       return scoped;
     }
 
-    return [...scoped].sort(
+    const listed =
+      mode === "favorites"
+        ? scoped.filter((circuit) => circuit.isFavorite)
+        : scoped;
+
+    return [...listed].sort(
       (a, b) =>
         localizeTrack(a, locale).name.localeCompare(
           localizeTrack(b, locale).name,
@@ -252,6 +288,29 @@ export default function CircuitsScreen() {
   ]);
 
   const isEmpty = !isLoading && !loadError && visibleCircuits.length === 0;
+
+  const handleToggleFavorite = useCallback(
+    async (trackId: string) => {
+      const current =
+        circuits.find((circuit) => circuit.id === trackId)?.isFavorite ?? false;
+      const next = !current;
+
+      try {
+        await setTrackFavorite(db, trackId, next);
+      } catch {
+        return;
+      }
+
+      const apply = (list: TrackListItem[]) =>
+        list.map((circuit) =>
+          circuit.id === trackId ? { ...circuit, isFavorite: next } : circuit,
+        );
+
+      setCircuits(apply);
+      setRecentCircuits(apply);
+    },
+    [circuits, db],
+  );
 
   const handlePressTrack = useCallback(
     (trackId: string) => {
@@ -491,6 +550,7 @@ export default function CircuitsScreen() {
                 mode === "nearby" ? (distances?.get(item.id) ?? null) : null
               }
               onPress={handlePressTrack}
+              onToggleFavorite={handleToggleFavorite}
             />
           </View>
         )}

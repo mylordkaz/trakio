@@ -27,6 +27,7 @@ type DbTrackRow = {
   center_lng: number | null;
   path: string | null;
   path_width_m: number | null;
+  is_favorite: number;
   created_at: ISODateString;
   updated_at: ISODateString;
 };
@@ -126,6 +127,7 @@ function mapTrackRow(row: DbTrackRow): TrackRow {
     centerLongitude: row.center_lng,
     path: parseTrackPath(row.path),
     pathWidthMeters: row.path_width_m,
+    isFavorite: row.is_favorite === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -327,6 +329,20 @@ export async function listRecentTracks(db: SQLiteDatabase): Promise<TrackListIte
     ...mapTrackRow(row),
     sectorCount: getSectorCount(row.sector_line_count ?? 0, row.start_finish_count ?? 0),
   }));
+}
+
+export async function setTrackFavorite(
+  db: SQLiteDatabase,
+  trackId: string,
+  isFavorite: boolean
+): Promise<void> {
+  await db.runAsync(
+    `UPDATE tracks
+     SET is_favorite = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?;`,
+    isFavorite ? 1 : 0,
+    trackId
+  );
 }
 
 function generateId() {

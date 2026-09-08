@@ -36,6 +36,7 @@ export type TrackRow = {
   // Closed ring tracing the track centerline; null for tracks without one.
   path: Coordinate[] | null;
   pathWidthMeters: number | null;
+  isFavorite: boolean;
   createdAt: ISODateString;
   updatedAt: ISODateString;
 };

@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { View, Text, Pressable } from "react-native";
+import { FontAwesome6 } from "@expo/vector-icons";
 import i18n from "@/i18n";
 import TrackOutlineThumbnail from "@/components/circuits/TrackOutlineThumbnail";
 import type { TrackListItem } from "@/db";
@@ -15,6 +16,7 @@ type Props = {
   isDark: boolean;
   distanceMeters?: number | null;
   onPress: (trackId: string) => void;
+  onToggleFavorite: (trackId: string) => void;
 };
 
 function formatTrackLength(lengthMeters: number | null) {
@@ -25,7 +27,14 @@ function formatTrackLength(lengthMeters: number | null) {
   return `${(lengthMeters / 1000).toFixed(3)} km`;
 }
 
-function CircuitCard({ circuit, locale, isDark, distanceMeters, onPress }: Props) {
+function CircuitCard({
+  circuit,
+  locale,
+  isDark,
+  distanceMeters,
+  onPress,
+  onToggleFavorite,
+}: Props) {
   const localized = localizeTrack(circuit, locale);
 
   return (
@@ -52,15 +61,30 @@ function CircuitCard({ circuit, locale, isDark, distanceMeters, onPress }: Props
             </Text>
           ) : null}
         </View>
-        {circuit.path ? (
-          <View className="pr-2">
-            <TrackOutlineThumbnail
-              path={circuit.path}
-              size={72}
-              color={isDark ? "#d4d4d8" : "#52525b"}
+        <View className="items-end gap-1 pr-1">
+          <Pressable
+            onPress={() => onToggleFavorite(circuit.id)}
+            hitSlop={8}
+          >
+            <FontAwesome6
+              name="star"
+              solid={circuit.isFavorite}
+              size={18}
+              color={
+                circuit.isFavorite ? "#f59e0b" : isDark ? "#71717a" : "#a1a1aa"
+              }
             />
-          </View>
-        ) : null}
+          </Pressable>
+          {circuit.path ? (
+            <View className="pr-6">
+              <TrackOutlineThumbnail
+                path={circuit.path}
+                size={72}
+                color={isDark ? "#d4d4d8" : "#52525b"}
+              />
+            </View>
+          ) : null}
+        </View>
       </View>
       <View className="flex-row gap-3">
         <View className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 px-3 py-2.5">

@@ -61,6 +61,7 @@ type DbSessionDetailRow = DbSessionListRow & {
   track_center_lng: number | null;
   track_path: string | null;
   track_path_width_m: number | null;
+  track_is_favorite: number;
 };
 
 type DbTimingLineRow = {
@@ -222,6 +223,7 @@ function mapTrackRow(row: DbSessionDetailRow): TrackRow {
     centerLongitude: row.track_center_lng,
     path: parseTrackPath(row.track_path),
     pathWidthMeters: row.track_path_width_m,
+    isFavorite: row.track_is_favorite === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -812,7 +814,8 @@ export async function getSessionById(
       t.center_lat AS track_center_lat,
       t.center_lng AS track_center_lng,
       t.path AS track_path,
-      t.path_width_m AS track_path_width_m
+      t.path_width_m AS track_path_width_m,
+      t.is_favorite AS track_is_favorite
     FROM sessions s
     INNER JOIN tracks t
       ON t.id = s.track_id

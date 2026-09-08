@@ -133,6 +133,7 @@ export default {
     locatingYou: '現在地を取得中…',
     locationUnavailable: '位置情報を利用できないため、名前順で表示しています',
     all: 'すべて',
+    favorites: 'お気に入り',
     recent: '最近',
     popular: '人気',
     saved: '保存済み',

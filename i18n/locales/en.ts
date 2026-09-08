@@ -133,6 +133,7 @@ export default {
     locatingYou: 'Finding your location…',
     locationUnavailable: 'Location unavailable — sorted by name',
     all: 'All',
+    favorites: 'Favorites',
     recent: 'Recent',
     popular: 'Popular',
     saved: 'Saved',
