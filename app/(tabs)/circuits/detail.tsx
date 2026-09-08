@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
-import { Ionicons } from "@expo/vector-icons";
+import { FontAwesome6, Ionicons } from "@expo/vector-icons";
 import MapView, {
   Polygon,
   Polyline,
@@ -27,6 +27,7 @@ import Card from "@/components/Card";
 import type { Coordinate, TrackDetail, TrackNoteRow } from "@/db";
 import {
   getTrackById,
+  setTrackFavorite,
   getTrackLeaderboardShareState,
   setSharedLeaderboardTime,
   addTrackNote,
@@ -235,6 +236,20 @@ export default function CircuitDetailScreen() {
     setEditingNoteText("");
   }
 
+  async function handleToggleFavorite() {
+    if (!circuit) return;
+
+    const next = !circuit.isFavorite;
+
+    try {
+      await setTrackFavorite(db, circuit.id, next);
+    } catch {
+      return;
+    }
+
+    setCircuit({ ...circuit, isFavorite: next });
+  }
+
   async function handleDeleteNote(noteId: string) {
     if (!circuit) return;
 
@@ -344,10 +359,32 @@ export default function CircuitDetailScreen() {
                       : i18n.t("common.track")}
                 </Text>
               </View>
-              <StatusPill
-                text={displayCircuit?.layoutName ?? i18n.t("common.track")}
-                color="sky"
-              />
+              <View className="items-end gap-2">
+                <Pressable
+                  onPress={handleToggleFavorite}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={i18n.t("circuits.toggleFavorite")}
+                  accessibilityState={{ selected: circuit?.isFavorite ?? false }}
+                >
+                  <FontAwesome6
+                    name="star"
+                    solid={circuit?.isFavorite ?? false}
+                    size={20}
+                    color={
+                      circuit?.isFavorite
+                        ? "#f59e0b"
+                        : isDark
+                          ? "#71717a"
+                          : "#a1a1aa"
+                    }
+                  />
+                </Pressable>
+                <StatusPill
+                  text={displayCircuit?.layoutName ?? i18n.t("common.track")}
+                  color="sky"
+                />
+              </View>
             </View>
 
             {/* Track layout card */}

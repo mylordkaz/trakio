@@ -14,7 +14,7 @@
       "buildNumber": "62",
       "supportsTablet": false,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Trakio uses your location to record lap times and GPS traces on track.",
+        "NSLocationWhenInUseUsageDescription": "Trakio uses your location to record lap times and GPS traces on track, and to show circuits near you.",
         "NSBluetoothAlwaysUsageDescription": "Trakio connects to external GPS devices for high-precision lap timing.",
         "ITSAppUsesNonExemptEncryption": false,
         "LSApplicationQueriesSchemes": ["instagram", "instagram-stories"],

@@ -17,6 +17,7 @@ type DbTrackRow = {
   slug: string;
   name: string;
   country: string | null;
+  country_code: string | null;
   location: string | null;
   layout_name: string | null;
   length_m: number | null;
@@ -26,6 +27,7 @@ type DbTrackRow = {
   center_lng: number | null;
   path: string | null;
   path_width_m: number | null;
+  is_favorite: number;
   created_at: ISODateString;
   updated_at: ISODateString;
 };
@@ -115,6 +117,7 @@ function mapTrackRow(row: DbTrackRow): TrackRow {
     slug: row.slug,
     name: row.name,
     country: row.country,
+    countryCode: row.country_code,
     location: row.location,
     layoutName: row.layout_name,
     lengthMeters: row.length_m,
@@ -124,6 +127,7 @@ function mapTrackRow(row: DbTrackRow): TrackRow {
     centerLongitude: row.center_lng,
     path: parseTrackPath(row.path),
     pathWidthMeters: row.path_width_m,
+    isFavorite: row.is_favorite === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -185,6 +189,7 @@ export async function syncTrackSeeds(db: SQLiteDatabase) {
           slug,
           name,
           country,
+          country_code,
           location,
           layout_name,
           length_m,
@@ -194,11 +199,12 @@ export async function syncTrackSeeds(db: SQLiteDatabase) {
           center_lng,
           path,
           path_width_m
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           slug = excluded.slug,
           name = excluded.name,
           country = excluded.country,
+          country_code = excluded.country_code,
           location = excluded.location,
           layout_name = excluded.layout_name,
           length_m = excluded.length_m,
@@ -213,6 +219,7 @@ export async function syncTrackSeeds(db: SQLiteDatabase) {
         track.slug,
         track.name,
         track.country,
+        track.countryCode,
         track.location,
         track.layoutName,
         track.lengthMeters,
@@ -322,6 +329,20 @@ export async function listRecentTracks(db: SQLiteDatabase): Promise<TrackListIte
     ...mapTrackRow(row),
     sectorCount: getSectorCount(row.sector_line_count ?? 0, row.start_finish_count ?? 0),
   }));
+}
+
+export async function setTrackFavorite(
+  db: SQLiteDatabase,
+  trackId: string,
+  isFavorite: boolean
+): Promise<void> {
+  await db.runAsync(
+    `UPDATE tracks
+     SET is_favorite = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?;`,
+    isFavorite ? 1 : 0,
+    trackId
+  );
 }
 
 function generateId() {
