@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, FlatList, TextInput, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import { FontAwesome6, Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import * as Location from "expo-location";
@@ -14,6 +14,7 @@ import { filterAndRankTracks } from "@/utils/trackSearch";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useHeaderGradient } from "@/hooks/useHeaderGradient";
 import { useMenu } from "@/contexts/MenuContext";
+import { localizeTrack } from "@/utils/track-localization";
 import CircuitCard from "@/components/circuits/CircuitCard";
 import CircuitRequestModal from "@/components/circuits/CircuitRequestModal";
 
@@ -46,6 +47,7 @@ export default function CircuitsScreen() {
   const [mode, setMode] = useState<ListMode>("all");
   const [countryCode, setCountryCode] = useState<string | null>(null);
   const [isCountryOpen, setIsCountryOpen] = useState(false);
+  const [sortAscending, setSortAscending] = useState(true);
   const [search, setSearch] = useState("");
   const [circuits, setCircuits] = useState<TrackListItem[]>([]);
   const [recentCircuits, setRecentCircuits] = useState<TrackListItem[]>([]);
@@ -227,8 +229,27 @@ export default function CircuitsScreen() {
       });
     }
 
-    return scoped;
-  }, [circuits, recentCircuits, mode, countryCode, search, locale, distances]);
+    if (mode === "recent") {
+      return scoped;
+    }
+
+    return [...scoped].sort(
+      (a, b) =>
+        localizeTrack(a, locale).name.localeCompare(
+          localizeTrack(b, locale).name,
+          locale,
+        ) * (sortAscending ? 1 : -1),
+    );
+  }, [
+    circuits,
+    recentCircuits,
+    mode,
+    countryCode,
+    search,
+    locale,
+    distances,
+    sortAscending,
+  ]);
 
   const isEmpty = !isLoading && !loadError && visibleCircuits.length === 0;
 
@@ -354,7 +375,8 @@ export default function CircuitsScreen() {
         ) : null}
       </View>
 
-      <View className="mt-3 self-start rounded-2xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 overflow-hidden">
+      <View className="mt-3 flex-row items-start gap-2">
+      <View className="self-start rounded-2xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 overflow-hidden">
         <Pressable
           onPress={() => setIsCountryOpen((open) => !open)}
           className="flex-row items-center gap-2 px-4 py-3"
@@ -434,6 +456,19 @@ export default function CircuitsScreen() {
             })}
           </View>
         ) : null}
+      </View>
+
+      <Pressable
+        onPress={() => setSortAscending((ascending) => !ascending)}
+        hitSlop={4}
+        className="items-center justify-center rounded-2xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-3"
+      >
+        <FontAwesome6
+          name={sortAscending ? "arrow-down-a-z" : "arrow-up-a-z"}
+          size={15}
+          color={isDark ? "#e4e4e7" : "#18181b"}
+        />
+      </Pressable>
       </View>
     </LinearGradient>
   );
