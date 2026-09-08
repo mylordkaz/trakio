@@ -80,6 +80,12 @@ export function formatDurationMs(elapsedMs: number | null) {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+export function formatDistanceKm(meters: number) {
+  const km = meters / 1000;
+
+  return km >= 100 ? `${Math.round(km)} km` : `${km.toFixed(1)} km`;
+}
+
 export function formatSpeed(maxSpeedKph: number | null) {
   if (maxSpeedKph === null) {
     return i18n.t('common.tbd');

@@ -720,6 +720,15 @@ async function ensureTrackPathColumns(db: SQLiteDatabase) {
   }
 }
 
+// ISO 3166-1 alpha-2 code driving country filtering and localized country
+// names on the circuit list. Seed-owned, like the outline columns.
+async function ensureTrackCountryCodeColumn(db: SQLiteDatabase) {
+  const cols = await getColumnNames(db, 'tracks');
+  if (!cols.includes('country_code')) {
+    await db.execAsync('ALTER TABLE tracks ADD COLUMN country_code TEXT;');
+  }
+}
+
 export const DATABASE_NAME = 'trakio.db';
 export const LATEST_DATABASE_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0;
 
@@ -743,6 +752,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
 
   await ensureLeaderboardShareColumns(db);
   await ensureTrackPathColumns(db);
+  await ensureTrackCountryCodeColumn(db);
   await recoverStaleRecordingSessions(db);
   await syncTrackSeeds(db);
   await syncSessionTestSeeds(db);

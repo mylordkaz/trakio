@@ -25,6 +25,7 @@ export type TrackRow = {
   slug: string;
   name: string;
   country: string | null;
+  countryCode: string | null;
   location: string | null;
   layoutName: string | null;
   lengthMeters: number | null;

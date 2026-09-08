@@ -17,6 +17,7 @@ type DbTrackRow = {
   slug: string;
   name: string;
   country: string | null;
+  country_code: string | null;
   location: string | null;
   layout_name: string | null;
   length_m: number | null;
@@ -115,6 +116,7 @@ function mapTrackRow(row: DbTrackRow): TrackRow {
     slug: row.slug,
     name: row.name,
     country: row.country,
+    countryCode: row.country_code,
     location: row.location,
     layoutName: row.layout_name,
     lengthMeters: row.length_m,
@@ -185,6 +187,7 @@ export async function syncTrackSeeds(db: SQLiteDatabase) {
           slug,
           name,
           country,
+          country_code,
           location,
           layout_name,
           length_m,
@@ -194,11 +197,12 @@ export async function syncTrackSeeds(db: SQLiteDatabase) {
           center_lng,
           path,
           path_width_m
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           slug = excluded.slug,
           name = excluded.name,
           country = excluded.country,
+          country_code = excluded.country_code,
           location = excluded.location,
           layout_name = excluded.layout_name,
           length_m = excluded.length_m,
@@ -213,6 +217,7 @@ export async function syncTrackSeeds(db: SQLiteDatabase) {
         track.slug,
         track.name,
         track.country,
+        track.countryCode,
         track.location,
         track.layoutName,
         track.lengthMeters,

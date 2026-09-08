@@ -52,6 +52,7 @@ type DbSessionDetailRow = DbSessionListRow & {
   notes: string | null;
   track_slug: string;
   track_country: string | null;
+  track_country_code: string | null;
   track_location: string | null;
   track_length_m: number | null;
   track_corners: number | null;
@@ -211,6 +212,7 @@ function mapTrackRow(row: DbSessionDetailRow): TrackRow {
     slug: row.track_slug,
     name: row.track_name,
     country: row.track_country,
+    countryCode: row.track_country_code,
     location: row.track_location,
     layoutName: row.track_layout_name,
     lengthMeters: row.track_length_m,
@@ -801,6 +803,7 @@ export async function getSessionById(
       t.slug AS track_slug,
       t.name AS track_name,
       t.country AS track_country,
+      t.country_code AS track_country_code,
       t.location AS track_location,
       t.layout_name AS track_layout_name,
       t.length_m AS track_length_m,
