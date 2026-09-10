@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Modal, Pressable, View, Text, ActivityIndicator, FlatList, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import i18n from '@/i18n';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useExternalGps } from '@/contexts/ExternalGpsContext';
+import { useMenu } from '@/contexts/MenuContext';
 import type { DeviceClassification, DiscoveredDevice } from '@/telemetry/sources/types';
 
 const PROTOCOL_LABELS: Record<DeviceClassification['protocol'], string> = {
@@ -29,6 +30,17 @@ function getRssiColor(rssi: number): string {
 }
 
 export default function DeviceScanModal({ visible, onClose }: DeviceScanModalProps) {
+  const { locale } = useMenu();
+
+  // Wrap i18n.t so the React compiler treats translations as dependent on
+  // locale; a raw i18n.t call reads as a constant and is memoized across
+  // language changes.
+  const t = useCallback(
+    (key: string, opts?: Record<string, unknown>) => i18n.t(key, opts),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [locale],
+  );
+
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { scanResults, isScanning, scanBlockedReason, startScan, stopScan, selectDevice } =
@@ -99,7 +111,7 @@ export default function DeviceScanModal({ visible, onClose }: DeviceScanModalPro
 
           <View className="flex-row items-center justify-between mb-4">
             <Text className="text-base font-semibold text-zinc-900 dark:text-white">
-              {i18n.t('menu.scanForDevices')}
+              {t('menu.scanForDevices')}
             </Text>
             {isScanning && <ActivityIndicator size="small" color="#34d399" />}
           </View>
@@ -108,7 +120,7 @@ export default function DeviceScanModal({ visible, onClose }: DeviceScanModalPro
             <View className="items-center py-8">
               <ActivityIndicator size="large" color="#34d399" />
               <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-3">
-                {i18n.t('menu.scanning')}
+                {t('menu.scanning')}
               </Text>
             </View>
           )}
@@ -118,10 +130,10 @@ export default function DeviceScanModal({ visible, onClose }: DeviceScanModalPro
               <Ionicons name="bluetooth-outline" size={32} color={isDark ? '#52525b' : '#a1a1aa'} />
               <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-3 text-center px-4">
                 {scanBlockedReason === 'permission_denied'
-                  ? i18n.t('menu.bluetoothPermissionDenied')
+                  ? t('menu.bluetoothPermissionDenied')
                   : scanBlockedReason === 'powered_off'
-                    ? i18n.t('menu.bluetoothOff')
-                    : i18n.t('menu.noDevicesFound')}
+                    ? t('menu.bluetoothOff')
+                    : t('menu.noDevicesFound')}
               </Text>
               {scanBlockedReason === 'permission_denied' && (
                 <Pressable
@@ -129,7 +141,7 @@ export default function DeviceScanModal({ visible, onClose }: DeviceScanModalPro
                   className="mt-4 rounded-xl bg-emerald-500/10 px-4 py-2"
                 >
                   <Text className="text-sm font-semibold text-emerald-500">
-                    {i18n.t('menu.openSettings')}
+                    {t('menu.openSettings')}
                   </Text>
                 </Pressable>
               )}
@@ -139,7 +151,7 @@ export default function DeviceScanModal({ visible, onClose }: DeviceScanModalPro
           {scanResults.length > 0 && (
             <>
               <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
-                {i18n.t('menu.tapToSelect')}
+                {t('menu.tapToSelect')}
               </Text>
               <FlatList
                 data={scanResults}

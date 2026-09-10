@@ -135,9 +135,9 @@ export default function MenuDrawer() {
   const currentAppearance = appearanceMode;
 
   // Wrap i18n.t so React compiler treats translations as dependent on locale
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const t = useCallback(
     (key: string, opts?: Record<string, unknown>) => i18n.t(key, opts),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [locale],
   );
 
