@@ -115,6 +115,29 @@ export default {
     offerNewBestMessage: 'New best! Share %{time} to the %{track} leaderboard?',
     offerBestMessage: 'Share your best %{time} to the %{track} leaderboard?',
     offerBeFirstMessage: 'No times on the %{track} leaderboard yet — share %{time} and be the first!',
+    consentTitle: 'Share this time publicly?',
+    consentMessage:
+      'Your username, country, car, and lap time will be visible to other users. By choosing Agree & Share, you accept the Terms of Use and confirm that your profile content is truthful and not abusive, offensive, misleading, or impersonating someone else.',
+    reviewTerms: 'Review Terms',
+    agreeAndShare: 'Agree & Share',
+    entryActions: 'Leaderboard entry actions',
+    entryActionsTitle: '%{name}',
+    entryActionsMessage: 'Report inappropriate profile content or hide this driver from your leaderboards.',
+    reportEntry: 'Report',
+    blockDriver: 'Block',
+    blockDriverTitle: 'Block this driver?',
+    blockDriverMessage: '%{name} will be hidden from leaderboards on this device.',
+    blockedTitle: 'Driver blocked',
+    blockedMessage: 'This driver is now hidden on this device.',
+    reportSubmittedTitle: 'Report submitted',
+    reportSubmittedMessage: 'Thank you. Trakio will review this leaderboard entry.',
+    removeMyEntryTitle: 'Remove your shared time?',
+    removeMyEntryMessage: 'Send Trakio a request to remove this entry from the hosted leaderboard.',
+    requestRemoval: 'Request Removal',
+    removalRequestedTitle: 'Removal requested',
+    removalRequestedMessage: 'Trakio will review and process your leaderboard removal request.',
+    moderationFailedTitle: 'Request failed',
+    moderationFailedMessage: 'Unable to send the request. Check your connection and try again.',
   },
   circuits: {
     title: 'Track Database',
@@ -377,7 +400,7 @@ export default {
     continue: 'Continue',
     offeringsUnavailable: 'Plans are temporarily unavailable. Check your connection and try again.',
     renewalDisclosure:
-      'The yearly plan renews automatically each year unless canceled at least 24 hours before renewal. Payment is charged to your Apple Account.',
+      'The yearly plan renews automatically each year unless canceled at least 24 hours before renewal. Payment is charged through your App Store or Google Play account.',
     restore: 'Restore Purchases',
     benefits: {
       unlimitedSessions: 'Unlimited saved sessions',
@@ -398,7 +421,7 @@ export default {
     restoreSuccessTitle: 'Purchases restored',
     restoreSuccessMessage: 'Your Pro access is active on this device.',
     restoreEmptyTitle: 'Nothing to restore',
-    restoreEmptyMessage: 'No active Trakio Pro purchase was found for this Apple Account.',
+    restoreEmptyMessage: 'No active Trakio Pro purchase was found for this store account.',
     restoreFailedTitle: 'Restore unavailable',
     restoreFailedMessage: 'Purchases could not be checked. Check your connection and try again.',
   },
@@ -407,7 +430,7 @@ export default {
     terms: {
       title: 'Terms of Use',
       subtitle: 'Plain-language rules for using Trakio safely and responsibly.',
-      updatedAt: 'July 21, 2026',
+      updatedAt: 'September 11, 2026',
       sections: {
         overview: {
           title: 'Using Trakio',
@@ -427,7 +450,7 @@ export default {
         content: {
           title: 'Your content and shared times',
           body:
-            'If you choose to add profile details, notes, photos, or share a leaderboard time, you are responsible for that content. Do not submit false, abusive, offensive, misleading, or impersonating information. Public leaderboard submissions may be shown to other users.',
+            'If you add profile details, notes, photos, or share a leaderboard time, you are responsible for that content. Do not submit false, abusive, offensive, misleading, unlawful, or impersonating information. Before each public leaderboard upload, you must accept these rules. Users can report entries and block drivers in the full leaderboard, and Trakio may review, restrict, or remove reported content.',
         },
         hostedServices: {
           title: 'Hosted and third-party services',
@@ -437,7 +460,7 @@ export default {
         paidPlans: {
           title: 'Pro purchases',
           body:
-            'Trakio Pro is offered as a yearly auto-renewing subscription and a one-time lifetime purchase. The price shown in the app applies at checkout. Payment is charged to your Apple Account. The yearly plan renews unless canceled at least 24 hours before the end of the current period and can be managed in your App Store account. Apple handles billing, cancellations, and refunds subject to its rules and applicable law. Lifetime access covers Trakio Pro; separately sold products may not be included. Eligible early users may receive permanent Pro access based on Apple\'s original app transaction record.',
+            'Trakio Pro is offered as a yearly auto-renewing subscription and a one-time lifetime purchase. The price shown in the app applies at checkout, and payment is charged through the App Store or Google Play account used for purchase. The yearly plan renews unless canceled at least 24 hours before the end of the current period and can be managed in that store account. Apple or Google handles billing, cancellations, and refunds under its rules and applicable law. Lifetime access covers Trakio Pro; separately sold products may not be included. On supported Apple installations, eligible early users may receive permanent Pro access based on Apple\'s original app transaction record.',
         },
         liability: {
           title: 'No warranties; limited liability',
@@ -459,7 +482,7 @@ export default {
     privacy: {
       title: 'Privacy Policy',
       subtitle: 'What Trakio stores, what it sends, and what stays on your device.',
-      updatedAt: 'July 21, 2026',
+      updatedAt: 'September 11, 2026',
       sections: {
         overview: {
           title: 'Overview',
@@ -474,7 +497,7 @@ export default {
         permissions: {
           title: 'Permissions we use',
           body:
-            'Location permission is used to record GPS telemetry and detect lap and sector crossings. Photo library access is used only if you choose an avatar image, choose a photo for story sharing, or save a generated image to your library. If you deny these permissions, the related features will not work.',
+            'Location permission is used to record GPS telemetry and detect lap and sector crossings. The system photo picker is used when you choose an avatar or story photo, without requesting broad access to your library. Trakio requests add-only or write access when you explicitly save a generated image. If you deny a required permission, the related feature will not work.',
         },
         networkServices: {
           title: 'Services contacted over the network',
@@ -484,7 +507,7 @@ export default {
         purchaseData: {
           title: 'Purchases and entitlement data',
           body:
-            'Trakio uses Apple\'s in-app purchase system to process purchases and determine Pro access from StoreKit-verified transactions. Apple processes payment details; Trakio does not receive your full card or bank information. The app stores product, subscription expiration, and eligible early-user access results on your device so access can continue offline. Trakio does not send purchase data to a separate third-party purchase service.',
+            'Trakio uses the platform purchase system—Apple StoreKit or Google Play Billing—to process purchases and determine Pro access from store purchase records. Apple or Google processes payment details; Trakio does not receive your full card or bank information. The app stores product, subscription expiration, and eligible early-user access results on your device so access can continue offline. Trakio does not send purchase data to a separate third-party purchase service.',
         },
         sharing: {
           title: 'Public leaderboard sharing',
@@ -494,7 +517,7 @@ export default {
         retention: {
           title: 'Retention and deletion',
           body:
-            'Local sessions, notes, profile data, and cached app data remain on your device until you edit or delete them, or remove the app. Shared leaderboard entries may remain on the hosted leaderboard even if you later delete the related local session. Trakio does not currently provide an in-app self-service removal tool for hosted leaderboard entries.',
+            'Local sessions, notes, profile data, and cached app data remain on your device until you edit or delete them, or remove the app. Android system backup is disabled for Trakio. Shared leaderboard entries may remain on the hosted leaderboard after you delete the related local session. From the full leaderboard, you can request removal of your own entry, report another entry, or block a driver locally. Removal and report requests are reviewed by Trakio.',
         },
         contact: {
           title: 'Contact',

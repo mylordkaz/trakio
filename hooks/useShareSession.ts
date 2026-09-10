@@ -164,7 +164,7 @@ export function useShareSession(sessionDetail: SessionDetail | null) {
 
     try {
       setIsSharing(true);
-      const { status } = await MediaLibrary.requestPermissionsAsync();
+      const { status } = await MediaLibrary.requestPermissionsAsync(true);
       if (status !== 'granted') {
         Alert.alert(i18n.t('sessions.share'), i18n.t('sessions.galleryPermissionDenied'));
         return;
@@ -198,7 +198,7 @@ export function useShareSession(sessionDetail: SessionDetail | null) {
 
     try {
       setIsSharing(true);
-      const { status } = await MediaLibrary.requestPermissionsAsync();
+      const { status } = await MediaLibrary.requestPermissionsAsync(true);
       if (status !== 'granted') {
         Alert.alert(i18n.t('sessions.share'), i18n.t('sessions.galleryPermissionDenied'));
         return;

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import { Alert, View, Text, ScrollView, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import i18n from '@/i18n';
@@ -9,6 +10,13 @@ import { getTrackById, setSharedLeaderboardTime } from '@/db';
 import type { TrackDetail } from '@/db';
 import { getOrCreatePublisherId } from '@/services/publisher-id';
 import { listLeaderboardEntries, flagEmoji, type LeaderboardEntry } from '@/services/leaderboard';
+import {
+  blockLeaderboardPublisher,
+  filterBlockedLeaderboardEntries,
+  getBlockedLeaderboardPublisherIds,
+  submitLeaderboardModerationRequest,
+  type LeaderboardModerationAction,
+} from '@/services/leaderboard-moderation';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { formatLapTime, formatDeltaMs } from '@/utils/format';
 import { useMenu } from '@/contexts/MenuContext';
@@ -70,9 +78,11 @@ function PodiumCard({
 function FullLeaderboardRow({
   entry,
   p1Ms,
+  onOpenActions,
 }: {
   entry: LeaderboardEntry;
   p1Ms: number;
+  onOpenActions: () => void;
 }) {
   const gap = entry.lapTimeMs - p1Ms;
   const gapStr = gap === 0 ? '—' : (formatDeltaMs(gap) ?? '—');
@@ -166,6 +176,16 @@ function FullLeaderboardRow({
           {gapStr}
         </Text>
       </View>
+
+      <Pressable
+        onPress={onOpenActions}
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel={i18n.t('leaderboard.entryActions')}
+        style={{ marginLeft: 12, padding: 2 }}
+      >
+        <Ionicons name="ellipsis-horizontal" size={20} color="rgba(255,255,255,0.55)" />
+      </Pressable>
     </View>
   );
 }
@@ -185,6 +205,7 @@ export default function LeaderboardScreen() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [moderatingPublisherId, setModeratingPublisherId] = useState<string | null>(null);
   const { locale } = useMenu();
 
   useEffect(() => {
@@ -209,8 +230,14 @@ export default function LeaderboardScreen() {
       try {
         setIsLoading(true);
         setLoadError(null);
-        const publisherId = await getOrCreatePublisherId();
-        const nextEntries = await listLeaderboardEntries(id, publisherId);
+        const [publisherId, blockedPublisherIds] = await Promise.all([
+          getOrCreatePublisherId(),
+          getBlockedLeaderboardPublisherIds(db),
+        ]);
+        const nextEntries = filterBlockedLeaderboardEntries(
+          await listLeaderboardEntries(id, publisherId),
+          blockedPublisherIds,
+        );
         if (!isMounted) return;
         setEntries(nextEntries);
         const ownEntry = nextEntries.find((entry) => entry.isCurrentUser);
@@ -244,6 +271,116 @@ export default function LeaderboardScreen() {
   const p1 = entries[0];
   const p2 = entries[1];
   const p3 = entries[2];
+
+  async function sendModerationRequest(
+    entry: LeaderboardEntry,
+    action: LeaderboardModerationAction,
+  ) {
+    if (!id || moderatingPublisherId) return;
+
+    try {
+      setModeratingPublisherId(entry.publisherId);
+      await submitLeaderboardModerationRequest({
+        action,
+        entry,
+        trackId: id,
+        reporterPublisherId: await getOrCreatePublisherId(),
+        locale,
+      });
+      Alert.alert(
+        i18n.t(
+          action === 'removal'
+            ? 'leaderboard.removalRequestedTitle'
+            : 'leaderboard.reportSubmittedTitle',
+        ),
+        i18n.t(
+          action === 'removal'
+            ? 'leaderboard.removalRequestedMessage'
+            : 'leaderboard.reportSubmittedMessage',
+        ),
+      );
+    } catch {
+      Alert.alert(
+        i18n.t('leaderboard.moderationFailedTitle'),
+        i18n.t('leaderboard.moderationFailedMessage'),
+      );
+    } finally {
+      setModeratingPublisherId(null);
+    }
+  }
+
+  async function blockEntry(entry: LeaderboardEntry) {
+    if (moderatingPublisherId) return;
+
+    try {
+      setModeratingPublisherId(entry.publisherId);
+      await blockLeaderboardPublisher(db, entry.publisherId);
+      setEntries((currentEntries) =>
+        currentEntries.filter((candidate) => candidate.publisherId !== entry.publisherId),
+      );
+      Alert.alert(
+        i18n.t('leaderboard.blockedTitle'),
+        i18n.t('leaderboard.blockedMessage'),
+      );
+    } catch {
+      Alert.alert(
+        i18n.t('leaderboard.moderationFailedTitle'),
+        i18n.t('leaderboard.moderationFailedMessage'),
+      );
+    } finally {
+      setModeratingPublisherId(null);
+    }
+  }
+
+  function openEntryActions(entry: LeaderboardEntry) {
+    if (moderatingPublisherId) return;
+
+    if (entry.isCurrentUser) {
+      Alert.alert(
+        i18n.t('leaderboard.removeMyEntryTitle'),
+        i18n.t('leaderboard.removeMyEntryMessage'),
+        [
+          { text: i18n.t('common.cancel'), style: 'cancel' },
+          {
+            text: i18n.t('leaderboard.requestRemoval'),
+            style: 'destructive',
+            onPress: () => void sendModerationRequest(entry, 'removal'),
+          },
+        ],
+      );
+      return;
+    }
+
+    Alert.alert(
+      i18n.t('leaderboard.entryActionsTitle', { name: entry.name }),
+      i18n.t('leaderboard.entryActionsMessage'),
+      [
+        { text: i18n.t('common.cancel'), style: 'cancel' },
+        {
+          text: i18n.t('leaderboard.reportEntry'),
+          onPress: () => void sendModerationRequest(entry, 'report'),
+        },
+        {
+          text: i18n.t('leaderboard.blockDriver'),
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              i18n.t('leaderboard.blockDriverTitle'),
+              i18n.t('leaderboard.blockDriverMessage', { name: entry.name }),
+              [
+                { text: i18n.t('common.cancel'), style: 'cancel' },
+                {
+                  text: i18n.t('leaderboard.blockDriver'),
+                  style: 'destructive',
+                  onPress: () => void blockEntry(entry),
+                },
+              ],
+            );
+          },
+        },
+      ],
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: '#18181b' }}>
@@ -337,7 +474,11 @@ export default function LeaderboardScreen() {
                     · · ·
                   </Text>
                 ) : null}
-                <FullLeaderboardRow entry={entry} p1Ms={p1Ms} />
+                <FullLeaderboardRow
+                  entry={entry}
+                  p1Ms={p1Ms}
+                  onOpenActions={() => openEntryActions(entry)}
+                />
               </View>
             ))
           )}

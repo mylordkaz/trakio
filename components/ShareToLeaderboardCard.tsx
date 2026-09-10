@@ -7,6 +7,10 @@ import { formatLapTime } from '@/utils/format';
 import { recordLeaderboardOffer, setSharedLeaderboardTime } from '@/db';
 import { getOrCreatePublisherId } from '@/services/publisher-id';
 import { listLeaderboardEntries } from '@/services/leaderboard';
+import {
+  filterBlockedLeaderboardEntries,
+  getBlockedLeaderboardPublisherIds,
+} from '@/services/leaderboard-moderation';
 import { useLeaderboardShare } from '@/hooks/useLeaderboardShare';
 
 type ShareToLeaderboardCardProps = {
@@ -42,8 +46,14 @@ export default function ShareToLeaderboardCard({
 
     async function checkBoard() {
       try {
-        const publisherId = await getOrCreatePublisherId();
-        const entries = await listLeaderboardEntries(trackId, publisherId);
+        const [publisherId, blockedPublisherIds] = await Promise.all([
+          getOrCreatePublisherId(),
+          getBlockedLeaderboardPublisherIds(db),
+        ]);
+        const entries = filterBlockedLeaderboardEntries(
+          await listLeaderboardEntries(trackId, publisherId),
+          blockedPublisherIds,
+        );
         if (!isMounted) return;
         setBoardIsEmpty(entries.length === 0);
 

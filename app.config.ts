@@ -36,7 +36,8 @@ loadEnvFile(".env.local");
 loadEnvFile(".env");
 
 export default (): ExpoConfig => {
-  const googleMapsApiKey = process.env.GOOGLE_MAPS_IOS_API_KEY;
+  const googleMapsIosApiKey = process.env.GOOGLE_MAPS_IOS_API_KEY;
+  const googleMapsAndroidApiKey = process.env.GOOGLE_MAPS_ANDROID_API_KEY;
   const grandfatheredIosBuilds = (
     process.env.EXPO_PUBLIC_GRANDFATHERED_IOS_BUILDS ?? ''
   )
@@ -51,6 +52,7 @@ export default (): ExpoConfig => {
     process.env.NODE_ENV === 'production' ||
     buildConfiguration === 'release';
   const isIosBuild = process.env.EAS_BUILD_PLATFORM !== 'android';
+  const isAndroidBuild = process.env.EAS_BUILD_PLATFORM === 'android';
   const expectedIosBuildNumber = staticConfig.ios?.buildNumber?.trim() ?? '';
   const requestedForceGrandfathered = process.env.TRAKIO_FORCE_GRANDFATHERED === 'true';
   const requestedForceFree = process.env.TRAKIO_FORCE_FREE === 'true';
@@ -79,18 +81,34 @@ export default (): ExpoConfig => {
     if (requestedForceGrandfathered || requestedForceFree) {
       throw new Error('Monetization test overrides must not be enabled in production.');
     }
+
+    if (isAndroidBuild && !googleMapsAndroidApiKey) {
+      throw new Error('GOOGLE_MAPS_ANDROID_API_KEY is required for production Android builds.');
+    }
   }
 
   return {
     ...staticConfig,
     ios: {
       ...staticConfig.ios,
-      config: googleMapsApiKey
+      config: googleMapsIosApiKey
         ? {
             ...staticConfig.ios?.config,
-            googleMapsApiKey,
+            googleMapsApiKey: googleMapsIosApiKey,
           }
         : staticConfig.ios?.config,
+    },
+    android: {
+      ...staticConfig.android,
+      config: googleMapsAndroidApiKey
+        ? {
+            ...staticConfig.android?.config,
+            googleMaps: {
+              ...staticConfig.android?.config?.googleMaps,
+              apiKey: googleMapsAndroidApiKey,
+            },
+          }
+        : staticConfig.android?.config,
     },
     extra: {
       ...staticConfig.extra,

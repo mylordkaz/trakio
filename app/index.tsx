@@ -34,7 +34,7 @@ export default function LandingScreen() {
     }, LANDING_DURATION_MS);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [contentScale, logoOpacity, router, textOpacity]);
 
   const containerStyle = useAnimatedStyle(() => ({
     transform: [{ scale: contentScale.value }],

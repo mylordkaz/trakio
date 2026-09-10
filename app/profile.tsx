@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActionSheetIOS,
   Alert,
   Image,
   Keyboard,
@@ -145,16 +144,18 @@ export default function ProfileScreen() {
       pickImage();
       return;
     }
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        options: [i18n.t('common.cancel'), i18n.t('profile.changeAvatar'), i18n.t('profile.removeAvatar')],
-        destructiveButtonIndex: 2,
-        cancelButtonIndex: 0,
-      },
-      (index) => {
-        if (index === 1) pickImage();
-        if (index === 2) setAvatarUri(null);
-      },
+    Alert.alert(
+      i18n.t('profile.changeAvatar'),
+      undefined,
+      [
+        { text: i18n.t('common.cancel'), style: 'cancel' },
+        { text: i18n.t('profile.changeAvatar'), onPress: () => void pickImage() },
+        {
+          text: i18n.t('profile.removeAvatar'),
+          style: 'destructive',
+          onPress: () => setAvatarUri(null),
+        },
+      ],
     );
   }, [avatarUri, pickImage]);
 

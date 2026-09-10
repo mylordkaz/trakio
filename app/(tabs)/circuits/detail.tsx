@@ -40,6 +40,10 @@ import {
   type LeaderboardEntry,
 } from '@/services/leaderboard';
 import { getOrCreatePublisherId } from '@/services/publisher-id';
+import {
+  filterBlockedLeaderboardEntries,
+  getBlockedLeaderboardPublisherIds,
+} from '@/services/leaderboard-moderation';
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useHeaderGradient } from "@/hooks/useHeaderGradient";
 import { formatLapTime, formatSectorTime } from "@/utils/format";
@@ -184,8 +188,14 @@ export default function CircuitDetailScreen() {
         } catch {
           // Share state is local-only; the board still renders without it.
         }
-        const publisherId = await getOrCreatePublisherId();
-        const entries = await listLeaderboardEntries(id, publisherId);
+        const [publisherId, blockedPublisherIds] = await Promise.all([
+          getOrCreatePublisherId(),
+          getBlockedLeaderboardPublisherIds(db),
+        ]);
+        const entries = filterBlockedLeaderboardEntries(
+          await listLeaderboardEntries(id, publisherId),
+          blockedPublisherIds,
+        );
         if (!isMounted) return;
         setLeaderboardEntries(entries);
         const ownEntry = entries.find((entry) => entry.isCurrentUser);
@@ -661,8 +671,14 @@ export default function CircuitDetailScreen() {
                   try {
                     const shareState = await getTrackLeaderboardShareState(db, circuit.id);
                     setUserBestLapMs(shareState.userBestLapMs);
-                    const publisherId = await getOrCreatePublisherId();
-                    const entries = await listLeaderboardEntries(circuit.id, publisherId);
+                    const [publisherId, blockedPublisherIds] = await Promise.all([
+                      getOrCreatePublisherId(),
+                      getBlockedLeaderboardPublisherIds(db),
+                    ]);
+                    const entries = filterBlockedLeaderboardEntries(
+                      await listLeaderboardEntries(circuit.id, publisherId),
+                      blockedPublisherIds,
+                    );
                     setLeaderboardEntries(entries);
                     setLeaderboardError(null);
                   } catch {

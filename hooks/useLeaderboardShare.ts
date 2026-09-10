@@ -7,6 +7,37 @@ import { getOrCreateDefaultUserProfile, recordLeaderboardShare } from '@/db';
 import { getOrCreatePublisherId } from '@/services/publisher-id';
 import { shareLeaderboardTime } from '@/services/leaderboard';
 
+function confirmLeaderboardTerms(onReviewTerms: () => void): Promise<boolean> {
+  return new Promise((resolve) => {
+    Alert.alert(
+      i18n.t('leaderboard.consentTitle'),
+      i18n.t('leaderboard.consentMessage'),
+      [
+        {
+          text: i18n.t('common.cancel'),
+          style: 'cancel',
+          onPress: () => resolve(false),
+        },
+        {
+          text: i18n.t('leaderboard.reviewTerms'),
+          onPress: () => {
+            resolve(false);
+            onReviewTerms();
+          },
+        },
+        {
+          text: i18n.t('leaderboard.agreeAndShare'),
+          onPress: () => resolve(true),
+        },
+      ],
+      {
+        cancelable: true,
+        onDismiss: () => resolve(false),
+      },
+    );
+  });
+}
+
 export function useLeaderboardShare(trackId: string | undefined) {
   const db = useSQLiteContext();
   const router = useRouter();
@@ -37,6 +68,11 @@ export function useLeaderboardShare(trackId: string | undefined) {
               },
             ],
           );
+          return false;
+        }
+
+        const acceptedTerms = await confirmLeaderboardTerms(() => router.push('/terms'));
+        if (!acceptedTerms) {
           return false;
         }
 
