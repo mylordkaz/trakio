@@ -10,7 +10,7 @@ import type {
   TelemetrySampleRejectionReason,
 } from '@/telemetry/types';
 import { CROSSING_RECOVERY_ENABLED, JUMP_REANCHOR_ENABLED } from '@/constants/featureFlags';
-import { getSectorCount, getSectorLineCount } from '@/utils/timing';
+import { getSectorCount, getSectorLineCount, isRunTimingType } from '@/utils/timing';
 
 type SessionRecorder = ReturnType<typeof createSessionRecorder>;
 
@@ -90,7 +90,7 @@ function generateId() {
 
 function getRelevantTimingLines(timingLines: TimingLineRow[]) {
   return timingLines
-    .filter((timingLine) => timingLine.type === 'start_finish' || timingLine.type === 'sector')
+    .filter((timingLine) => isRunTimingType(timingLine.type))
     .sort((a, b) => a.seq - b.seq);
 }
 
@@ -376,6 +376,162 @@ export function createSessionRuntime(args: {
     };
   }
 
+  // Point-to-point handlers are deliberately separate from the start/finish
+  // path above: a closed circuit's behaviour must not shift to accommodate a
+  // layout that opens and closes on different lines.
+
+  function openRun(event: TelemetryDetectionEvent, lapNumber: number, lapId: string) {
+    const crossedAtWallClockMs = Date.now();
+
+    currentLapIsOutLap = pendingOutLap;
+    currentLapIsInLap = false;
+    pendingOutLap = false;
+    currentLapStartIsEstimated = event.quality === 'degraded';
+
+    snapshot = {
+      ...snapshot,
+      status: 'lap_in_progress',
+      currentLapId: lapId,
+      currentLapNumber: lapNumber,
+      currentLapStartedElapsedMs: event.sampleElapsedMs,
+      currentSectorStartedElapsedMs: event.sampleElapsedMs,
+      currentLapStartedWallClockMs: crossedAtWallClockMs,
+      currentSectorStartedWallClockMs: crossedAtWallClockMs,
+      lastCrossedSectorSeq: null,
+      lastCrossedTimingLineId: event.timingLineId,
+      lastCrossingElapsedMs: event.sampleElapsedMs,
+      currentLapMaxSpeedKph: null,
+      pitInMarked: false,
+      latestEvent: event,
+      currentLapSectorSplitsMs: {},
+    };
+  }
+
+  async function handleRunStartCrossing(event: TelemetryDetectionEvent) {
+    if (!snapshot.sessionId) {
+      return;
+    }
+
+    // A second start without an intervening finish means the previous attempt
+    // was abandoned — most often because its finish crossing was missed. The
+    // lap is closed with no time and marked invalid so its telemetry survives
+    // without reaching personal bests or the leaderboard, and it is not
+    // counted or added to completedLaps.
+    if (snapshot.status === 'lap_in_progress' && snapshot.currentLapId) {
+      await recorder.finishLap({
+        lapId: snapshot.currentLapId,
+        endedAt: new Date(event.sampleRecordedAt).toISOString(),
+        endedLatitude: event.sampleLat,
+        endedLongitude: event.sampleLng,
+        lapTimeMs: null,
+        isInvalid: 1,
+        maxSpeedKph: snapshot.currentLapMaxSpeedKph,
+        isTimingEstimated: currentLapStartIsEstimated ? 1 : 0,
+      });
+    }
+
+    openRun(event, snapshot.currentLapNumber + 1, generateId());
+
+    await recorder.startLap({
+      id: snapshot.currentLapId!,
+      sessionId: snapshot.sessionId,
+      lapNumber: snapshot.currentLapNumber,
+      startedAt: new Date(event.sampleRecordedAt).toISOString(),
+      startedLatitude: event.sampleLat,
+      startedLongitude: event.sampleLng,
+      isOutLap: currentLapIsOutLap ? 1 : 0,
+    });
+  }
+
+  async function handleRunFinishCrossing(event: TelemetryDetectionEvent) {
+    if (
+      !snapshot.sessionId ||
+      snapshot.status !== 'lap_in_progress' ||
+      !snapshot.currentLapId ||
+      snapshot.currentLapStartedElapsedMs === null
+    ) {
+      return;
+    }
+
+    if (
+      sectorCount > 0 &&
+      snapshot.currentSectorStartedElapsedMs !== null &&
+      snapshot.lastCrossedSectorSeq === sectorLineCount
+    ) {
+      await recorder.insertLapSector({
+        id: generateId(),
+        lapId: snapshot.currentLapId,
+        sectorIndex: sectorCount - 1,
+        splitTimeMs: Math.max(
+          0,
+          Math.round(event.sampleElapsedMs - snapshot.currentSectorStartedElapsedMs)
+        ),
+      });
+    }
+
+    const lapTimeMs = Math.max(
+      0,
+      Math.round(event.sampleElapsedMs - snapshot.currentLapStartedElapsedMs)
+    );
+    const isExcludedLap = currentLapIsInLap || currentLapIsOutLap;
+    const isEstimatedLap = currentLapStartIsEstimated || event.quality === 'degraded';
+    const updatedBestLapMs = isExcludedLap
+      ? snapshot.bestLapMs
+      : snapshot.bestLapMs === null
+        ? lapTimeMs
+        : Math.min(snapshot.bestLapMs, lapTimeMs);
+    const completedLaps = [
+      ...snapshot.completedLaps,
+      {
+        lapNumber: snapshot.currentLapNumber,
+        lapTimeMs,
+        deltaToBestMs: null as number | null,
+        isBest: false,
+        isExcluded: isExcludedLap,
+        isEstimated: isEstimatedLap,
+      },
+    ].map((lap) => ({
+      ...lap,
+      deltaToBestMs:
+        lap.isExcluded || updatedBestLapMs === null || lap.lapTimeMs === updatedBestLapMs
+          ? null
+          : lap.lapTimeMs - updatedBestLapMs,
+      isBest: !lap.isExcluded && lap.lapTimeMs === updatedBestLapMs,
+    }));
+
+    await recorder.finishLap({
+      lapId: snapshot.currentLapId,
+      endedAt: new Date(event.sampleRecordedAt).toISOString(),
+      endedLatitude: event.sampleLat,
+      endedLongitude: event.sampleLng,
+      lapTimeMs,
+      maxSpeedKph: snapshot.currentLapMaxSpeedKph,
+      isTimingEstimated: isEstimatedLap ? 1 : 0,
+    });
+
+    // Back to armed: nothing is open until the start line is crossed again.
+    snapshot = {
+      ...snapshot,
+      status: 'armed',
+      currentLapId: null,
+      currentLapStartedElapsedMs: null,
+      currentSectorStartedElapsedMs: null,
+      currentLapStartedWallClockMs: null,
+      currentSectorStartedWallClockMs: null,
+      lastCrossedSectorSeq: null,
+      lastCrossedTimingLineId: event.timingLineId,
+      lastCrossingElapsedMs: event.sampleElapsedMs,
+      bestLapMs: updatedBestLapMs,
+      lastLapMs: lapTimeMs,
+      totalLaps: snapshot.totalLaps + 1,
+      currentLapMaxSpeedKph: null,
+      pitInMarked: false,
+      latestEvent: event,
+      currentLapSectorSplitsMs: {},
+      completedLaps,
+    };
+  }
+
   async function handleSectorCrossing(event: TelemetryDetectionEvent) {
     if (
       snapshot.status !== 'lap_in_progress' ||
@@ -460,10 +616,25 @@ export function createSessionRuntime(args: {
     );
 
     for (const event of events) {
-      if (event.type === 'start_finish_crossed') {
-        await handleStartFinishCrossing(event);
-      } else {
-        await handleSectorCrossing(event);
+      // Exhaustive on purpose: a new crossing type must not silently fall
+      // through to the sector handler.
+      switch (event.type) {
+        case 'start_finish_crossed':
+          await handleStartFinishCrossing(event);
+          break;
+        case 'start_crossed':
+          await handleRunStartCrossing(event);
+          break;
+        case 'finish_crossed':
+          await handleRunFinishCrossing(event);
+          break;
+        case 'sector_crossed':
+          await handleSectorCrossing(event);
+          break;
+        default: {
+          const unreachable: never = event.type;
+          throw new Error(`Unhandled detection event: ${String(unreachable)}`);
+        }
       }
     }
 

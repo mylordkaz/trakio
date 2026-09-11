@@ -124,6 +124,8 @@ type DbLapRow = {
   started_at: ISODateString;
   started_latitude: number | null;
   started_longitude: number | null;
+  ended_latitude: number | null;
+  ended_longitude: number | null;
   ended_at: ISODateString | null;
   lap_time_ms: number | null;
   is_out_lap: 0 | 1;
@@ -292,6 +294,8 @@ function mapLapRow(row: DbLapRow): LapRow {
     startedAt: row.started_at,
     startedLatitude: row.started_latitude ?? null,
     startedLongitude: row.started_longitude ?? null,
+    endedLatitude: row.ended_latitude ?? null,
+    endedLongitude: row.ended_longitude ?? null,
     endedAt: row.ended_at,
     lapTimeMs: row.lap_time_ms,
     isOutLap: row.is_out_lap,

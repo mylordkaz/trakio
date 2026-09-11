@@ -1,4 +1,5 @@
 import { useMemo, useCallback, useEffect, useRef, useState } from 'react';
+import { isTimingConfigured } from '@/utils/timing';
 import { View, Text, ScrollView, Pressable, TextInput } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, cancelAnimation } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -433,7 +434,7 @@ export default function PreSessionScreen() {
       if (selectedCircuit) {
         try {
           const trackDetail = await getTrackById(db, selectedCircuit.id);
-          const hasStartFinishLine = !!trackDetail?.timingLines.some((timingLine) => timingLine.type === 'start_finish');
+          const hasStartFinishLine = isTimingConfigured(trackDetail?.timingLines ?? []);
 
           startFinishItem = {
             key: 'startFinishLineSet',

@@ -61,7 +61,11 @@ export type TelemetrySampleValidationResult =
 
 export type TelemetryElapsedMsResolver = (recordedAt: number) => number;
 
-export type DetectionEventType = 'start_finish_crossed' | 'sector_crossed';
+export type DetectionEventType =
+  | 'start_finish_crossed'
+  | 'start_crossed'
+  | 'finish_crossed'
+  | 'sector_crossed';
 
 export type DetectionState = {
   lastTimingLineId: string | null;

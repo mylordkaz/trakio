@@ -4,6 +4,10 @@ export type TrackDirection = 'clockwise' | 'counterclockwise';
 export type SessionStatus = 'planned' | 'recording' | 'completed' | 'aborted';
 export type TimingLineType =
   | 'start_finish'
+  // A point-to-point run opens at 'start' and closes at 'finish'; a closed
+  // circuit uses 'start_finish' for both in one line.
+  | 'start'
+  | 'finish'
   | 'sector'
   | 'speedtrap'
   | 'split'
@@ -109,6 +113,8 @@ export type LapRow = {
   // before migration v16). Meaningful only as a pair.
   startedLatitude: number | null;
   startedLongitude: number | null;
+  endedLatitude: number | null;
+  endedLongitude: number | null;
   endedAt: ISODateString | null;
   lapTimeMs: number | null;
   isOutLap: 0 | 1;
