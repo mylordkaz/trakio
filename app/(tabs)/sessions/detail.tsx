@@ -361,8 +361,13 @@ export default function SessionDetailScreen() {
   const lapBreakdownItems = getLapBreakdownItems(sessionDetail);
   const trendBars = getTrendBars(sessionDetail);
   const mapRegion = getMapRegion(sessionDetail);
-  const startFinishLine =
-    sessionDetail?.timingLines.find((timingLine) => timingLine.type === 'start_finish') ?? null;
+  const runBoundaryLines =
+    sessionDetail?.timingLines.filter(
+      (timingLine) =>
+        timingLine.type === 'start_finish' ||
+        timingLine.type === 'start' ||
+        timingLine.type === 'finish'
+    ) ?? [];
   const sectorLines = sessionDetail?.timingLines.filter((timingLine) => timingLine.type === 'sector') ?? [];
   const bestLap = getBestLap(sessionDetail);
   const displayTrackTitle = sessionDetail
@@ -488,16 +493,17 @@ export default function SessionDetailScreen() {
                       />
                     ));
                   })}
-                  {startFinishLine ? (
+                  {runBoundaryLines.map((line) => (
                     <Polyline
-                      coordinates={[startFinishLine.a, startFinishLine.b]}
+                      key={line.id}
+                      coordinates={[line.a, line.b]}
                       strokeColor="#ef4444"
                       strokeColors={
                         Platform.OS === 'ios' ? ['#ef4444'] : undefined
                       }
                       strokeWidth={4}
                     />
-                  ) : null}
+                  ))}
                   {sectorLines.map((sectorLine) => (
                     <Polyline
                       key={sectorLine.id}

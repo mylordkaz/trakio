@@ -476,6 +476,9 @@ export function groupPointsIntoLapRuns(
     startedAt: string;
     startedLatitude?: number | null;
     startedLongitude?: number | null;
+    endedAt?: string | null;
+    endedLatitude?: number | null;
+    endedLongitude?: number | null;
   }[] = [],
   quarantined: QuarantinedDisplayPoint[] = []
 ): LapRun[] {
@@ -542,6 +545,32 @@ export function groupPointsIntoLapRuns(
     };
   });
 
+  // A point-to-point run ends on its own finish line, not at the next lap's
+  // start, because there is no next lap at that place. The stored pair is
+  // atomic: both halves must be finite. Laps recorded before these columns
+  // existed leave it null and keep the boundary behaviour below.
+  const finishClips = runs.map((run) => {
+    const lap = run.lapId ? lapStartById.get(run.lapId) : undefined;
+
+    if (
+      !lap ||
+      !Number.isFinite(lap.endedLatitude ?? NaN) ||
+      !Number.isFinite(lap.endedLongitude ?? NaN)
+    ) {
+      return null;
+    }
+
+    const endedAtMs = lap.endedAt ? Date.parse(lap.endedAt) : NaN;
+    const lastPointMs = Date.parse(run.points[run.points.length - 1].recordedAt);
+
+    return {
+      latitude: lap.endedLatitude!,
+      longitude: lap.endedLongitude!,
+      accuracyM: null,
+      recordedAt: new Date(Number.isFinite(endedAtMs) ? endedAtMs : lastPointMs).toISOString(),
+    };
+  });
+
   const bucketed: QuarantinedDisplayPoint[][] = runs.map(() => []);
   for (const q of quarantined) {
     const t = Date.parse(q.recordedAt);
@@ -554,7 +583,8 @@ export function groupPointsIntoLapRuns(
 
   return runs.map((run, index) => {
     const startClip = index > 0 ? boundaryClips[index - 1] : null;
-    const endClip = index < runs.length - 1 ? boundaryClips[index] : null;
+    const endClip =
+      finishClips[index] ?? (index < runs.length - 1 ? boundaryClips[index] : null);
 
     return {
       lapId: run.lapId,

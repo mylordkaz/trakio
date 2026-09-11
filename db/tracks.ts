@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { TRACK_SEED_DRAFTS } from '@/db/seeds';
+import { getSectorCount } from '@/utils/timing';
 import { SESSION_TEST_SEEDS } from '@/db/test-seeds';
 import type {
   Coordinate,
@@ -35,6 +36,8 @@ type DbTrackRow = {
 type DbTrackListRow = DbTrackRow & {
   sector_line_count: number;
   start_finish_count: number;
+  start_count: number;
+  finish_count: number;
 };
 
 type DbTimingLineRow = {
@@ -158,12 +161,21 @@ function mapTrackNoteRow(row: DbTrackNoteRow): TrackNoteRow {
   };
 }
 
-function getSectorCount(sectorLineCount: number, startFinishCount: number) {
+// Mirrors getSectorCount in utils/timing for rows counted in SQL: a final
+// sector exists when either timing configuration is complete.
+function getSectorCountFromCounts(
+  sectorLineCount: number,
+  startFinishCount: number,
+  startCount: number,
+  finishCount: number
+) {
   if (sectorLineCount === 0) {
     return 0;
   }
 
-  return sectorLineCount + (startFinishCount > 0 ? 1 : 0);
+  const isTimed = startFinishCount > 0 || (startCount > 0 && finishCount > 0);
+
+  return sectorLineCount + (isTimed ? 1 : 0);
 }
 
 function hasCompleteTrackSeed(trackId: string, slug: string, name: string) {
@@ -174,7 +186,30 @@ function hasCompleteCoordinatePair(point: { latitude: number | null; longitude: 
   return point.latitude !== null && point.longitude !== null;
 }
 
+// Tracks that were seeded once and have since been withdrawn. syncTrackSeeds
+// only inserts and updates, so without this they would linger forever on any
+// device that already received them. A track carrying sessions is left alone:
+// its lap data outranks tidying the list, and sessions.track_id is RESTRICT.
+const RETIRED_TRACK_IDS = ['bedford-autodrome-gt'];
+
+async function removeRetiredTracks(db: SQLiteDatabase) {
+  for (const trackId of RETIRED_TRACK_IDS) {
+    const inUse = await db.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) AS count FROM sessions WHERE track_id = ?;',
+      trackId
+    );
+
+    if ((inUse?.count ?? 0) > 0) {
+      continue;
+    }
+
+    await db.runAsync('DELETE FROM tracks WHERE id = ?;', trackId);
+  }
+}
+
 export async function syncTrackSeeds(db: SQLiteDatabase) {
+  await removeRetiredTracks(db);
+
   await db.withExclusiveTransactionAsync(async (txn) => {
     for (const seed of TRACK_SEED_DRAFTS) {
       const { track, timingLines } = seed;
@@ -296,7 +331,9 @@ export async function listTracks(db: SQLiteDatabase): Promise<TrackListItem[]> {
     `SELECT
       t.*,
       SUM(CASE WHEN tl.type = 'sector' THEN 1 ELSE 0 END) AS sector_line_count,
-      SUM(CASE WHEN tl.type = 'start_finish' THEN 1 ELSE 0 END) AS start_finish_count
+      SUM(CASE WHEN tl.type = 'start_finish' THEN 1 ELSE 0 END) AS start_finish_count,
+      SUM(CASE WHEN tl.type = 'start' THEN 1 ELSE 0 END) AS start_count,
+      SUM(CASE WHEN tl.type = 'finish' THEN 1 ELSE 0 END) AS finish_count
     FROM tracks t
     LEFT JOIN timing_lines tl
       ON tl.track_id = t.id
@@ -306,7 +343,12 @@ export async function listTracks(db: SQLiteDatabase): Promise<TrackListItem[]> {
 
   return rows.map((row) => ({
     ...mapTrackRow(row),
-    sectorCount: getSectorCount(row.sector_line_count ?? 0, row.start_finish_count ?? 0),
+    sectorCount: getSectorCountFromCounts(
+      row.sector_line_count ?? 0,
+      row.start_finish_count ?? 0,
+      row.start_count ?? 0,
+      row.finish_count ?? 0
+    ),
   }));
 }
 
@@ -315,7 +357,9 @@ export async function listRecentTracks(db: SQLiteDatabase): Promise<TrackListIte
     `SELECT
       t.*,
       SUM(CASE WHEN tl.type = 'sector' THEN 1 ELSE 0 END) AS sector_line_count,
-      SUM(CASE WHEN tl.type = 'start_finish' THEN 1 ELSE 0 END) AS start_finish_count
+      SUM(CASE WHEN tl.type = 'start_finish' THEN 1 ELSE 0 END) AS start_finish_count,
+      SUM(CASE WHEN tl.type = 'start' THEN 1 ELSE 0 END) AS start_count,
+      SUM(CASE WHEN tl.type = 'finish' THEN 1 ELSE 0 END) AS finish_count
     FROM tracks t
     INNER JOIN sessions s
       ON s.track_id = t.id
@@ -327,7 +371,12 @@ export async function listRecentTracks(db: SQLiteDatabase): Promise<TrackListIte
 
   return rows.map((row) => ({
     ...mapTrackRow(row),
-    sectorCount: getSectorCount(row.sector_line_count ?? 0, row.start_finish_count ?? 0),
+    sectorCount: getSectorCountFromCounts(
+      row.sector_line_count ?? 0,
+      row.start_finish_count ?? 0,
+      row.start_count ?? 0,
+      row.finish_count ?? 0
+    ),
   }));
 }
 
@@ -564,9 +613,7 @@ export async function getTrackById(db: SQLiteDatabase, trackId: string): Promise
 
   const timingLines = timingLineRows.map(mapTimingLineRow);
   const notes = noteRows.map(mapTrackNoteRow);
-  const sectorLineCount = timingLines.filter((timingLine) => timingLine.type === 'sector').length;
-  const startFinishCount = timingLines.some((timingLine) => timingLine.type === 'start_finish') ? 1 : 0;
-  const sectorCount = getSectorCount(sectorLineCount, startFinishCount);
+  const sectorCount = getSectorCount(timingLines);
   const personalBest = await getPersonalBest(db, trackId, sectorCount);
 
   return {

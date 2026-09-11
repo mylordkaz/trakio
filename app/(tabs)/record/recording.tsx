@@ -451,7 +451,9 @@ export default function RecordingScreen() {
     runtimeSnapshot?.status === 'lap_in_progress'
       ? runtimeSnapshot.currentLapNumber
       : runtimeSnapshot?.status === 'armed'
-        ? 1
+        // Armed means waiting for the next run to open, which is lap 1 at the
+        // start of a session and the following number after a finish.
+        ? runtimeSnapshot.currentLapNumber + 1
         : 0;
   const currentSectorElapsedMs =
     runtimeSnapshot?.status === 'lap_in_progress' &&

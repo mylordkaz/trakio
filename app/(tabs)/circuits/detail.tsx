@@ -273,10 +273,15 @@ export default function CircuitDetailScreen() {
   const displayCircuit = circuit ? localizeTrack(circuit, locale) : null;
   const personalBest = circuit?.personalBest ?? null;
   const sectorCount = circuit?.sectorCount ?? 0;
-  const startFinishLine =
-    circuit?.timingLines.find(
-      (timingLine) => timingLine.type === "start_finish",
-    ) ?? null;
+  // A point-to-point layout has two of these, so they are filtered rather
+  // than found: drawing only the first would hide the finish line.
+  const runBoundaryLines =
+    circuit?.timingLines.filter(
+      (timingLine) =>
+        timingLine.type === "start_finish" ||
+        timingLine.type === "start" ||
+        timingLine.type === "finish",
+    ) ?? [];
   const sectorLines =
     circuit?.timingLines.filter((timingLine) => timingLine.type === "sector") ??
     [];
@@ -441,16 +446,17 @@ export default function CircuitDetailScreen() {
                           strokeWidth={2}
                         />
                       ))}
-                      {startFinishLine ? (
+                      {runBoundaryLines.map((line) => (
                         <Polyline
-                          coordinates={[startFinishLine.a, startFinishLine.b]}
+                          key={line.id}
+                          coordinates={[line.a, line.b]}
                           strokeColor="#ef4444"
                           strokeColors={
                             Platform.OS === "ios" ? ["#ef4444"] : undefined
                           }
                           strokeWidth={3}
                         />
-                      ) : null}
+                      ))}
                     </MapView>
                     <Pressable
                       onPress={() => setIsSchematic((current) => !current)}

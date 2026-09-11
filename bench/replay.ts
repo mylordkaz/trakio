@@ -2,7 +2,9 @@ import * as fs from 'fs';
 import type { PositionEstimator } from '@/telemetry/kalman';
 import { filterTelemetrySample } from '@/telemetry/filters';
 import { createSessionRuntime } from '@/telemetry/session-runtime';
-import type { TelemetrySample } from '@/telemetry/types';
+import type { TelemetrySample,
+  DetectionEventType,
+} from '@/telemetry/types';
 
 // Replays an exported session through the PRODUCTION runtime with Phase 1's
 // exact topology: raw samples pass the production validation filter, accepted
@@ -89,7 +91,7 @@ export type ReplayedLap = {
 };
 
 export type ReplayedCrossing = {
-  type: 'start_finish_crossed' | 'sector_crossed';
+  type: DetectionEventType;
   elapsedMs: number;
   quality: 'good' | 'degraded';
 };

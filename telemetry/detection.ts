@@ -155,6 +155,13 @@ function isDebounced(
   return event.sampleElapsedMs - state.lastCrossingElapsedMs < config.debounceMs;
 }
 
+// A finish line only means anything while a run is open. Rejecting it here
+// rather than in the runtime keeps it from surfacing as a timing event or
+// marking the GPS sample as a crossing when nothing would be recorded.
+function isRunClosable(state: DetectionState, timingLine: TimingLineRow) {
+  return timingLine.type !== 'finish' || state.currentLapStartedElapsedMs !== null;
+}
+
 function isSectorOrderValid(state: DetectionState, timingLine: TimingLineRow) {
   if (timingLine.type !== 'sector') {
     return true;
@@ -173,7 +180,15 @@ function satisfiesMinLapTime(
   timingLine: TimingLineRow,
   config: TelemetryDetectionConfig
 ) {
-  if (timingLine.type !== 'start_finish' || state.currentLapStartedElapsedMs === null) {
+  // A start re-crossed while a run is open abandons and restarts it, so it is
+  // guarded like a close. The first start of a session has no open run and is
+  // always allowed through.
+  const endsOrRestartsRun =
+    timingLine.type === 'start_finish' ||
+    timingLine.type === 'finish' ||
+    timingLine.type === 'start';
+
+  if (!endsOrRestartsRun || state.currentLapStartedElapsedMs === null) {
     return true;
   }
 
@@ -230,6 +245,14 @@ function assessSegmentQuality(
   return 'good';
 }
 
+const DETECTION_EVENT_TYPE_BY_LINE: Partial<
+  Record<TimingLineRow['type'], TelemetryDetectionEvent['type']>
+> = {
+  start_finish: 'start_finish_crossed',
+  start: 'start_crossed',
+  finish: 'finish_crossed',
+};
+
 function toDetectionEvent(
   timingLine: TimingLineRow,
   previousSample: TelemetrySample,
@@ -245,7 +268,7 @@ function toDetectionEvent(
     (currentSample.elapsedMs - previousSample.elapsedMs) * movementFraction;
 
   return {
-    type: timingLine.type === 'start_finish' ? 'start_finish_crossed' : 'sector_crossed',
+    type: DETECTION_EVENT_TYPE_BY_LINE[timingLine.type] ?? 'sector_crossed',
     timingLineId: timingLine.id,
     seq: timingLine.seq,
     sampleRecordedAt: Math.round(interpolatedRecordedAt),
@@ -268,9 +291,17 @@ function applyEventToState(
   state.lastTimingLineId = timingLine.id;
   state.lastCrossingElapsedMs = event.sampleElapsedMs;
 
-  if (timingLine.type === 'start_finish') {
+  if (timingLine.type === 'start_finish' || timingLine.type === 'start') {
     state.currentLapStartedElapsedMs = event.sampleElapsedMs;
     state.expectedSectorSeq = 1;
+    return;
+  }
+
+  // A finish closes the run and opens nothing: with no expected sector, later
+  // sector crossings are rejected until the next start.
+  if (timingLine.type === 'finish') {
+    state.currentLapStartedElapsedMs = null;
+    state.expectedSectorSeq = null;
     return;
   }
 
@@ -351,6 +382,10 @@ export function detectTimingLineCrossings(
     );
 
     if (isDebounced(localState, event, candidate.timingLine.id, mergedConfig)) {
+      continue;
+    }
+
+    if (!isRunClosable(localState, candidate.timingLine)) {
       continue;
     }
 
