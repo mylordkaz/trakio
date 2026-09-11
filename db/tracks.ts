@@ -174,7 +174,30 @@ function hasCompleteCoordinatePair(point: { latitude: number | null; longitude: 
   return point.latitude !== null && point.longitude !== null;
 }
 
+// Tracks that were seeded once and have since been withdrawn. syncTrackSeeds
+// only inserts and updates, so without this they would linger forever on any
+// device that already received them. A track carrying sessions is left alone:
+// its lap data outranks tidying the list, and sessions.track_id is RESTRICT.
+const RETIRED_TRACK_IDS = ['bedford-autodrome-gt'];
+
+async function removeRetiredTracks(db: SQLiteDatabase) {
+  for (const trackId of RETIRED_TRACK_IDS) {
+    const inUse = await db.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) AS count FROM sessions WHERE track_id = ?;',
+      trackId
+    );
+
+    if ((inUse?.count ?? 0) > 0) {
+      continue;
+    }
+
+    await db.runAsync('DELETE FROM tracks WHERE id = ?;', trackId);
+  }
+}
+
 export async function syncTrackSeeds(db: SQLiteDatabase) {
+  await removeRetiredTracks(db);
+
   await db.withExclusiveTransactionAsync(async (txn) => {
     for (const seed of TRACK_SEED_DRAFTS) {
       const { track, timingLines } = seed;
