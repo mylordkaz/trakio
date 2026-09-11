@@ -180,9 +180,15 @@ function satisfiesMinLapTime(
   timingLine: TimingLineRow,
   config: TelemetryDetectionConfig
 ) {
-  const closesRun = timingLine.type === 'start_finish' || timingLine.type === 'finish';
+  // A start re-crossed while a run is open abandons and restarts it, so it is
+  // guarded like a close. The first start of a session has no open run and is
+  // always allowed through.
+  const endsOrRestartsRun =
+    timingLine.type === 'start_finish' ||
+    timingLine.type === 'finish' ||
+    timingLine.type === 'start';
 
-  if (!closesRun || state.currentLapStartedElapsedMs === null) {
+  if (!endsOrRestartsRun || state.currentLapStartedElapsedMs === null) {
     return true;
   }
 

@@ -728,13 +728,13 @@ export async function ensureTimingLineTypes(db: SQLiteDatabase) {
     return;
   }
 
-  // Foreign keys must be toggled outside a transaction for the drop/rename to
-  // be legal; the copy itself is atomic.
-  await db.execAsync('PRAGMA foreign_keys=OFF;');
-  try {
-    await db.execAsync(`
-      BEGIN;
-
+  // No table references timing_lines, so the rebuild needs no foreign-key
+  // toggle: dropping it cannot orphan a reference. That matters because
+  // re-enabling foreign keys is silently ignored while a transaction is still
+  // open, so a failed rebuild that only toggled the pragma would leave them
+  // disabled. The transaction alone makes the swap atomic and rolls back.
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.execAsync(`
       CREATE TABLE timing_lines_rebuild (
         id TEXT PRIMARY KEY NOT NULL,
         track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
@@ -763,12 +763,8 @@ export async function ensureTimingLineTypes(db: SQLiteDatabase) {
         ON timing_lines(track_id, seq);
       CREATE INDEX IF NOT EXISTS idx_timing_lines_track_type
         ON timing_lines(track_id, type, seq);
-
-      COMMIT;
     `);
-  } finally {
-    await db.execAsync('PRAGMA foreign_keys=ON;');
-  }
+  });
 }
 
 // The interpolated finish crossing, stored so a point-to-point run's line can

@@ -282,6 +282,161 @@ describe('point-to-point runtime', () => {
   });
 });
 
+describe('restart guard', () => {
+  it('ignores a second start inside the minimum lap time', () => {
+    // Run opened 1.5 s before the re-crossing: jitter near the line must not
+    // abandon it.
+    expect(
+      crossingsOver(START, 100, stateWith({ currentLapStartedElapsedMs: 100_000 }), 101),
+    ).toEqual([]);
+  });
+
+  it('accepts a second start once the minimum lap time has passed', () => {
+    expect(
+      crossingsOver(START, 100, stateWith({ currentLapStartedElapsedMs: 100_000 }), 140),
+    ).toEqual(['start_crossed']);
+  });
+
+  it('always allows the first start, which has no run to guard', () => {
+    expect(crossingsOver(START, 100, stateWith(), 1)).toEqual(['start_crossed']);
+  });
+});
+
+describe('timing topology gates what detection sees', () => {
+  it('opens nothing for a half-configured track', async () => {
+    // A lone start could open a run that nothing could ever close.
+    const { started, events, snapshot } = await runWith(
+      [START, SECTOR_1],
+      drive([{ x: 0, y: 0 }, { x: 0, y: 1100 }]),
+    );
+
+    expect(events).toEqual([]);
+    expect(started).toEqual([]);
+    expect(snapshot.status).toBe('armed');
+  });
+
+  it('feeds only the closed configuration when a track carries both', async () => {
+    const sf = gate('sf', 'start_finish', 0, 100);
+    const { events } = await runWith(
+      [sf, START, SECTOR_1, SECTOR_2, FINISH],
+      drive([{ x: 0, y: 0 }, { x: 0, y: 1100 }]),
+    );
+
+    expect(events).toContain('start_finish_crossed');
+    expect(events).not.toContain('start_crossed');
+    expect(events).not.toContain('finish_crossed');
+  });
+});
+
+describe('failed persistence leaves the runtime untouched', () => {
+  it('does not advance the snapshot when the lap insert fails', async () => {
+    const runtime = createSessionRuntime({
+      track: { id: 't' } as TrackRow,
+      timingLines: P2P_LINES,
+      recorder: {
+        createSession: async () => {},
+        startLap: async () => {
+          throw new Error('insert failed');
+        },
+        finishLap: async () => {},
+        setLapInLap: async () => {},
+        insertLapSector: async () => {},
+        recordRejectedSample: async () => {},
+        appendGpsSample: async () => {},
+        flushGpsBuffer: async () => {},
+        finalizeSession: async () => {},
+        getBufferedPointCount: () => 0,
+      } as never,
+    });
+    await runtime.start();
+
+    let threw = false;
+    for (const sample of drive([{ x: 0, y: 0 }, { x: 0, y: 300 }])) {
+      try {
+        await runtime.handleSample(sample);
+      } catch {
+        threw = true;
+      }
+    }
+
+    const snapshot = runtime.getSnapshot();
+    await runtime.stop();
+
+    expect(threw).toBe(true);
+    // No phantom lap id, and the run was never treated as open.
+    expect(snapshot.currentLapId).toBeNull();
+    expect(snapshot.status).not.toBe('lap_in_progress');
+  });
+});
+
+describe('a failed restart leaves a truthful state', () => {
+  it('does not claim the closed attempt is still running', async () => {
+    const finishedIds: string[] = [];
+    let startCalls = 0;
+    const runtime = createSessionRuntime({
+      track: { id: 't' } as TrackRow,
+      timingLines: P2P_LINES,
+      recorder: {
+        createSession: async () => {},
+        startLap: async () => {
+          startCalls += 1;
+          // The first run opens; the replacement after the abandon fails.
+          if (startCalls > 1) {
+            throw new Error('insert failed');
+          }
+        },
+        finishLap: async (input: { lapId: string }) => {
+          finishedIds.push(input.lapId);
+        },
+        setLapInLap: async () => {},
+        insertLapSector: async () => {},
+        recordRejectedSample: async () => {},
+        appendGpsSample: async () => {},
+        flushGpsBuffer: async () => {},
+        finalizeSession: async () => {},
+        getBufferedPointCount: () => 0,
+      } as never,
+    });
+    await runtime.start();
+
+    // Open a run, loop round, then re-cross the start so the attempt is
+    // abandoned and its replacement insert fails.
+    const samples = drive([
+      { x: 0, y: 0 },
+      { x: 0, y: 500 },
+      { x: 200, y: 500 },
+      { x: 200, y: 0 },
+      { x: 0, y: 0 },
+      { x: 0, y: 300 },
+    ]);
+
+    let threw = false;
+    for (const sample of samples) {
+      try {
+        await runtime.handleSample(sample);
+      } catch {
+        threw = true;
+      }
+    }
+
+    const snapshot = runtime.getSnapshot();
+    await runtime.stop();
+
+    expect(threw).toBe(true);
+    // The replacement was attempted; it may be retried on later samples, which
+    // is harmless because the abandon below happens only once.
+    expect(startCalls).toBeGreaterThanOrEqual(2);
+    // The abandoned lap really was closed in the database, exactly once...
+    expect(finishedIds).toHaveLength(1);
+    // ...so the runtime must not still be pointing at it.
+    expect(snapshot.status).toBe('armed');
+    expect(snapshot.currentLapId).toBeNull();
+    expect(snapshot.currentLapStartedElapsedMs).toBeNull();
+    // The number is kept, so the next successful run follows it.
+    expect(snapshot.currentLapNumber).toBe(1);
+  });
+});
+
 describe('closed circuits are unaffected', () => {
   it('still rolls one lap into the next on a start/finish line', async () => {
     const sf = [gate('sf', 'start_finish', 0, 100)];

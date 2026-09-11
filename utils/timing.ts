@@ -47,18 +47,3 @@ export function getSectorCount(timingLines: TimingLineLike[]) {
 
   return sectorLineCount + (isTimingConfigured(timingLines) ? 1 : 0);
 }
-
-/** The line types that open a timed run. */
-export function isRunOpeningType(type: TimingLineType) {
-  return type === 'start_finish' || type === 'start';
-}
-
-/**
- * The line types timing actually consumes. Anything else on a track (pit
- * entry, speed traps) is mapping detail that must not reach detection.
- */
-export function isRunTimingType(type: TimingLineType) {
-  return (
-    type === 'start_finish' || type === 'start' || type === 'finish' || type === 'sector'
-  );
-}

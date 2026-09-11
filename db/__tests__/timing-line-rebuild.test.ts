@@ -23,26 +23,50 @@ const NEW_DDL = OLD_DDL.replace(
   "'start_finish', 'start', 'finish', 'sector'",
 );
 
-function mockDb(ddl: string | null) {
-  const executed: string[] = [];
+// The two handles record separately: an assertion that the swap is
+// transactional must fail if the work moves back onto the plain handle.
+function mockDb(ddl: string | null, failOn?: string) {
+  const dbExecuted: string[] = [];
+  const txnExecuted: string[] = [];
+  let transactions = 0;
+
   const db = {
     getFirstAsync: async () => (ddl === null ? null : { sql: ddl }),
     execAsync: async (sql: string) => {
-      executed.push(sql);
+      dbExecuted.push(sql);
+    },
+    withExclusiveTransactionAsync: async (
+      callback: (txn: { execAsync: (sql: string) => Promise<void> }) => Promise<void>,
+    ) => {
+      transactions += 1;
+      await callback({
+        execAsync: async (sql: string) => {
+          txnExecuted.push(sql);
+          if (failOn && sql.includes(failOn)) {
+            throw new Error('disk full');
+          }
+        },
+      });
     },
   } as unknown as SQLiteDatabase;
 
-  return { db, executed };
+  return {
+    db,
+    dbExecuted,
+    txnExecuted,
+    allExecuted: () => [...dbExecuted, ...txnExecuted],
+    transactionCount: () => transactions,
+  };
 }
 
 const all = (executed: string[]) => executed.join('\n');
 
 describe('timing line type rebuild', () => {
   it('rebuilds a database still carrying the old constraint', async () => {
-    const { db, executed } = mockDb(OLD_DDL);
+    const { db, allExecuted } = mockDb(OLD_DDL);
     await ensureTimingLineTypes(db);
 
-    const sql = all(executed);
+    const sql = all(allExecuted());
     expect(sql).toContain("'start'");
     expect(sql).toContain("'finish'");
     expect(sql).toContain('CREATE TABLE timing_lines_rebuild');
@@ -51,37 +75,38 @@ describe('timing line type rebuild', () => {
   });
 
   it('is idempotent: a rebuilt database is left alone', async () => {
-    const { db, executed } = mockDb(NEW_DDL);
+    const { db, allExecuted, transactionCount } = mockDb(NEW_DDL);
     await ensureTimingLineTypes(db);
 
-    expect(executed).toEqual([]);
+    expect(allExecuted()).toEqual([]);
+    expect(transactionCount()).toBe(0);
   });
 
   it('does not mistake start_finish for the new start literal', async () => {
     // The probe must use quote-delimited literals: 'start_finish' contains the
-    // characters of start, so a loose check would skip a database that needs
-    // rebuilding. The old DDL above has start_finish and no bare 'start'.
+    // characters of start, so a loose check would skip a database that still
+    // needs rebuilding.
     expect(OLD_DDL.includes("'start'")).toBe(false);
     expect(OLD_DDL).toContain("'start_finish'");
 
-    const { db, executed } = mockDb(OLD_DDL);
+    const { db, allExecuted } = mockDb(OLD_DDL);
     await ensureTimingLineTypes(db);
 
-    expect(executed.length).toBeGreaterThan(0);
+    expect(allExecuted().length).toBeGreaterThan(0);
   });
 
   it('does nothing when the table does not exist yet', async () => {
-    const { db, executed } = mockDb(null);
+    const { db, allExecuted } = mockDb(null);
     await ensureTimingLineTypes(db);
 
-    expect(executed).toEqual([]);
+    expect(allExecuted()).toEqual([]);
   });
 
   it('copies every column, so no data is dropped by the rebuild', async () => {
-    const { db, executed } = mockDb(OLD_DDL);
+    const { db, allExecuted } = mockDb(OLD_DDL);
     await ensureTimingLineTypes(db);
 
-    const sql = all(executed);
+    const sql = all(allExecuted());
     const columns = [
       'id',
       'track_id',
@@ -105,41 +130,44 @@ describe('timing line type rebuild', () => {
   });
 
   it('preserves the constraints and recreates both indexes', async () => {
-    const { db, executed } = mockDb(OLD_DDL);
+    const { db, allExecuted } = mockDb(OLD_DDL);
     await ensureTimingLineTypes(db);
 
-    const sql = all(executed);
+    const sql = all(allExecuted());
     expect(sql).toContain('UNIQUE(track_id, seq)');
     expect(sql).toContain('REFERENCES tracks(id) ON DELETE CASCADE');
     expect(sql).toContain('idx_timing_lines_track_seq');
     expect(sql).toContain('idx_timing_lines_track_type');
   });
 
-  it('wraps the swap in a transaction and restores foreign keys', async () => {
-    const { db, executed } = mockDb(OLD_DDL);
+  it('does the whole swap inside one transaction', async () => {
+    const { db, dbExecuted, txnExecuted, transactionCount } = mockDb(OLD_DDL);
     await ensureTimingLineTypes(db);
 
-    const sql = all(executed);
-    expect(sql).toContain('PRAGMA foreign_keys=OFF;');
-    expect(sql).toContain('BEGIN;');
-    expect(sql).toContain('COMMIT;');
-    // Restored last, so a later failure cannot leave them disabled.
-    expect(executed[executed.length - 1]).toContain('PRAGMA foreign_keys=ON;');
+    expect(transactionCount()).toBe(1);
+    // The swap runs entirely on the transaction handle, so a failure rolls it
+    // back rather than leaving the table dropped. Nothing touches the plain
+    // handle, which would escape the rollback.
+    expect(txnExecuted.length).toBeGreaterThan(0);
+    expect(dbExecuted).toEqual([]);
+    expect(all(txnExecuted)).toContain('DROP TABLE timing_lines');
   });
 
-  it('restores foreign keys even when the rebuild throws', async () => {
-    const executed: string[] = [];
-    const db = {
-      getFirstAsync: async () => ({ sql: OLD_DDL }),
-      execAsync: async (sql: string) => {
-        executed.push(sql);
-        if (sql.includes('CREATE TABLE timing_lines_rebuild')) {
-          throw new Error('disk full');
-        }
-      },
-    } as unknown as SQLiteDatabase;
+  it('never disables foreign keys, so a failure cannot leave them off', async () => {
+    // Nothing references timing_lines, so the rebuild does not need the
+    // foreign-key toggle at all. Re-enabling them is silently ignored while a
+    // transaction is still open, so a failed rebuild that relied on a pragma
+    // would leave them disabled.
+    const { db, allExecuted } = mockDb(OLD_DDL);
+    await ensureTimingLineTypes(db);
+
+    expect(all(allExecuted())).not.toContain('foreign_keys');
+  });
+
+  it('propagates a failure so the transaction rolls back', async () => {
+    const { db, allExecuted } = mockDb(OLD_DDL, 'CREATE TABLE timing_lines_rebuild');
 
     await expect(ensureTimingLineTypes(db)).rejects.toThrow('disk full');
-    expect(executed[executed.length - 1]).toContain('PRAGMA foreign_keys=ON;');
+    expect(all(allExecuted())).not.toContain('foreign_keys');
   });
 });

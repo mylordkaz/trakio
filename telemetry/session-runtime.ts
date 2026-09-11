@@ -10,7 +10,7 @@ import type {
   TelemetrySampleRejectionReason,
 } from '@/telemetry/types';
 import { CROSSING_RECOVERY_ENABLED, JUMP_REANCHOR_ENABLED } from '@/constants/featureFlags';
-import { getSectorCount, getSectorLineCount, isRunTimingType } from '@/utils/timing';
+import { getSectorCount, getSectorLineCount, getTimingTopology } from '@/utils/timing';
 
 type SessionRecorder = ReturnType<typeof createSessionRecorder>;
 
@@ -88,9 +88,27 @@ function generateId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+// Detection only ever sees the lines belonging to the track's declared
+// topology. A half-configured track (a lone start, say) is classified as none
+// and feeds detection nothing, so it cannot open a run that could never close;
+// a track carrying both configurations feeds only the closed one.
 function getRelevantTimingLines(timingLines: TimingLineRow[]) {
+  const topology = getTimingTopology(timingLines);
+
+  if (topology === 'none') {
+    return [];
+  }
+
+  const opening: TimingLineRow['type'] =
+    topology === 'closed' ? 'start_finish' : 'start';
+
   return timingLines
-    .filter((timingLine) => isRunTimingType(timingLine.type))
+    .filter(
+      (timingLine) =>
+        timingLine.type === 'sector' ||
+        timingLine.type === opening ||
+        (topology === 'point_to_point' && timingLine.type === 'finish')
+    )
     .sort((a, b) => a.seq - b.seq);
 }
 
@@ -380,10 +398,15 @@ export function createSessionRuntime(args: {
   // path above: a closed circuit's behaviour must not shift to accommodate a
   // layout that opens and closes on different lines.
 
-  function openRun(event: TelemetryDetectionEvent, lapNumber: number, lapId: string) {
+  function openRun(
+    event: TelemetryDetectionEvent,
+    lapNumber: number,
+    lapId: string,
+    isOutLap: boolean
+  ) {
     const crossedAtWallClockMs = Date.now();
 
-    currentLapIsOutLap = pendingOutLap;
+    currentLapIsOutLap = isOutLap;
     currentLapIsInLap = false;
     pendingOutLap = false;
     currentLapStartIsEstimated = event.quality === 'degraded';
@@ -408,7 +431,9 @@ export function createSessionRuntime(args: {
   }
 
   async function handleRunStartCrossing(event: TelemetryDetectionEvent) {
-    if (!snapshot.sessionId) {
+    const sessionId = snapshot.sessionId;
+
+    if (!sessionId) {
       return;
     }
 
@@ -428,19 +453,45 @@ export function createSessionRuntime(args: {
         maxSpeedKph: snapshot.currentLapMaxSpeedKph,
         isTimingEstimated: currentLapStartIsEstimated ? 1 : 0,
       });
+
+      // The lap is closed in the database now, so the snapshot stops claiming
+      // it is running before the replacement is attempted. If that insert
+      // fails, the runtime is left armed with nothing open — which is true —
+      // rather than pointing at a lap that has already ended. The lap number
+      // is kept so the next run still follows it.
+      snapshot = {
+        ...snapshot,
+        status: 'armed',
+        currentLapId: null,
+        currentLapStartedElapsedMs: null,
+        currentSectorStartedElapsedMs: null,
+        currentLapStartedWallClockMs: null,
+        currentSectorStartedWallClockMs: null,
+        lastCrossedSectorSeq: null,
+        currentLapMaxSpeedKph: null,
+        pitInMarked: false,
+        currentLapSectorSplitsMs: {},
+      };
     }
 
-    openRun(event, snapshot.currentLapNumber + 1, generateId());
+    // Persist before advancing the snapshot: a failed insert must not leave
+    // the runtime holding a lap id that does not exist, with the pending
+    // out-lap flag already consumed.
+    const lapId = generateId();
+    const lapNumber = snapshot.currentLapNumber + 1;
+    const isOutLap = pendingOutLap;
 
     await recorder.startLap({
-      id: snapshot.currentLapId!,
-      sessionId: snapshot.sessionId,
-      lapNumber: snapshot.currentLapNumber,
+      id: lapId,
+      sessionId,
+      lapNumber,
       startedAt: new Date(event.sampleRecordedAt).toISOString(),
       startedLatitude: event.sampleLat,
       startedLongitude: event.sampleLng,
-      isOutLap: currentLapIsOutLap ? 1 : 0,
+      isOutLap: isOutLap ? 1 : 0,
     });
+
+    openRun(event, lapNumber, lapId, isOutLap);
   }
 
   async function handleRunFinishCrossing(event: TelemetryDetectionEvent) {

@@ -698,7 +698,9 @@ export async function listSessions(db: SQLiteDatabase): Promise<SessionListItem[
       ) AS computed_best_lap_ms,
       CASE
         WHEN s.total_laps > 0 THEN s.total_laps
-        ELSE COUNT(l.id)
+        -- Abandoned attempts are kept as untimed rows; counting them here
+        -- would report laps the runtime never completed.
+        ELSE COUNT(CASE WHEN l.lap_time_ms IS NOT NULL THEN 1 END)
       END AS computed_total_laps
     FROM sessions s
     INNER JOIN tracks t
@@ -804,7 +806,9 @@ export async function getSessionById(
       ) AS computed_best_lap_ms,
       CASE
         WHEN s.total_laps > 0 THEN s.total_laps
-        ELSE COUNT(l.id)
+        -- Abandoned attempts are kept as untimed rows; counting them here
+        -- would report laps the runtime never completed.
+        ELSE COUNT(CASE WHEN l.lap_time_ms IS NOT NULL THEN 1 END)
       END AS computed_total_laps,
       t.slug AS track_slug,
       t.name AS track_name,
