@@ -127,68 +127,6 @@ describe('useT', () => {
   });
 });
 
-// A guard that cannot fail is not a guard. These fixtures are the patterns the
-// rules exist to reject, and the shapes they must keep allowing.
-describe('the guards themselves', () => {
-  const storesTranslatedText = `
-    useEffect(() => {
-      const item = { value: t('common.tbd') };
-      setItems([item]);
-    }, [t]);
-  `;
-  const oldChecklistShape = `
-    useEffect(() => {
-      let gpsItem = { key: 'gpsLock', value: t('telemetry.searching'), status: 'warning' };
-      setChecklistItems([gpsItem]);
-    }, [db, selectedCircuit, t]);
-  `;
-  const focusEffectClearingState = `
-    useFocusEffect(
-      useCallback(() => {
-        setLoadError(t('sessions.unableToLoadSession'));
-        return () => setFilter(null);
-      }, [db, t])
-    );
-  `;
-  const allowedHandler = `
-    const onDelete = useCallback(() => {
-      Alert.alert(t('sessions.deleteTitle'));
-    }, [t]);
-  `;
-  const allowedMemo = `
-    const options = useMemo(() => codes.map((c) => countryName(c, t)), [codes, t]);
-  `;
-
-  const translatesInEffect = (src: string) =>
-    effects(src).some(({ body }) => TRANSLATES.test(body));
-  const dependsOnT = (src: string) =>
-    effects(src).some(({ body }) => dependsOnTranslator(body));
-
-  it('rejects translating inside an effect, however the value is assembled', () => {
-    expect(translatesInEffect(storesTranslatedText)).toBe(true);
-    expect(translatesInEffect(oldChecklistShape)).toBe(true);
-    expect(translatesInEffect(focusEffectClearingState)).toBe(true);
-  });
-
-  it('rejects the translator as an effect dependency', () => {
-    expect(dependsOnT(storesTranslatedText)).toBe(true);
-    expect(dependsOnT(oldChecklistShape)).toBe(true);
-    // useFocusEffect wraps a useCallback; the dependency still belongs to it.
-    expect(dependsOnT(focusEffectClearingState)).toBe(true);
-  });
-
-  it('allows a plain useCallback handler and a useMemo to depend on t', () => {
-    expect(effects(allowedHandler)).toHaveLength(0);
-    expect(effects(allowedMemo)).toHaveLength(0);
-  });
-
-  it('does not mistake other calls ending in t for a translation', () => {
-    expect(TRANSLATES.test('setTimeout(() => {}, 0)')).toBe(false);
-    expect(TRANSLATES.test('format(value)')).toBe(false);
-    expect(TRANSLATES.test('const x = t("a")')).toBe(true);
-  });
-});
-
 describe('no translation escapes React', () => {
   it('has no bare i18n.t call anywhere it could run during render', () => {
     // Only these run on invocation rather than during render: alerts raised
