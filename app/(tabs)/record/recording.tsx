@@ -8,7 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useKeepAwake } from 'expo-keep-awake';
 import * as Haptics from 'expo-haptics';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import i18n from '@/i18n';
+import { useT, type TranslateFn } from '@/hooks/useT';
 import Card from '@/components/Card';
 import LapRow from '@/components/LapRow';
 import ProgressBar from '@/components/ProgressBar';
@@ -61,12 +61,12 @@ function getGpsSignalPercent(accuracyM: number | null) {
   return Math.max(10, Math.min(100, Math.round(100 - ((accuracyM - 5) / 45) * 90)));
 }
 
-function getGpsAccuracyLabel(accuracyM: number | null) {
+function getGpsAccuracyLabel(accuracyM: number | null, t: TranslateFn) {
   if (accuracyM === null) {
-    return i18n.t('telemetry.searching');
+    return t('telemetry.searching');
   }
 
-  return i18n.t('telemetry.gpsAccuracy', { meters: Math.round(accuracyM) });
+  return t('telemetry.gpsAccuracy', { meters: Math.round(accuracyM) });
 }
 
 // Accepted samples stop arriving when the app is backgrounded, the GPS signal
@@ -105,6 +105,7 @@ function getBrakePercent(
 const TELEMETRY_DISPLAY_REFRESH_MS = 100;
 
 export default function RecordingScreen() {
+  const t = useT();
   useKeepAwake();
   const router = useRouter();
   const db = useSQLiteContext();
@@ -124,7 +125,11 @@ export default function RecordingScreen() {
   const [track, setTrack] = useState<TrackDetail | null>(null);
   const displayTrack = track ? localizeTrack(track, locale) : null;
   const [isLoadingTrack, setIsLoadingTrack] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadErrorKey, setLoadErrorKey] = useState<string | null>(null);
+  // The key is stored, not the message: a translated string held in
+  // state would not follow a language change, and making the effect
+  // that sets it depend on the translator would re-run a data load.
+  const loadError = loadErrorKey ? t(loadErrorKey) : null;
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [brakePercent, setBrakePercent] = useState(0);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ReturnType<ReturnType<typeof createSessionRuntime>['getSnapshot']> | null>(null);
@@ -202,7 +207,7 @@ export default function RecordingScreen() {
     async function loadTrack() {
       if (!params.trackId) {
         if (isMounted) {
-          setLoadError(i18n.t('circuits.unableToLoadTrack'));
+          setLoadErrorKey('circuits.unableToLoadTrack');
           setIsLoadingTrack(false);
         }
         return;
@@ -217,19 +222,19 @@ export default function RecordingScreen() {
         }
 
         if (!nextTrack) {
-          setLoadError(i18n.t('circuits.unableToLoadTrack'));
+          setLoadErrorKey('circuits.unableToLoadTrack');
           setTrack(null);
           return;
         }
 
         setTrack(nextTrack);
-        setLoadError(null);
+        setLoadErrorKey(null);
       } catch {
         if (!isMounted) {
           return;
         }
 
-        setLoadError(i18n.t('circuits.unableToLoadTrack'));
+        setLoadErrorKey('circuits.unableToLoadTrack');
       } finally {
         if (isMounted) {
           setIsLoadingTrack(false);
@@ -258,7 +263,7 @@ export default function RecordingScreen() {
       }
 
       if (permissionState !== 'granted') {
-        setLoadError('Location permission is required to record a session.');
+        setLoadErrorKey('recording.locationPermissionRequired');
         return;
       }
 
@@ -339,7 +344,7 @@ export default function RecordingScreen() {
               return;
             }
 
-            setLoadError('Unable to process telemetry sample.');
+            setLoadErrorKey('recording.telemetryProcessingFailed');
           });
         },
         onError: () => {
@@ -347,7 +352,7 @@ export default function RecordingScreen() {
             return;
           }
 
-          setLoadError('Location subscription error.');
+          setLoadErrorKey('recording.locationSubscriptionError');
         },
         onActiveSourceChange: (source) => {
           if (!isMounted) return;
@@ -493,19 +498,19 @@ export default function RecordingScreen() {
     !isGpsLost &&
     (runtimeSnapshot?.consecutiveRejectedCount ?? 0) >= GPS_DEGRADED_REJECTION_STREAK;
   const warningMessage = isGpsLost
-    ? i18n.t('recording.gpsSignalLost')
+    ? t('recording.gpsSignalLost')
     : isGpsDegraded
-      ? i18n.t('recording.gpsDegraded')
+      ? t('recording.gpsDegraded')
       : wasInterrupted
-        ? i18n.t('recording.recordingInterrupted')
+        ? t('recording.recordingInterrupted')
         : null;
   const telemetryStatus = isGpsLost
-    ? { text: i18n.t('telemetry.gpsLost'), className: 'text-sm text-red-400' }
+    ? { text: t('telemetry.gpsLost'), className: 'text-sm text-red-400' }
     : isGpsDegraded
-      ? { text: i18n.t('telemetry.gpsDegradedShort'), className: 'text-sm text-amber-400' }
+      ? { text: t('telemetry.gpsDegradedShort'), className: 'text-sm text-amber-400' }
       : latestSample
-        ? { text: getGpsAccuracyLabel(latestSample.accuracyM), className: 'text-sm text-emerald-400' }
-        : { text: i18n.t('common.tbd'), className: 'text-sm text-zinc-500 dark:text-zinc-400' };
+        ? { text: getGpsAccuracyLabel(latestSample.accuracyM, t), className: 'text-sm text-emerald-400' }
+        : { text: t('common.tbd'), className: 'text-sm text-zinc-500 dark:text-zinc-400' };
   const currentSpeedKph =
     latestSample?.speedMps !== null && latestSample?.speedMps !== undefined
       ? latestSample.speedMps * 3.6
@@ -563,21 +568,21 @@ export default function RecordingScreen() {
             style={{ right: insets.right + 8, top: insets.top }}
           >
             <View className="h-3 w-3 rounded-full bg-red-400" />
-            <Text className="text-sm text-red-400">{i18n.t('session.recording')}</Text>
+            <Text className="text-sm text-red-400">{t('session.recording')}</Text>
           </View>
         </Animated.View>
 
         {/* Upper section: Last Lap / Best Lap */}
         <View className="flex-row flex-1">
           <View className="flex-1 items-center justify-center">
-            <Text className="text-sm text-zinc-500 mb-1">{i18n.t('session.lastLap')}</Text>
+            <Text className="text-sm text-zinc-500 mb-1">{t('session.lastLap')}</Text>
             <Text className="text-4xl font-bold text-white">
               {lastLap ? lastLap.time : '--:--.---'}
             </Text>
           </View>
           <View style={{ width: 1 }} className="bg-white/10 my-3" />
           <View className="flex-1 items-center justify-center">
-            <Text className="text-sm text-zinc-500 mb-1">{i18n.t('session.bestLap')}</Text>
+            <Text className="text-sm text-zinc-500 mb-1">{t('session.bestLap')}</Text>
             <Text className="text-4xl font-bold text-emerald-400">
               {formatLapTime(runtimeSnapshot?.bestLapMs ?? null)}
             </Text>
@@ -586,14 +591,14 @@ export default function RecordingScreen() {
 
         {/* Middle section: Current Lap Time */}
         <View className="flex-[2] items-center justify-center">
-          <Text className="text-sm text-zinc-500 mb-2">{i18n.t('recording.currentLap')}</Text>
+          <Text className="text-sm text-zinc-500 mb-2">{t('recording.currentLap')}</Text>
           {runtimeSnapshot?.status === 'lap_in_progress' ? (
             <Text style={{ fontSize: 120, lineHeight: 128 }} className="font-bold text-white tabular-nums tracking-tight">
               {formatLapTime(currentElapsedMs)}
             </Text>
           ) : (
             <Animated.Text style={{ fontSize: 32, lineHeight: 40, opacity: pulseOpacity }} className="font-medium text-zinc-500">
-              {i18n.t('recording.waitingForStartLine')}
+              {t('recording.waitingForStartLine')}
             </Animated.Text>
           )}
         </View>
@@ -616,7 +621,7 @@ export default function RecordingScreen() {
         {/* Lower section: Lap count / End button */}
         <View className="flex-row items-end justify-between flex-1">
           <View className="rounded-2xl bg-white/5 border border-white/10 items-center justify-center px-6 py-4">
-            <Text className="text-sm text-zinc-500 mb-1">{i18n.t('sessions.laps')}</Text>
+            <Text className="text-sm text-zinc-500 mb-1">{t('sessions.laps')}</Text>
             <Text className="text-4xl font-bold text-white">{currentLapLabel}</Text>
           </View>
           <Pressable
@@ -624,7 +629,7 @@ export default function RecordingScreen() {
             className="rounded-full bg-red-500 items-center justify-center"
             style={{ width: 72, height: 72 }}
           >
-            <Text className="text-sm font-semibold text-white">{i18n.t('session.stop')}</Text>
+            <Text className="text-sm font-semibold text-white">{t('session.stop')}</Text>
           </Pressable>
         </View>
       </View>
@@ -643,12 +648,12 @@ export default function RecordingScreen() {
         {/* Header */}
         <View className="flex-row items-start justify-between mb-3">
           <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-            {track ? getTrackDisplayTitle(track, locale) : i18n.t('circuits.loadingTrack')}
+            {track ? getTrackDisplayTitle(track, locale) : t('circuits.loadingTrack')}
           </Text>
           <Animated.View style={{ opacity: pulseOpacity }}>
             <View className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-3 py-1.5 border border-red-400/20">
               <View className="h-2.5 w-2.5 rounded-full bg-red-400" />
-              <Text className="text-sm text-red-400">{i18n.t('session.recording')}</Text>
+              <Text className="text-sm text-red-400">{t('session.recording')}</Text>
             </View>
           </Animated.View>
         </View>
@@ -656,11 +661,11 @@ export default function RecordingScreen() {
         {/* Title + REC badge */}
         <View className="flex-row items-start justify-between mb-4">
           <View className="flex-1 mr-3">
-            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('recording.sessionRecording')}</Text>
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('recording.sessionRecording')}</Text>
             <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
               {params.sessionName ??
                 displayTrack?.layoutName ??
-                i18n.t('recording.sessionRecording')}
+                t('recording.sessionRecording')}
             </Text>
           </View>
           <Text className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mt-0.5 pr-1">
@@ -670,7 +675,7 @@ export default function RecordingScreen() {
 
         {isLoadingTrack ? (
           <View className="mb-4 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-3">
-            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.loadingTrack')}</Text>
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('circuits.loadingTrack')}</Text>
           </View>
         ) : null}
 
@@ -701,9 +706,9 @@ export default function RecordingScreen() {
         {/* Current lap card */}
         <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
           <View className="flex-row items-center justify-between mb-2">
-            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('session.currentLap')}</Text>
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('session.currentLap')}</Text>
             <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-              {i18n.t('session.lapCount', { count: currentLapLabel })}
+              {t('session.lapCount', { count: currentLapLabel })}
             </Text>
           </View>
           {runtimeSnapshot?.status === 'lap_in_progress' ? (
@@ -718,7 +723,7 @@ export default function RecordingScreen() {
               className="text-zinc-500 dark:text-zinc-400 mb-3 text-center"
               style={{ fontSize: 24, lineHeight: 32, fontWeight: '500', opacity: pulseOpacity }}
             >
-              {i18n.t('recording.waitingForStartLine')}
+              {t('recording.waitingForStartLine')}
             </Animated.Text>
           )}
           <View className="flex-row gap-2">
@@ -766,7 +771,7 @@ export default function RecordingScreen() {
                 runtimeSnapshot?.pitInMarked ? 'text-amber-600 dark:text-amber-300' : 'text-zinc-900 dark:text-white'
               }`}
             >
-              {runtimeSnapshot?.pitInMarked ? i18n.t('session.pitInMarked') : i18n.t('session.markPitIn')}
+              {runtimeSnapshot?.pitInMarked ? t('session.pitInMarked') : t('session.markPitIn')}
             </Text>
           </Pressable>
           <Pressable
@@ -775,7 +780,7 @@ export default function RecordingScreen() {
             }}
             className="flex-1 rounded-2xl bg-red-500 py-3.5 items-center"
           >
-            <Text className="text-sm font-semibold text-white">{i18n.t('session.end')}</Text>
+            <Text className="text-sm font-semibold text-white">{t('session.end')}</Text>
           </Pressable>
         </View>
       </LinearGradient>
@@ -789,9 +794,9 @@ export default function RecordingScreen() {
           {/* Stats row */}
           <View className="flex-row gap-3">
             {[
-              [i18n.t('session.bestLap'), formatLapTime(runtimeSnapshot?.bestLapMs ?? null)],
-              [i18n.t('session.topSpeed'), formatSpeed(runtimeSnapshot?.maxSpeedKph ?? null)],
-              [i18n.t('session.duration'), formatDuration(sessionDurationMs)],
+              [t('session.bestLap'), formatLapTime(runtimeSnapshot?.bestLapMs ?? null)],
+              [t('session.topSpeed'), formatSpeed(runtimeSnapshot?.maxSpeedKph ?? null, t('common.tbd'))],
+              [t('session.duration'), formatDuration(sessionDurationMs)],
             ].map(([l, v]) => (
               <View key={l} className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{l}</Text>
@@ -804,33 +809,33 @@ export default function RecordingScreen() {
           <Card>
             <View className="flex-row items-center justify-between mb-3">
               <View>
-                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('telemetry.title')}</Text>
+                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{t('telemetry.title')}</Text>
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
                   {externalSourceName
-                    ? i18n.t('telemetry.subtitleDevice', { name: externalSourceName })
-                    : i18n.t('telemetry.subtitle')}
+                    ? t('telemetry.subtitleDevice', { name: externalSourceName })
+                    : t('telemetry.subtitle')}
                 </Text>
               </View>
               <Text className={telemetryStatus.className}>{telemetryStatus.text}</Text>
             </View>
             <View className="gap-3">
               <ProgressBar
-                label={i18n.t('telemetry.gpsSource')}
-                value={externalSourceName ?? i18n.t('telemetry.phoneGps')}
+                label={t('telemetry.gpsSource')}
+                value={externalSourceName ?? t('telemetry.phoneGps')}
                 color="bg-emerald-400"
               />
               <ProgressBar
-                label={i18n.t('telemetry.speed')}
-                value={formatSpeed(currentSpeedKph)}
+                label={t('telemetry.speed')}
+                value={formatSpeed(currentSpeedKph, t('common.tbd'))}
                 percent={speedPercent}
               />
               <ProgressBar
-                label={i18n.t('telemetry.brake')}
+                label={t('telemetry.brake')}
                 value={`${brakePercent}%`}
               />
               <ProgressBar
-                label={i18n.t('telemetry.gpsSignal')}
-                value={getGpsAccuracyLabel(latestSample?.accuracyM ?? null)}
+                label={t('telemetry.gpsSignal')}
+                value={getGpsAccuracyLabel(latestSample?.accuracyM ?? null, t)}
                 percent={getGpsSignalPercent(latestSample?.accuracyM ?? null)}
                 color="bg-emerald-400"
               />
@@ -840,13 +845,13 @@ export default function RecordingScreen() {
                 return (
                   <>
                     <ProgressBar
-                      label={i18n.t('telemetry.satellites')}
+                      label={t('telemetry.satellites')}
                       value={`${ext.satelliteCount}`}
                       color="bg-sky-400"
                     />
                     {ext.batteryLevel != null && (
                       <ProgressBar
-                        label={i18n.t('telemetry.deviceBattery')}
+                        label={t('telemetry.deviceBattery')}
                         value={`${ext.batteryLevel}%`}
                         color="bg-amber-400"
                       />
@@ -859,7 +864,7 @@ export default function RecordingScreen() {
 
           {/* Recent Laps */}
           <Card>
-            <Text className="text-sm font-medium text-zinc-900 dark:text-white mb-3">{i18n.t('recording.lapTimes')}</Text>
+            <Text className="text-sm font-medium text-zinc-900 dark:text-white mb-3">{t('recording.lapTimes')}</Text>
             {recentLaps.length > 0 ? (
               <View className="gap-2">
                 {recentLaps.map((item) => (
@@ -867,7 +872,7 @@ export default function RecordingScreen() {
                 ))}
               </View>
             ) : (
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.noLapDataYet')}</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('sessions.noLapDataYet')}</Text>
             )}
           </Card>
         </View>

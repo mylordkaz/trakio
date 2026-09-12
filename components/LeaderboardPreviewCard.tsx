@@ -1,6 +1,6 @@
 import { View, Text, Pressable } from 'react-native';
 import Card from '@/components/Card';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import { formatLapTime, formatDeltaMs } from '@/utils/format';
 import { flagEmoji, rankLabel, type LeaderboardEntry } from '@/services/leaderboard';
 import { useLeaderboardShare } from '@/hooks/useLeaderboardShare';
@@ -16,6 +16,7 @@ type LeaderboardPreviewCardProps = {
 };
 
 function LeaderboardRow({ entry, p1Ms }: { entry: LeaderboardEntry; p1Ms: number }) {
+  const t = useT();
   const gap = entry.lapTimeMs - p1Ms;
   const gapStr = gap === 0 ? '—' : (formatDeltaMs(gap) ?? '—');
   const isMeOnPodium = entry.isCurrentUser && entry.rank <= 3;
@@ -47,7 +48,7 @@ function LeaderboardRow({ entry, p1Ms }: { entry: LeaderboardEntry; p1Ms: number
         numberOfLines={1}
       >
         {entry.isCurrentUser
-          ? `${entry.name} (${i18n.t('leaderboard.me')})`
+          ? `${entry.name} (${t('leaderboard.me')})`
           : entry.name}
       </Text>
       <Text
@@ -77,6 +78,7 @@ export default function LeaderboardPreviewCard({
   onShareSuccess,
   onSeeAll,
 }: LeaderboardPreviewCardProps) {
+  const t = useT();
   const { isSharing, share } = useLeaderboardShare(trackId);
   const p1Ms = entries[0]?.lapTimeMs ?? 0;
   const top3 = entries.slice(0, 3);
@@ -104,15 +106,15 @@ export default function LeaderboardPreviewCard({
       <View className="flex-row items-center justify-between mb-3">
         <View>
           <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-            {i18n.t('leaderboard.title')}
+            {t('leaderboard.title')}
           </Text>
           <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-            {i18n.t('leaderboard.driversCount', { count: entries.length })} · {i18n.t('leaderboard.allTime')}
+            {t('leaderboard.driversCount', { count: entries.length })} · {t('leaderboard.allTime')}
           </Text>
         </View>
         <Pressable onPress={onSeeAll} hitSlop={8}>
           <Text className="text-sm font-medium text-sky-500">
-            {i18n.t('leaderboard.seeAll')} ›
+            {t('leaderboard.seeAll')} ›
           </Text>
         </Pressable>
       </View>
@@ -120,7 +122,7 @@ export default function LeaderboardPreviewCard({
       {/* Top 3 */}
       {isLoading ? (
         <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-          {i18n.t('common.loading')}
+          {t('common.loading')}
         </Text>
       ) : loadError ? (
         <Text className="text-sm text-red-600 dark:text-red-300">
@@ -128,7 +130,7 @@ export default function LeaderboardPreviewCard({
         </Text>
       ) : entries.length === 0 ? (
         <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-          {i18n.t('leaderboard.noEntries')}
+          {t('leaderboard.noEntries')}
         </Text>
       ) : (
         <View className="gap-0.5">
@@ -173,12 +175,12 @@ export default function LeaderboardPreviewCard({
             }`}
           >
             {isSharing
-              ? i18n.t('leaderboard.sharing')
+              ? t('leaderboard.sharing')
               : isUpToDate
-              ? `${i18n.t('leaderboard.timeIsLive')} ✓`
+              ? `${t('leaderboard.timeIsLive')} ✓`
               : hasNewPb
-              ? i18n.t('leaderboard.updateMyTime')
-              : i18n.t('leaderboard.shareMyBestTime')}
+              ? t('leaderboard.updateMyTime')
+              : t('leaderboard.shareMyBestTime')}
           </Text>
         </Pressable>
       ) : null}

@@ -29,20 +29,23 @@ export function formatDeltaMs(deltaMs: number | null) {
   return `${sign}${(Math.abs(deltaMs) / 1000).toFixed(3)}`;
 }
 
-export function formatGapSeconds(deltaMs: number | null) {
+// These run during render, so they must not reach for the mutable global
+// locale: the caller passes the text for an absent value, which keeps the
+// result keyed on the language React can see.
+export function formatGapSeconds(deltaMs: number | null, tbd: string) {
   if (deltaMs === null) {
-    return i18n.t('common.tbd');
+    return tbd;
   }
 
   return (Math.abs(deltaMs) / 1000).toFixed(3);
 }
 
-export function formatDateTime(value: string | null) {
+export function formatDateTime(value: string | null, locale: string, tbd: string) {
   if (!value) {
-    return i18n.t('common.tbd');
+    return tbd;
   }
 
-  return new Date(value).toLocaleString(i18n.locale === 'ja' ? 'ja-JP' : 'en-US', {
+  return new Date(value).toLocaleString(locale === 'ja' ? 'ja-JP' : 'en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -51,14 +54,14 @@ export function formatDateTime(value: string | null) {
   });
 }
 
-export function formatDuration(startedAt: string, endedAt: string | null) {
+export function formatDuration(startedAt: string, endedAt: string | null, tbd: string) {
   if (!endedAt) {
-    return i18n.t('common.tbd');
+    return tbd;
   }
 
   const diffMs = new Date(endedAt).getTime() - new Date(startedAt).getTime();
   if (!Number.isFinite(diffMs) || diffMs <= 0) {
-    return i18n.t('common.tbd');
+    return tbd;
   }
 
   const totalSeconds = Math.floor(diffMs / 1000);
@@ -86,9 +89,9 @@ export function formatDistanceKm(meters: number) {
   return km >= 100 ? `${Math.round(km)} km` : `${km.toFixed(1)} km`;
 }
 
-export function formatSpeed(maxSpeedKph: number | null) {
+export function formatSpeed(maxSpeedKph: number | null, tbd: string) {
   if (maxSpeedKph === null) {
-    return i18n.t('common.tbd');
+    return tbd;
   }
 
   return `${Math.round(maxSpeedKph)} km/h`;

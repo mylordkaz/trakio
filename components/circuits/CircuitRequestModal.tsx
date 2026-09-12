@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import {
   CIRCUIT_NAME_MAX_LENGTH,
@@ -30,12 +31,17 @@ export default function CircuitRequestModal({
   initialCircuitName = '',
   onClose,
 }: CircuitRequestModalProps) {
+  const t = useT();
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [circuitName, setCircuitName] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [errorKey, setErrorKey] = useState<string | null>(null);
+  // The key is stored, not the message: a translated string held in
+  // state would not follow a language change, and making the effect
+  // that sets it depend on the translator would re-run a data load.
+  const error = errorKey ? t(errorKey) : null;
   const [submittedCircuit, setSubmittedCircuit] = useState<string | null>(null);
 
   useEffect(() => {
@@ -43,7 +49,7 @@ export default function CircuitRequestModal({
 
     setCircuitName(initialCircuitName.slice(0, CIRCUIT_NAME_MAX_LENGTH));
     setIsSending(false);
-    setError(null);
+    setErrorKey(null);
     setSubmittedCircuit(null);
   }, [initialCircuitName, visible]);
 
@@ -53,7 +59,7 @@ export default function CircuitRequestModal({
 
     try {
       setIsSending(true);
-      setError(null);
+      setErrorKey(null);
       await submitCircuitRequest({
         circuitName: trimmedName,
         publisherId: getOrCreatePublisherIdSync(),
@@ -62,7 +68,7 @@ export default function CircuitRequestModal({
       });
       setSubmittedCircuit(trimmedName);
     } catch {
-      setError(i18n.t('circuits.requestFailed'));
+      setErrorKey('circuits.requestFailed');
     } finally {
       setIsSending(false);
     }
@@ -84,7 +90,7 @@ export default function CircuitRequestModal({
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={i18n.t('common.cancel')}
+          accessibilityLabel={t('common.cancel')}
           className="absolute inset-0"
           onPress={onClose}
         />
@@ -98,14 +104,14 @@ export default function CircuitRequestModal({
                 <Ionicons name="map-outline" size={20} color="#0ea5e9" />
               </View>
               <Text className="text-lg font-semibold text-zinc-900 dark:text-white">
-                {i18n.t('circuits.requestTitle')}
+                {t('circuits.requestTitle')}
               </Text>
             </View>
             <Pressable
               onPress={onClose}
               hitSlop={10}
               accessibilityRole="button"
-              accessibilityLabel={i18n.t('common.cancel')}
+              accessibilityLabel={t('common.cancel')}
             >
               <Ionicons
                 name="close"
@@ -121,10 +127,10 @@ export default function CircuitRequestModal({
                 <Ionicons name="checkmark" size={30} color="#10b981" />
               </View>
               <Text className="mt-4 text-lg font-semibold text-zinc-900 dark:text-white">
-                {i18n.t('circuits.requestSuccessTitle')}
+                {t('circuits.requestSuccessTitle')}
               </Text>
               <Text className="mt-2 text-center text-sm leading-5 text-zinc-500 dark:text-zinc-400">
-                {i18n.t('circuits.requestSuccessMessage', { name: submittedCircuit })}
+                {t('circuits.requestSuccessMessage', { name: submittedCircuit })}
               </Text>
               <Pressable
                 onPress={onClose}
@@ -132,14 +138,14 @@ export default function CircuitRequestModal({
                 className="mt-5 h-12 w-full items-center justify-center rounded-xl bg-sky-500"
               >
                 <Text className="text-sm font-semibold text-white">
-                  {i18n.t('common.done')}
+                  {t('common.done')}
                 </Text>
               </Pressable>
             </View>
           ) : (
             <>
               <Text className="text-base font-medium text-zinc-800 dark:text-zinc-100 mb-3">
-                {i18n.t('circuits.requestQuestion')}
+                {t('circuits.requestQuestion')}
               </Text>
               <View className="rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-black/20 px-4 py-3">
                 <TextInput
@@ -147,7 +153,7 @@ export default function CircuitRequestModal({
                   value={circuitName}
                   onChangeText={setCircuitName}
                   maxLength={CIRCUIT_NAME_MAX_LENGTH}
-                  placeholder={i18n.t('circuits.requestPlaceholder')}
+                  placeholder={t('circuits.requestPlaceholder')}
                   placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
                   returnKeyType="send"
                   onSubmitEditing={() => void handleSubmit()}
@@ -182,8 +188,8 @@ export default function CircuitRequestModal({
                   }`}
                 >
                   {isSending
-                    ? i18n.t('circuits.requestSending')
-                    : i18n.t('circuits.requestSend')}
+                    ? t('circuits.requestSending')
+                    : t('circuits.requestSend')}
                 </Text>
               </Pressable>
             </>

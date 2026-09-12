@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
 import Card from '@/components/Card';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import { formatLapTime } from '@/utils/format';
 import { recordLeaderboardOffer, setSharedLeaderboardTime } from '@/db';
 import { getOrCreatePublisherId } from '@/services/publisher-id';
@@ -22,6 +22,7 @@ export default function ShareToLeaderboardCard({
   lapTimeMs,
   isNewBest,
 }: ShareToLeaderboardCardProps) {
+  const t = useT();
   const db = useSQLiteContext();
   const { isSharing, share } = useLeaderboardShare(trackId);
   const [isDismissed, setIsDismissed] = useState(false);
@@ -79,7 +80,7 @@ export default function ShareToLeaderboardCard({
     return (
       <Card>
         <Text className="text-sm font-semibold text-emerald-500 text-center py-1">
-          ✓ {i18n.t('leaderboard.timeIsLive')}
+          ✓ {t('leaderboard.timeIsLive')}
         </Text>
       </Card>
     );
@@ -101,10 +102,10 @@ export default function ShareToLeaderboardCard({
   return (
     <Card>
       <Text className="text-sm font-medium text-zinc-900 dark:text-white mb-1">
-        {i18n.t('leaderboard.shareToLeaderboard')}
+        {t('leaderboard.shareToLeaderboard')}
       </Text>
       <Text className="text-sm text-zinc-500 dark:text-zinc-400 mb-3">
-        {i18n.t(messageKey, {
+        {t(messageKey, {
           time: formatLapTime(lapTimeMs),
           track: trackTitle,
         })}
@@ -116,7 +117,7 @@ export default function ShareToLeaderboardCard({
           className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3 items-center"
         >
           <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-            {i18n.t('leaderboard.notNow')}
+            {t('leaderboard.notNow')}
           </Text>
         </Pressable>
         <Pressable
@@ -134,8 +135,8 @@ export default function ShareToLeaderboardCard({
             }`}
           >
             {isSharing
-              ? i18n.t('leaderboard.sharing')
-              : i18n.t('leaderboard.shareMyBestTime')}
+              ? t('leaderboard.sharing')
+              : t('leaderboard.shareMyBestTime')}
           </Text>
         </Pressable>
       </View>

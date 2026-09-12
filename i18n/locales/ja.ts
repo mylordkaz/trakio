@@ -273,6 +273,9 @@ export default {
     carPlaceholder: '例：GR86 トラックビルド',
   },
   recording: {
+    locationPermissionRequired: 'セッションを記録するには位置情報の許可が必要です。',
+    telemetryProcessingFailed: 'テレメトリーデータを処理できませんでした。',
+    locationSubscriptionError: '位置情報の取得でエラーが発生しました。',
     sessionRecording: 'セッション録画中',
     lapTimes: 'ラップタイム',
     recentLaps: '最近のラップ',

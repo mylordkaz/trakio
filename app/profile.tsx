@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { getOrCreateDefaultUserProfile, upsertUserProfile } from '@/db';
@@ -71,6 +71,7 @@ function isDirty(original: UserRow | null, username: string, car: string, countr
 }
 
 export default function ProfileScreen() {
+  const t = useT();
   const router = useRouter();
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
@@ -147,7 +148,7 @@ export default function ProfileScreen() {
     }
     ActionSheetIOS.showActionSheetWithOptions(
       {
-        options: [i18n.t('common.cancel'), i18n.t('profile.changeAvatar'), i18n.t('profile.removeAvatar')],
+        options: [t('common.cancel'), t('profile.changeAvatar'), t('profile.removeAvatar')],
         destructiveButtonIndex: 2,
         cancelButtonIndex: 0,
       },
@@ -156,7 +157,7 @@ export default function ProfileScreen() {
         if (index === 2) setAvatarUri(null);
       },
     );
-  }, [avatarUri, pickImage]);
+  }, [avatarUri, pickImage, t]);
 
   const handleSave = useCallback(async () => {
     if (isSaving) return;
@@ -172,27 +173,27 @@ export default function ProfileScreen() {
       cleanupProfileAvatars(storedAvatarUri);
       router.back();
     } catch {
-      Alert.alert(i18n.t('profile.title'), 'Failed to save profile.');
+      Alert.alert(t('profile.title'), 'Failed to save profile.');
     } finally {
       setIsSaving(false);
     }
-  }, [db, router, username, car, countryCode, avatarUri, isSaving]);
+  }, [db, router, username, car, countryCode, avatarUri, isSaving, t]);
 
   const selectedCountry = countryByCode(countryCode);
   const avatarInitial = (username.trim() || 'D')[0].toUpperCase();
   const selectedCountryName =
     selectedCountry.code === ''
-      ? i18n.t('profile.defaultNationality')
-      : i18n.t(`countries.${selectedCountry.code}`);
+      ? t('profile.defaultNationality')
+      : t(`countries.${selectedCountry.code}`);
 
   const filteredCountries = useMemo(() => {
     const q = countrySearch.trim().toLowerCase();
     if (!q) return [];
     return COUNTRIES.filter((c) => {
-      const localizedName = i18n.t(`countries.${c.code}`).toLowerCase();
+      const localizedName = t(`countries.${c.code}`).toLowerCase();
       return localizedName.includes(q) || c.code.toLowerCase().includes(q);
     });
-  }, [countrySearch]);
+  }, [countrySearch, t]);
 
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
@@ -212,7 +213,7 @@ export default function ProfileScreen() {
           <View className="flex-row items-center justify-between mb-4">
             <Pressable onPress={() => router.back()} hitSlop={8} className="flex-row items-center gap-1.5">
               <Ionicons name="chevron-back" size={18} color={isDark ? '#a1a1aa' : '#71717a'} />
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('common.back')}</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('common.back')}</Text>
             </Pressable>
             <Pressable
               onPress={handleSave}
@@ -220,15 +221,15 @@ export default function ProfileScreen() {
               hitSlop={8}
             >
               <Text className={`text-[15px] font-semibold ${dirty && !isSaving ? 'text-sky-500' : 'text-sky-500/30'}`}>
-                {i18n.t('common.save')}
+                {t('common.save')}
               </Text>
             </Pressable>
           </View>
 
           {/* Title */}
           <View className="mb-5">
-            <Text className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('profile.subtitle')}</Text>
-            <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">{i18n.t('profile.title')}</Text>
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">{t('profile.subtitle')}</Text>
+            <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">{t('profile.title')}</Text>
           </View>
 
           {/* Avatar */}
@@ -241,7 +242,7 @@ export default function ProfileScreen() {
                   <Text className="text-3xl font-bold text-white">{avatarInitial}</Text>
                 )}
               </View>
-              <Text className="text-sm text-sky-400">{i18n.t('profile.changeAvatar')}</Text>
+              <Text className="text-sm text-sky-400">{t('profile.changeAvatar')}</Text>
             </Pressable>
           </View>
         </LinearGradient>
@@ -250,7 +251,7 @@ export default function ProfileScreen() {
           {/* Username + Car */}
           <View className="rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-white/5 overflow-hidden">
             <View className="flex-row items-center px-4 py-3.5 border-b border-zinc-100 dark:border-white/5">
-              <Text className="w-36 text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('profile.username')}</Text>
+              <Text className="w-36 text-sm text-zinc-500 dark:text-zinc-400">{t('profile.username')}</Text>
               <TextInput
                 style={{ flex: 1, fontSize: 15, color: isDark ? '#ffffff' : '#18181b', padding: 0 }}
                 value={username}
@@ -262,7 +263,7 @@ export default function ProfileScreen() {
               />
             </View>
             <View className="flex-row items-center px-4 py-3.5">
-              <Text className="w-36 text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('profile.car')}</Text>
+              <Text className="w-36 text-sm text-zinc-500 dark:text-zinc-400">{t('profile.car')}</Text>
               <TextInput
                 style={{ flex: 1, fontSize: 15, color: isDark ? '#ffffff' : '#18181b', padding: 0 }}
                 value={car}
@@ -281,7 +282,7 @@ export default function ProfileScreen() {
               onPress={() => { setIsCountryOpen(!isCountryOpen); setCountrySearch(''); }}
               className="flex-row items-center px-4 py-3.5"
             >
-              <Text className="w-36 text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('profile.nationality')}</Text>
+              <Text className="w-36 text-sm text-zinc-500 dark:text-zinc-400">{t('profile.nationality')}</Text>
               <View className="flex-1 flex-row items-center gap-2">
                 <Text className="text-base">{selectedCountry.flag}</Text>
                 <Text className="text-[15px] font-medium text-zinc-900 dark:text-white">{selectedCountryName}</Text>
@@ -300,7 +301,7 @@ export default function ProfileScreen() {
                     value={countrySearch}
                     onChangeText={setCountrySearch}
                     onFocus={scrollCountrySectionIntoView}
-                    placeholder={i18n.t('profile.searchCountry')}
+                    placeholder={t('profile.searchCountry')}
                     placeholderTextColor={isDark ? '#52525b' : '#a1a1aa'}
                     returnKeyType="search"
                   />
@@ -319,7 +320,7 @@ export default function ProfileScreen() {
                   <View className="flex-row items-center gap-3">
                     <Text className="text-base">{NO_NATIONALITY.flag}</Text>
                     <Text className={`text-[15px] ${!countryCode ? 'font-medium text-sky-500' : 'text-zinc-900 dark:text-white'}`}>
-                      {i18n.t('profile.defaultNationality')}
+                      {t('profile.defaultNationality')}
                     </Text>
                   </View>
                   {!countryCode && <Ionicons name="checkmark" size={16} color="#0ea5e9" />}
@@ -337,7 +338,7 @@ export default function ProfileScreen() {
                       <View className="flex-row items-center gap-3">
                         <Text className="text-base">{country.flag}</Text>
                         <Text className={`text-[15px] ${isSelected ? 'font-medium text-sky-500' : 'text-zinc-900 dark:text-white'}`}>
-                          {i18n.t(`countries.${country.code}`)}
+                          {t(`countries.${country.code}`)}
                         </Text>
                       </View>
                       {isSelected && <Ionicons name="checkmark" size={16} color="#0ea5e9" />}
@@ -347,7 +348,7 @@ export default function ProfileScreen() {
 
                 {countrySearch.length > 0 && filteredCountries.length === 0 && (
                   <View className="px-4 py-3">
-                    <Text className="text-sm text-zinc-400 dark:text-zinc-500">{i18n.t('profile.noCountriesFound')}</Text>
+                    <Text className="text-sm text-zinc-400 dark:text-zinc-500">{t('profile.noCountriesFound')}</Text>
                   </View>
                 )}
               </View>

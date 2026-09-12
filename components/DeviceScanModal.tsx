@@ -1,10 +1,9 @@
-import { useCallback, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Modal, Pressable, View, Text, ActivityIndicator, FlatList, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useExternalGps } from '@/contexts/ExternalGpsContext';
-import { useMenu } from '@/contexts/MenuContext';
 import type { DeviceClassification, DiscoveredDevice } from '@/telemetry/sources/types';
 
 const PROTOCOL_LABELS: Record<DeviceClassification['protocol'], string> = {
@@ -30,16 +29,7 @@ function getRssiColor(rssi: number): string {
 }
 
 export default function DeviceScanModal({ visible, onClose }: DeviceScanModalProps) {
-  const { locale } = useMenu();
-
-  // Wrap i18n.t so the React compiler treats translations as dependent on
-  // locale; a raw i18n.t call reads as a constant and is memoized across
-  // language changes.
-  const t = useCallback(
-    (key: string, opts?: Record<string, unknown>) => i18n.t(key, opts),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [locale],
-  );
+  const t = useT();
 
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';

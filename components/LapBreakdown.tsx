@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import Card from '@/components/Card';
 
 export type LapBreakdownItem = {
@@ -36,6 +36,7 @@ export default function LapBreakdown({
   laps: LapBreakdownItem[];
   accentColor?: 'violet' | 'emerald' | 'sky';
 }) {
+  const t = useT();
   const [expandedLap, setExpandedLap] = useState<number | null>(null);
   const [compareMode, setCompareMode] = useState(false);
   const [selectedLaps, setSelectedLaps] = useState<number[]>([]);
@@ -108,11 +109,11 @@ export default function LapBreakdown({
     <Card>
       <View className="flex-row items-center justify-between mb-3">
         <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-          {i18n.t('postSession.lapBreakdown')}
+          {t('postSession.lapBreakdown')}
         </Text>
         <Pressable onPress={compareMode ? exitCompare : enterCompare} hitSlop={8}>
           <Text className={`text-sm font-medium ${accent.text}`}>
-            {compareMode ? i18n.t('common.done') : i18n.t('circuits.compare')}
+            {compareMode ? t('common.done') : t('circuits.compare')}
           </Text>
         </Pressable>
       </View>
@@ -121,8 +122,8 @@ export default function LapBreakdown({
       {compareMode && selectedLaps.length < 2 ? (
         <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-2">
           {selectedLaps.length === 0
-            ? i18n.t('sessions.selectTwoLaps')
-            : i18n.t('sessions.selectSecondLap')}
+            ? t('sessions.selectTwoLaps')
+            : t('sessions.selectSecondLap')}
         </Text>
       ) : null}
 
@@ -159,11 +160,11 @@ export default function LapBreakdown({
                     ) : null}
                     <View className="flex-row items-center gap-2">
                       <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-                        {i18n.t('sessions.lapLabel', { number: lap.lap })}
+                        {t('sessions.lapLabel', { number: lap.lap })}
                       </Text>
                       {isBest ? (
                         <Text className={`text-xs font-medium ${accent.text}`}>
-                          {i18n.t('sessions.best')}
+                          {t('sessions.best')}
                         </Text>
                       ) : null}
                     </View>
@@ -210,7 +211,7 @@ export default function LapBreakdown({
                         }`}
                       >
                         <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">
-                          {i18n.t('circuits.sectorLabel', { number: i + 1 })}
+                          {t('circuits.sectorLabel', { number: i + 1 })}
                         </Text>
                         <Text
                           className={sector ? 'text-zinc-900 dark:text-white' : 'text-zinc-400 dark:text-zinc-600'}
@@ -235,17 +236,17 @@ export default function LapBreakdown({
           <View className="flex-row mb-2">
             <View className="flex-1" />
             <Text className="flex-1 text-xs font-medium text-zinc-900 dark:text-white text-center">
-              {i18n.t('sessions.lapLabel', { number: compareA.lap })}
+              {t('sessions.lapLabel', { number: compareA.lap })}
             </Text>
             <Text className="flex-1 text-xs font-medium text-zinc-900 dark:text-white text-center">
-              {i18n.t('sessions.lapLabel', { number: compareB.lap })}
+              {t('sessions.lapLabel', { number: compareB.lap })}
             </Text>
             <Text className="flex-1 text-xs font-medium text-zinc-500 dark:text-zinc-400 text-center">Δ</Text>
           </View>
 
           {/* Lap time row */}
           <CompareRow
-            label={i18n.t('sessions.lapRowLabel')}
+            label={t('sessions.lapRowLabel')}
             valueA={compareA.time}
             valueB={compareB.time}
             msA={compareA.timeMs}
@@ -257,7 +258,7 @@ export default function LapBreakdown({
           {compareA.sectors.map((_, i) => (
             <CompareRow
               key={i}
-              label={i18n.t('circuits.sectorLabel', { number: i + 1 })}
+              label={t('circuits.sectorLabel', { number: i + 1 })}
               valueA={compareA.sectors[i] ?? '---.---'}
               valueB={compareB.sectors[i] ?? '---.---'}
               msA={compareA.sectorMs[i]}

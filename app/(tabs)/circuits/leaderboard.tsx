@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import { getTrackById, setSharedLeaderboardTime } from '@/db';
 import type { TrackDetail } from '@/db';
 import { getOrCreatePublisherId } from '@/services/publisher-id';
@@ -74,6 +74,7 @@ function FullLeaderboardRow({
   entry: LeaderboardEntry;
   p1Ms: number;
 }) {
+  const t = useT();
   const gap = entry.lapTimeMs - p1Ms;
   const gapStr = gap === 0 ? '—' : (formatDeltaMs(gap) ?? '—');
   const isMeBelowPodium = entry.isCurrentUser && entry.rank > 3;
@@ -129,7 +130,7 @@ function FullLeaderboardRow({
             numberOfLines={1}
           >
             {entry.isCurrentUser
-              ? `${entry.name} (${i18n.t('leaderboard.me')})`
+              ? `${entry.name} (${t('leaderboard.me')})`
               : entry.name}
           </Text>
         </View>
@@ -173,6 +174,7 @@ function FullLeaderboardRow({
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function LeaderboardScreen() {
+  const t = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const db = useSQLiteContext();
@@ -184,7 +186,11 @@ export default function LeaderboardScreen() {
   const [track, setTrack] = useState<TrackDetail | null>(null);
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadErrorKey, setLoadErrorKey] = useState<string | null>(null);
+  // The key is stored, not the message: a translated string held in
+  // state would not follow a language change, and making the effect
+  // that sets it depend on the translator would re-run a data load.
+  const loadError = loadErrorKey ? t(loadErrorKey) : null;
   const { locale } = useMenu();
 
   useEffect(() => {
@@ -199,7 +205,7 @@ export default function LeaderboardScreen() {
   useEffect(() => {
     if (!id) {
       setEntries([]);
-      setLoadError(null);
+      setLoadErrorKey(null);
       return;
     }
 
@@ -208,7 +214,7 @@ export default function LeaderboardScreen() {
     async function loadLeaderboard() {
       try {
         setIsLoading(true);
-        setLoadError(null);
+        setLoadErrorKey(null);
         const publisherId = await getOrCreatePublisherId();
         const nextEntries = await listLeaderboardEntries(id, publisherId);
         if (!isMounted) return;
@@ -222,7 +228,7 @@ export default function LeaderboardScreen() {
       } catch {
         if (!isMounted) return;
         setEntries([]);
-        setLoadError(i18n.t('leaderboard.unableToLoad'));
+        setLoadErrorKey('leaderboard.unableToLoad');
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -261,11 +267,11 @@ export default function LeaderboardScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
             <Pressable onPress={() => router.back()}>
               <Text style={{ fontSize: 14, fontWeight: '500', color: '#38bdf8' }}>
-                {i18n.t('common.back')}
+                {t('common.back')}
               </Text>
             </Pressable>
             <Text style={{ fontSize: 14, fontWeight: '500', color: 'rgba(255,255,255,0.5)' }}>
-              {i18n.t('leaderboard.title')}
+              {t('leaderboard.title')}
             </Text>
           </View>
 
@@ -275,10 +281,10 @@ export default function LeaderboardScreen() {
               <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 4 }}>
                 {track
                   ? getTrackDisplayTitle(track, locale)
-                  : i18n.t('common.track')}
+                  : t('common.track')}
               </Text>
               <Text style={{ fontSize: 28, fontWeight: '800', color: '#ffffff', letterSpacing: -0.5 }}>
-                {i18n.t('leaderboard.allTimeBest')}
+                {t('leaderboard.allTimeBest')}
               </Text>
             </View>
             <View
@@ -291,7 +297,7 @@ export default function LeaderboardScreen() {
               }}
             >
               <Text style={{ fontSize: 13, fontWeight: '600', color: '#ffffff' }}>
-                {i18n.t('leaderboard.driversCount', { count: entries.length })}
+                {t('leaderboard.driversCount', { count: entries.length })}
               </Text>
             </View>
           </View>
@@ -310,7 +316,7 @@ export default function LeaderboardScreen() {
         <View style={{ paddingHorizontal: 16, paddingTop: 16, gap: 8 }}>
           {isLoading ? (
             <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>
-              {i18n.t('common.loading')}
+              {t('common.loading')}
             </Text>
           ) : loadError ? (
             <Text style={{ color: '#fca5a5', fontSize: 14 }}>
@@ -318,7 +324,7 @@ export default function LeaderboardScreen() {
             </Text>
           ) : entries.length === 0 ? (
             <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>
-              {i18n.t('leaderboard.noEntries')}
+              {t('leaderboard.noEntries')}
             </Text>
           ) : (
             entries.map((entry, index) => (

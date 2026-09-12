@@ -6,7 +6,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import MapView, { Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import StatusPill from '@/components/StatusPill';
 import Card from '@/components/Card';
 import EditableSessionTitle from '@/components/EditableSessionTitle';
@@ -127,6 +127,7 @@ function getMapRegion(sessionDetail: SessionDetail | null) {
 }
 
 export default function SessionDetailScreen() {
+  const t = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const db = useSQLiteContext();
@@ -140,7 +141,11 @@ export default function SessionDetailScreen() {
   const [shareState, setShareState] = useState<TrackLeaderboardShareState | null>(null);
   const [isSharedNow, setIsSharedNow] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadErrorKey, setLoadErrorKey] = useState<string | null>(null);
+  // The key is stored, not the message: a translated string held in
+  // state would not follow a language change, and making the effect
+  // that sets it depend on the translator would re-run a data load.
+  const loadError = loadErrorKey ? t(loadErrorKey) : null;
   const [isEditing, setIsEditing] = useState(false);
   const [newNote, setNewNote] = useState('');
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -157,7 +162,7 @@ export default function SessionDetailScreen() {
 
   const loadSession = useCallback(async () => {
     if (!id) {
-      setLoadError(i18n.t('sessions.sessionNotFound'));
+      setLoadErrorKey('sessions.sessionNotFound');
       setIsLoading(false);
       return;
     }
@@ -167,7 +172,7 @@ export default function SessionDetailScreen() {
       const nextSessionDetail = await getSessionById(db, id);
 
       if (!nextSessionDetail) {
-        setLoadError(i18n.t('sessions.sessionNotFound'));
+        setLoadErrorKey('sessions.sessionNotFound');
         setSessionDetail(null);
         return;
       }
@@ -205,9 +210,9 @@ export default function SessionDetailScreen() {
       } catch {
         // The share button is optional; session detail renders regardless.
       }
-      setLoadError(null);
+      setLoadErrorKey(null);
     } catch {
-      setLoadError(i18n.t('sessions.unableToLoadSession'));
+      setLoadErrorKey('sessions.unableToLoadSession');
     } finally {
       setIsLoading(false);
     }
@@ -238,24 +243,24 @@ export default function SessionDetailScreen() {
       return;
     }
 
-    Alert.alert(i18n.t('sessions.exportData'), i18n.t('sessions.exportChooseFormat'), [
+    Alert.alert(t('sessions.exportData'), t('sessions.exportChooseFormat'), [
       {
-        text: i18n.t('sessions.exportPdf'),
+        text: t('sessions.exportPdf'),
         onPress: () => {
           void exportSessionTimeSheetPdf(sessionDetail).then((result) => {
-            if (!result.ok) Alert.alert(i18n.t('sessions.exportFailed'));
+            if (!result.ok) Alert.alert(t('sessions.exportFailed'));
           });
         },
       },
       {
-        text: i18n.t('sessions.exportCsv'),
+        text: t('sessions.exportCsv'),
         onPress: () => {
           void exportSessionTimeSheetCsv(sessionDetail).then((result) => {
-            if (!result.ok) Alert.alert(i18n.t('sessions.exportFailed'));
+            if (!result.ok) Alert.alert(t('sessions.exportFailed'));
           });
         },
       },
-      { text: i18n.t('common.cancel'), style: 'cancel' },
+      { text: t('common.cancel'), style: 'cancel' },
     ]);
   }
 
@@ -312,12 +317,12 @@ export default function SessionDetailScreen() {
   function handleDeleteSession() {
     if (!sessionDetail) return;
     Alert.alert(
-      i18n.t('sessions.deleteTitle'),
-      i18n.t('sessions.deleteMessage', { name: sessionDetail.session.name }),
+      t('sessions.deleteTitle'),
+      t('sessions.deleteMessage', { name: sessionDetail.session.name }),
       [
-        { text: i18n.t('common.cancel'), style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: i18n.t('common.delete'),
+          text: t('common.delete'),
           style: 'destructive',
           onPress: async () => {
             await deleteSession(db, sessionDetail.session.id);
@@ -436,30 +441,30 @@ export default function SessionDetailScreen() {
         >
           <View className="flex-row items-center justify-between mb-4">
             <Pressable onPress={() => router.back()}>
-              <Text className="text-sm font-medium text-violet-400">{i18n.t('common.back')}</Text>
+              <Text className="text-sm font-medium text-violet-400">{t('common.back')}</Text>
             </Pressable>
             <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-              {displayTrackTitle ?? i18n.t('common.track')}
+              {displayTrackTitle ?? t('common.track')}
             </Text>
           </View>
 
           <View className="flex-row items-start justify-between mb-5">
             <View className="flex-1 mr-3">
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.recordedSession')}</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('sessions.recordedSession')}</Text>
               <EditableSessionTitle
-                title={sessionDetail?.session.name ?? i18n.t('sessions.recordedSession')}
+                title={sessionDetail?.session.name ?? t('sessions.recordedSession')}
                 onChangeTitle={handleChangeTitle}
               />
               <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-                {sessionDetail ? formatDateTime(sessionDetail.session.startedAt) : i18n.t('common.loading')}
+                {sessionDetail ? formatDateTime(sessionDetail.session.startedAt, locale, t('common.tbd')) : t('common.loading')}
               </Text>
             </View>
             {sessionDetail?.displayStatus ? (
               <StatusPill
                 text={
                   sessionDetail.displayStatus === 'Best'
-                    ? i18n.t('sessions.bestRun')
-                    : i18n.t('sessions.recent')
+                    ? t('sessions.bestRun')
+                    : t('sessions.recent')
                 }
                 color="violet"
               />
@@ -518,7 +523,7 @@ export default function SessionDetailScreen() {
                 </MapView>
               ) : (
                 <View className="flex-1 items-center justify-center p-5">
-                  <Text className="text-zinc-400 dark:text-zinc-500 text-sm">{i18n.t('circuits.trackMap')}</Text>
+                  <Text className="text-zinc-400 dark:text-zinc-500 text-sm">{t('circuits.trackMap')}</Text>
                 </View>
               )}
             </View>
@@ -542,7 +547,7 @@ export default function SessionDetailScreen() {
                       activeLapId === null ? 'text-white' : 'text-zinc-600 dark:text-zinc-300'
                     }`}
                   >
-                    {i18n.t('sessions.allLaps')}
+                    {t('sessions.allLaps')}
                   </Text>
                 </Pressable>
                 {selectableLaps.map((lap) => (
@@ -570,19 +575,19 @@ export default function SessionDetailScreen() {
               <View className="flex-row items-center gap-1.5">
                 <View className="h-0.5 w-3 rounded-full bg-red-500" />
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {i18n.t('circuits.startFinish')}
+                  {t('circuits.startFinish')}
                 </Text>
               </View>
               <View className="flex-row items-center gap-1.5">
                 <View className="h-0.5 w-3 rounded-full" style={{ backgroundColor: '#e5e7eb' }} />
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {i18n.t('circuits.sectors')}
+                  {t('circuits.sectors')}
                 </Text>
               </View>
               <View className="flex-row items-center gap-1.5">
                 <View className="h-0.5 w-3 rounded-full" style={{ backgroundColor: '#f59e0b' }} />
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {i18n.t('sessions.gpsLine')}
+                  {t('sessions.gpsLine')}
                 </Text>
               </View>
             </View>
@@ -598,7 +603,7 @@ export default function SessionDetailScreen() {
 
           {isLoading ? (
             <Card>
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.loadingSession')}</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('sessions.loadingSession')}</Text>
             </Card>
           ) : null}
 
@@ -606,7 +611,7 @@ export default function SessionDetailScreen() {
             {isSharedNow ? (
               <View className="flex-row justify-end">
                 <Text className="text-xs font-medium text-emerald-500">
-                  ✓ {i18n.t('leaderboard.timeIsLive')}
+                  ✓ {t('leaderboard.timeIsLive')}
                 </Text>
               </View>
             ) : showShareButton ? (
@@ -624,14 +629,14 @@ export default function SessionDetailScreen() {
                     }`}
                   >
                     {leaderboardShare.isSharing
-                      ? i18n.t('leaderboard.sharing')
-                      : i18n.t('leaderboard.shareToLeaderboard')}
+                      ? t('leaderboard.sharing')
+                      : t('leaderboard.shareToLeaderboard')}
                   </Text>
                 </Pressable>
               </View>
             ) : null}
             <View className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4">
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('session.bestLap')}</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{t('session.bestLap')}</Text>
               <Text
                 className="text-zinc-900 dark:text-white text-center"
                 style={{ fontSize: 40, lineHeight: 44, fontWeight: '600', fontVariant: ['tabular-nums'] }}
@@ -643,15 +648,15 @@ export default function SessionDetailScreen() {
 
           <View className="flex-row gap-3">
             {[
-              { label: i18n.t('session.topSpeed'), value: formatSpeed(topSpeedKph) },
+              { label: t('session.topSpeed'), value: formatSpeed(topSpeedKph, t('common.tbd')) },
               {
-                label: i18n.t('session.duration'),
+                label: t('session.duration'),
                 value: sessionDetail
-                  ? formatDuration(sessionDetail.session.startedAt, sessionDetail.session.endedAt)
-                  : i18n.t('common.tbd'),
+                  ? formatDuration(sessionDetail.session.startedAt, sessionDetail.session.endedAt, t('common.tbd'))
+                  : t('common.tbd'),
               },
               {
-                label: i18n.t('session.totalLaps'),
+                label: t('session.totalLaps'),
                 value: `${sessionDetail?.session.totalLaps ?? 0}`,
               },
             ].map((metric) => (
@@ -664,13 +669,13 @@ export default function SessionDetailScreen() {
 
           <Card>
             <View className="flex-row items-center">
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('profile.car')}</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('profile.car')}</Text>
               {isEditingCar ? (
                 <TextInput
                   style={{ flex: 1, color: isDark ? '#e4e4e7' : '#3f3f46', fontSize: 15, padding: 0, textAlign: 'center' }}
                   value={carText}
                   onChangeText={setCarText}
-                  placeholder={i18n.t('sessions.carPlaceholder')}
+                  placeholder={t('sessions.carPlaceholder')}
                   placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
                   returnKeyType="done"
                   autoFocus
@@ -679,11 +684,11 @@ export default function SessionDetailScreen() {
                 />
               ) : (
                 <Text className={`flex-1 text-sm font-medium text-center ${carText ? 'text-zinc-700 dark:text-zinc-200' : 'text-zinc-400 dark:text-zinc-500'}`}>
-                  {carText || i18n.t('sessions.carPlaceholder')}
+                  {carText || t('sessions.carPlaceholder')}
                 </Text>
               )}
               <Pressable onPress={() => setIsEditingCar(true)} hitSlop={8}>
-                <Text className="text-sm font-medium text-violet-400">{i18n.t('common.edit')}</Text>
+                <Text className="text-sm font-medium text-violet-400">{t('common.edit')}</Text>
               </Pressable>
             </View>
           </Card>
@@ -691,13 +696,13 @@ export default function SessionDetailScreen() {
           {sessionDetail !== null && (sessionDetail.session.condition || sessionDetail.session.temperatureC !== null) ? (
             <Card>
               <View className="flex-row items-center">
-                <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.condition')}</Text>
+                <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('preSession.condition')}</Text>
                 <View className="flex-1 flex-row justify-center items-center gap-1.5">
                   {sessionDetail.session.condition && sessionDetail.session.condition !== 'unknown' ? (
                     <>
                       <Text style={{ fontSize: 15 }}>{CONDITION_EMOJI[sessionDetail.session.condition] ?? '—'}</Text>
                       <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-                        {i18n.t(`preSession.${sessionDetail.session.condition}`)}
+                        {t(`preSession.${sessionDetail.session.condition}`)}
                       </Text>
                     </>
                   ) : null}
@@ -713,13 +718,13 @@ export default function SessionDetailScreen() {
 
           <Card>
             <View className="mb-4">
-              <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('sessions.sessionInsights')}</Text>
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.performanceSummary')}</Text>
+              <Text className="text-sm font-medium text-zinc-900 dark:text-white">{t('sessions.sessionInsights')}</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{t('sessions.performanceSummary')}</Text>
             </View>
 
             <View className="mb-4">
               <ProgressBar
-                label={i18n.t('postSession.consistency')}
+                label={t('postSession.consistency')}
                 value={`${getConsistencyValue(sessionDetail)}%`}
                 color="bg-white dark:bg-white"
               />
@@ -727,7 +732,7 @@ export default function SessionDetailScreen() {
 
             <View className="mb-4">
               <View className="flex-row justify-between mb-1">
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.theoreticalBest')}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{t('sessions.theoreticalBest')}</Text>
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">{formatLapTime(theoreticalBestMs)}</Text>
               </View>
               <View className="flex-row items-center gap-2">
@@ -743,22 +748,22 @@ export default function SessionDetailScreen() {
                   />
                 </View>
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {i18n.t('sessions.gap', {
+                  {t('sessions.gap', {
                     gap:
                       bestLapMs !== null && theoreticalBestMs !== null
-                        ? formatGapSeconds(bestLapMs - theoreticalBestMs)
-                        : i18n.t('common.tbd'),
+                        ? formatGapSeconds(bestLapMs - theoreticalBestMs, t('common.tbd'))
+                        : t('common.tbd'),
                   })}
                 </Text>
               </View>
-              <Text className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">{i18n.t('sessions.bestSectorsCombined')}</Text>
+              <Text className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">{t('sessions.bestSectorsCombined')}</Text>
             </View>
 
             <View>
               <View className="flex-row justify-between mb-2">
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.lapDeltaTrend')}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{t('sessions.lapDeltaTrend')}</Text>
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {i18n.t('sessions.avgPerLap', { delta: getAverageLapDeltaLabel(sessionDetail) })}
+                  {t('sessions.avgPerLap', { delta: getAverageLapDeltaLabel(sessionDetail, t('common.tbd')) })}
                 </Text>
               </View>
               <View className="flex-row gap-1.5 items-end h-16">
@@ -773,10 +778,10 @@ export default function SessionDetailScreen() {
               </View>
               <View className="flex-row justify-between mt-1">
                 <Text className="text-xs text-zinc-400 dark:text-zinc-500">
-                  {i18n.t('sessions.lapLabel', { number: trendBars[0]?.lap ?? 0 })}
+                  {t('sessions.lapLabel', { number: trendBars[0]?.lap ?? 0 })}
                 </Text>
                 <Text className="text-xs text-zinc-400 dark:text-zinc-500">
-                  {i18n.t('sessions.lapLabel', { number: trendBars[trendBars.length - 1]?.lap ?? 0 })}
+                  {t('sessions.lapLabel', { number: trendBars[trendBars.length - 1]?.lap ?? 0 })}
                 </Text>
               </View>
             </View>
@@ -786,15 +791,15 @@ export default function SessionDetailScreen() {
             <LapBreakdown laps={lapBreakdownItems} accentColor="violet" />
           ) : (
             <Card>
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.noLapDataYet')}</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('sessions.noLapDataYet')}</Text>
             </Card>
           )}
 
           <Card>
             <View className="flex-row items-center justify-between mb-3">
               <View>
-                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('sessions.sessionNotes')}</Text>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.sessionNotesSubtitle')}</Text>
+                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{t('sessions.sessionNotes')}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{t('sessions.sessionNotesSubtitle')}</Text>
               </View>
               <Pressable
                 onPress={() => {
@@ -806,7 +811,7 @@ export default function SessionDetailScreen() {
                 hitSlop={8}
               >
                 <Text className="text-sm font-medium text-violet-400">
-                  {isEditing ? i18n.t('common.done') : i18n.t('common.edit')}
+                  {isEditing ? t('common.done') : t('common.edit')}
                 </Text>
               </Pressable>
             </View>
@@ -829,14 +834,14 @@ export default function SessionDetailScreen() {
                             className="rounded-xl px-5 py-2.5 bg-zinc-200 dark:bg-white/10"
                             hitSlop={4}
                           >
-                            <Text className="text-sm font-medium text-zinc-600 dark:text-zinc-300">{i18n.t('common.cancel')}</Text>
+                            <Text className="text-sm font-medium text-zinc-600 dark:text-zinc-300">{t('common.cancel')}</Text>
                           </Pressable>
                           <Pressable
                             onPress={() => handleUpdateNote(note.id)}
                             className="rounded-xl px-5 py-2.5 bg-violet-500"
                             hitSlop={4}
                           >
-                            <Text className="text-sm font-medium text-white">{i18n.t('common.save')}</Text>
+                            <Text className="text-sm font-medium text-white">{t('common.save')}</Text>
                           </Pressable>
                         </View>
                       </View>
@@ -864,7 +869,7 @@ export default function SessionDetailScreen() {
                 ))
               ) : !isEditing ? (
                 <View className="rounded-2xl bg-zinc-50 dark:bg-black/20 px-4 py-3 border border-zinc-100 dark:border-white/5">
-                  <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.noSessionNotesYet')}</Text>
+                  <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('sessions.noSessionNotesYet')}</Text>
                 </View>
               ) : null}
 
@@ -872,7 +877,7 @@ export default function SessionDetailScreen() {
                 <View className="rounded-2xl bg-zinc-50 dark:bg-black/20 border border-dashed border-zinc-300 dark:border-white/10 p-4">
                   <TextInput
                     style={{ color: isDark ? '#e4e4e7' : '#3f3f46', fontSize: 15, padding: 0, minHeight: 44 }}
-                    placeholder={i18n.t('sessions.addSessionNotePlaceholder')}
+                    placeholder={t('sessions.addSessionNotePlaceholder')}
                     placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
                     value={newNote}
                     onChangeText={setNewNote}
@@ -885,7 +890,7 @@ export default function SessionDetailScreen() {
                       className="mt-3 self-end rounded-xl px-5 py-2.5 bg-violet-500"
                       hitSlop={4}
                     >
-                      <Text className="text-sm font-medium text-white">{i18n.t('circuits.addNote')}</Text>
+                      <Text className="text-sm font-medium text-white">{t('circuits.addNote')}</Text>
                     </Pressable>
                   ) : null}
                 </View>
@@ -915,7 +920,7 @@ export default function SessionDetailScreen() {
             <View className="flex-row items-center gap-1.5">
               {!hasProAccess ? <Ionicons name="lock-closed" size={13} color="#8b5cf6" /> : null}
               <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-                {i18n.t('sessions.exportData')}
+                {t('sessions.exportData')}
               </Text>
             </View>
           </Pressable>
@@ -925,7 +930,7 @@ export default function SessionDetailScreen() {
             className={`flex-1 rounded-2xl py-3.5 items-center ${share.isSharing || !sessionDetail ? 'bg-violet-500/60' : 'bg-violet-500'}`}
           >
             <Text className="text-sm font-semibold text-white">
-              {share.isSharing ? i18n.t('sessions.preparingShare') : i18n.t('sessions.share')}
+              {share.isSharing ? t('sessions.preparingShare') : t('sessions.share')}
             </Text>
           </Pressable>
           <Pressable
@@ -944,20 +949,20 @@ export default function SessionDetailScreen() {
             style={{ position: 'absolute', left: -10000, top: 0 }}
           >
             <SessionStoryCard
-              sessionName={sessionDetail.session.name ?? i18n.t('sessions.recordedSession')}
+              sessionName={sessionDetail.session.name ?? t('sessions.recordedSession')}
               circuitName={displayTrackTitle ?? sessionDetail.track.name}
               location={displayTrackLocation}
               car={sessionDetail.session.car}
               bestLap={formatLapTime(bestLapMs)}
               totalLaps={`${sessionDetail.session.totalLaps}`}
-              topSpeed={formatSpeed(topSpeedKph)}
-              bestLapLabel={i18n.t('sessions.storyBestLap')}
-              totalLapsLabel={i18n.t('sessions.storyTotalLaps')}
-              topSpeedLabel={i18n.t('sessions.storyTopSpeed')}
+              topSpeed={formatSpeed(topSpeedKph, t('common.tbd'))}
+              bestLapLabel={t('sessions.storyBestLap')}
+              totalLapsLabel={t('sessions.storyTotalLaps')}
+              topSpeedLabel={t('sessions.storyTopSpeed')}
               variant={share.storyTemplate}
               backgroundImageUri={share.photoUri ?? undefined}
               racingLinePoints={getBestLapRacingLine(sessionDetail)}
-              gpsUnavailableLabel={i18n.t('sessions.storyGpsUnavailable')}
+              gpsUnavailableLabel={t('sessions.storyGpsUnavailable')}
             />
           </View>
         ) : null}
@@ -970,16 +975,16 @@ export default function SessionDetailScreen() {
             style={{ position: 'absolute', left: -10000, top: 0 }}
           >
             <XPostCard
-              sessionName={sessionDetail.session.name ?? i18n.t('sessions.recordedSession')}
+              sessionName={sessionDetail.session.name ?? t('sessions.recordedSession')}
               circuitName={displayTrackTitle ?? sessionDetail.track.name}
               location={displayTrackLocation}
               car={sessionDetail.session.car}
               bestLap={formatLapTime(bestLapMs)}
               totalLaps={`${sessionDetail.session.totalLaps}`}
-              topSpeed={formatSpeed(topSpeedKph)}
-              bestLapLabel={i18n.t('sessions.storyBestLap')}
-              totalLapsLabel={i18n.t('sessions.storyTotalLaps')}
-              topSpeedLabel={i18n.t('sessions.storyTopSpeed')}
+              topSpeed={formatSpeed(topSpeedKph, t('common.tbd'))}
+              bestLapLabel={t('sessions.storyBestLap')}
+              totalLapsLabel={t('sessions.storyTotalLaps')}
+              topSpeedLabel={t('sessions.storyTopSpeed')}
             />
           </View>
         ) : null}
@@ -998,13 +1003,13 @@ export default function SessionDetailScreen() {
         storyTemplate={share.storyTemplate}
         photoUri={share.photoUri}
         storyCardData={sessionDetail ? {
-          sessionName: sessionDetail.session.name ?? i18n.t('sessions.recordedSession'),
+          sessionName: sessionDetail.session.name ?? t('sessions.recordedSession'),
           circuitName: displayTrackTitle ?? sessionDetail.track.name,
           location: displayTrackLocation,
           car: sessionDetail.session.car,
           bestLap: formatLapTime(bestLapMs),
           totalLaps: `${sessionDetail.session.totalLaps}`,
-          topSpeed: formatSpeed(topSpeedKph),
+          topSpeed: formatSpeed(topSpeedKph, t('common.tbd')),
           racingLinePoints: getBestLapRacingLine(sessionDetail),
         } : null}
         onClose={share.closeStoryPreview}
@@ -1018,13 +1023,13 @@ export default function SessionDetailScreen() {
         visible={share.isXPostPreviewVisible}
         isSharing={share.isSharing}
         cardData={sessionDetail ? {
-          sessionName: sessionDetail.session.name ?? i18n.t('sessions.recordedSession'),
+          sessionName: sessionDetail.session.name ?? t('sessions.recordedSession'),
           circuitName: displayTrackTitle ?? sessionDetail.track.name,
           location: displayTrackLocation,
           car: sessionDetail.session.car,
           bestLap: formatLapTime(bestLapMs),
           totalLaps: `${sessionDetail.session.totalLaps}`,
-          topSpeed: formatSpeed(topSpeedKph),
+          topSpeed: formatSpeed(topSpeedKph, t('common.tbd')),
         } : null}
         onClose={share.closeXPostPreview}
         onShare={share.handleShareToX}

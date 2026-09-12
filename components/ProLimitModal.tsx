@@ -1,6 +1,6 @@
 import { Modal, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 
 type ProLimitModalProps = {
   visible: boolean;
@@ -19,6 +19,7 @@ export default function ProLimitModal({
   onManageSessions,
   onViewPro,
 }: ProLimitModalProps) {
+  const t = useT();
   return (
     <Modal
       visible={visible}
@@ -39,10 +40,10 @@ export default function ProLimitModal({
             <Ionicons name="flag-outline" size={22} color="#f59e0b" />
           </View>
           <Text className="text-xl font-semibold text-zinc-900 dark:text-white">
-            {i18n.t('pro.limitTitle')}
+            {t('pro.limitTitle')}
           </Text>
           <Text className="mt-2 text-sm leading-5 text-zinc-600 dark:text-zinc-300">
-            {i18n.t('pro.limitMessage', { used, limit })}
+            {t('pro.limitMessage', { used, limit })}
           </Text>
 
           <View className="mt-5 gap-2.5">
@@ -51,7 +52,7 @@ export default function ProLimitModal({
               onPress={onManageSessions}
             >
               <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-                {i18n.t('pro.manageSessions')}
+                {t('pro.manageSessions')}
               </Text>
             </Pressable>
             <Pressable
@@ -59,12 +60,12 @@ export default function ProLimitModal({
               onPress={onViewPro}
             >
               <Text className="text-sm font-semibold text-black">
-                {i18n.t('pro.viewPro')}
+                {t('pro.viewPro')}
               </Text>
             </Pressable>
             <Pressable className="w-full items-center py-2" onPress={onClose}>
               <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-                {i18n.t('common.cancel')}
+                {t('common.cancel')}
               </Text>
             </Pressable>
           </View>

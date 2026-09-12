@@ -273,6 +273,9 @@ export default {
     carPlaceholder: 'e.g. GR86 Track Build',
   },
   recording: {
+    locationPermissionRequired: 'Location permission is required to record a session.',
+    telemetryProcessingFailed: 'Unable to process telemetry sample.',
+    locationSubscriptionError: 'Location subscription error.',
     sessionRecording: 'Session Recording',
     lapTimes: 'Lap Times',
     recentLaps: 'Recent Laps',

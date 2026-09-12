@@ -66,6 +66,10 @@ const JAPANESE_TRACK_METADATA: Record<string, JapaneseTrackMetadata> = {
     name: 'スポーツランドSUGO',
     layoutName: 'レーシングコース',
   },
+  'autopolis-international': {
+    name: 'オートポリス',
+    layoutName: 'インターナショナルコース',
+  },
   'okayama-international-circuit': {
     name: '岡山国際サーキット',
   },
@@ -108,6 +112,7 @@ const JAPANESE_LOCATION_NAMES: Record<string, string> = {
   Miyagi: '宮城県',
   Okayama: '岡山県',
   Saitama: '埼玉県',
+  Ōita: '大分県',
 };
 
 const JAPANESE_LAYOUT_NAMES: Record<string, string> = {

@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import { useEntitlements } from '@/contexts/EntitlementContext';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
@@ -18,6 +18,7 @@ const BENEFITS = [
 ] as const;
 
 export default function ProScreen() {
+  const t = useT();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const gradientColors = useHeaderGradient('violet');
@@ -59,11 +60,11 @@ export default function ProScreen() {
         : await purchaseLifetime();
 
       if (outcome === 'purchased') {
-        Alert.alert(i18n.t('pro.purchaseSuccessTitle'), i18n.t('pro.purchaseSuccessMessage'));
+        Alert.alert(t('pro.purchaseSuccessTitle'), t('pro.purchaseSuccessMessage'));
       } else if (outcome === 'deferred') {
-        Alert.alert(i18n.t('pro.purchaseDeferredTitle'), i18n.t('pro.purchaseDeferredMessage'));
+        Alert.alert(t('pro.purchaseDeferredTitle'), t('pro.purchaseDeferredMessage'));
       } else if (outcome === 'failed') {
-        Alert.alert(i18n.t('pro.purchaseFailedTitle'), i18n.t('pro.purchaseFailedMessage'));
+        Alert.alert(t('pro.purchaseFailedTitle'), t('pro.purchaseFailedMessage'));
       }
     } finally {
       storeActionInFlightRef.current = false;
@@ -79,11 +80,11 @@ export default function ProScreen() {
     try {
       const outcome = await restorePurchases();
       if (outcome === 'restored') {
-        Alert.alert(i18n.t('pro.restoreSuccessTitle'), i18n.t('pro.restoreSuccessMessage'));
+        Alert.alert(t('pro.restoreSuccessTitle'), t('pro.restoreSuccessMessage'));
       } else if (outcome === 'empty') {
-        Alert.alert(i18n.t('pro.restoreEmptyTitle'), i18n.t('pro.restoreEmptyMessage'));
+        Alert.alert(t('pro.restoreEmptyTitle'), t('pro.restoreEmptyMessage'));
       } else {
-        Alert.alert(i18n.t('pro.restoreFailedTitle'), i18n.t('pro.restoreFailedMessage'));
+        Alert.alert(t('pro.restoreFailedTitle'), t('pro.restoreFailedMessage'));
       }
     } finally {
       storeActionInFlightRef.current = false;
@@ -95,17 +96,17 @@ export default function ProScreen() {
     {
       id: 'annual' as const,
       product: annualProduct,
-      title: i18n.t('pro.yearly'),
-      note: i18n.t('pro.yearlyNote'),
+      title: t('pro.yearly'),
+      note: t('pro.yearlyNote'),
     },
     {
       id: 'lifetime' as const,
       product: lifetimeProduct,
-      title: i18n.t('pro.lifetime'),
-      note: i18n.t('pro.lifetimeNote'),
+      title: t('pro.lifetime'),
+      note: t('pro.lifetimeNote'),
     },
   ];
-  const planLabel = source ? i18n.t(`pro.sources.${source}`) : i18n.t('pro.freePlan');
+  const planLabel = source ? t(`pro.sources.${source}`) : t('pro.freePlan');
 
   return (
     <View className="flex-1 bg-zinc-50 dark:bg-zinc-900">
@@ -124,10 +125,10 @@ export default function ProScreen() {
             <Ionicons name="speedometer-outline" size={25} color="#8b5cf6" />
           </View>
           <Text className="mt-4 text-3xl font-bold text-zinc-900 dark:text-white">
-            {i18n.t('pro.title')}
+            {t('pro.title')}
           </Text>
           <Text className="mt-2 max-w-lg text-sm leading-5 text-zinc-600 dark:text-zinc-300">
-            {i18n.t('pro.subtitle')}
+            {t('pro.subtitle')}
           </Text>
         </LinearGradient>
 
@@ -139,7 +140,7 @@ export default function ProScreen() {
                   <Ionicons name={icon} size={18} color="#10b981" />
                 </View>
                 <Text className="text-[15px] font-medium text-zinc-800 dark:text-zinc-100">
-                  {i18n.t(`pro.benefits.${key}`)}
+                  {t(`pro.benefits.${key}`)}
                 </Text>
               </View>
             ))}
@@ -150,7 +151,7 @@ export default function ProScreen() {
               <View className="flex-row items-center justify-between">
                 <View className="flex-1 pr-4">
                   <Text className="text-xs font-medium uppercase text-emerald-600 dark:text-emerald-400">
-                    {i18n.t('pro.currentPlan')}
+                    {t('pro.currentPlan')}
                   </Text>
                   <Text className="mt-1 text-lg font-semibold text-zinc-900 dark:text-white">
                     {planLabel}
@@ -160,13 +161,13 @@ export default function ProScreen() {
               </View>
               {accessStatus === 'offline_grace' ? (
                 <Text className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
-                  {i18n.t('pro.offlineGrace')}
+                  {t('pro.offlineGrace')}
                 </Text>
               ) : null}
               {source === 'yearly' ? (
                 <Pressable className="mt-4 self-start" onPress={() => void manageSubscription()}>
                   <Text className="text-sm font-medium text-violet-600 dark:text-violet-400">
-                    {i18n.t('pro.manageSubscription')}
+                    {t('pro.manageSubscription')}
                   </Text>
                 </Pressable>
               ) : null}
@@ -203,7 +204,7 @@ export default function ProScreen() {
               {!isLoadingProducts && !annualProduct && !lifetimeProduct ? (
                 <View className="items-center py-2">
                   <Text className="text-center text-sm leading-5 text-zinc-500 dark:text-zinc-400">
-                    {i18n.t('pro.offeringsUnavailable')}
+                    {t('pro.offeringsUnavailable')}
                   </Text>
                   <Pressable
                     disabled={isProcessing}
@@ -211,7 +212,7 @@ export default function ProScreen() {
                     onPress={() => void refresh()}
                   >
                     <Text className="text-sm font-medium text-violet-600 dark:text-violet-400">
-                      {i18n.t('common.retry')}
+                      {t('common.retry')}
                     </Text>
                   </Pressable>
                 </View>
@@ -233,14 +234,14 @@ export default function ProScreen() {
                       <ActivityIndicator color="#ffffff" />
                     ) : (
                       <Text className="text-sm font-semibold text-white">
-                        {isLoadingProducts ? i18n.t('common.loading') : i18n.t('pro.continue')}
+                        {isLoadingProducts ? t('common.loading') : t('pro.continue')}
                       </Text>
                     )}
                   </Pressable>
 
                   {selectedPlan === 'annual' && annualProduct ? (
                     <Text className="text-center text-xs leading-4 text-zinc-500 dark:text-zinc-400">
-                      {i18n.t('pro.renewalDisclosure')}
+                      {t('pro.renewalDisclosure')}
                     </Text>
                   ) : null}
                 </>
@@ -255,19 +256,19 @@ export default function ProScreen() {
               onPress={() => void handleRestore()}
             >
               <Text className="text-sm font-medium text-violet-600 dark:text-violet-400">
-                {i18n.t('pro.restore')}
+                {t('pro.restore')}
               </Text>
             </Pressable>
 
             <View className="mt-2 flex-row justify-center gap-5">
               <Pressable className="py-2" onPress={() => router.push('/terms')}>
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {i18n.t('menu.termsOfUse')}
+                  {t('menu.termsOfUse')}
                 </Text>
               </Pressable>
               <Pressable className="py-2" onPress={() => router.push('/privacy')}>
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {i18n.t('menu.privacyPolicy')}
+                  {t('menu.privacyPolicy')}
                 </Text>
               </Pressable>
             </View>

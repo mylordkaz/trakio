@@ -2,7 +2,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useMenu } from '@/contexts/MenuContext';
 
@@ -27,6 +27,7 @@ export default function LegalDocumentScreen({
   sectionIds,
   type,
 }: LegalDocumentScreenProps) {
+  const t = useT();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const gradientColors = useHeaderGradient(accent);
@@ -47,19 +48,19 @@ export default function LegalDocumentScreen({
           <View className="flex-row items-center mb-5">
             <Pressable onPress={() => router.back()} hitSlop={12}>
               <Text className={`text-sm font-medium ${ACCENT_BACK_COLOR[accent]}`}>
-                {i18n.t('common.back', { locale })}
+                {t('common.back', { locale })}
               </Text>
             </Pressable>
           </View>
 
           <Text className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white mb-1">
-            {i18n.t(`${baseKey}.title`, { locale })}
+            {t(`${baseKey}.title`, { locale })}
           </Text>
           <Text className="text-sm text-zinc-500 dark:text-zinc-400 leading-5 mb-3">
-            {i18n.t(`${baseKey}.subtitle`, { locale })}
+            {t(`${baseKey}.subtitle`, { locale })}
           </Text>
           <Text className="text-xs font-medium tracking-wide text-zinc-500 dark:text-zinc-400 uppercase">
-            {i18n.t('legal.lastUpdated', { locale })} · {i18n.t(`${baseKey}.updatedAt`, { locale })}
+            {t('legal.lastUpdated', { locale })} · {t(`${baseKey}.updatedAt`, { locale })}
           </Text>
         </LinearGradient>
 
@@ -70,10 +71,10 @@ export default function LegalDocumentScreen({
               className="rounded-2xl bg-white dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-4 py-4"
             >
               <Text className="text-base font-semibold tracking-tight text-zinc-900 dark:text-white mb-2">
-                {i18n.t(`${baseKey}.sections.${sectionId}.title`, { locale })}
+                {t(`${baseKey}.sections.${sectionId}.title`, { locale })}
               </Text>
               <Text className="text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-                {i18n.t(`${baseKey}.sections.${sectionId}.body`, {
+                {t(`${baseKey}.sections.${sectionId}.body`, {
                   locale,
                   email: LEGAL_CONTACT_EMAIL,
                 })}

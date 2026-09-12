@@ -4,7 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import i18n from "@/i18n";
+import { useT } from "@/hooks/useT";
 import Card from "@/components/Card";
 import EditableSessionTitle from "@/components/EditableSessionTitle";
 import ProgressBar from "@/components/ProgressBar";
@@ -31,6 +31,7 @@ import { getTrackDisplayTitle } from "@/utils/track-localization";
 const REVIEW_PROMPT_DELAY_MS = 2000;
 
 export default function PostSessionScreen() {
+  const t = useT();
   const router = useRouter();
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
@@ -41,7 +42,11 @@ export default function PostSessionScreen() {
     null,
   );
   const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadErrorKey, setLoadErrorKey] = useState<string | null>(null);
+  // The key is stored, not the message: a translated string held in
+  // state would not follow a language change, and making the effect
+  // that sets it depend on the translator would re-run a data load.
+  const loadError = loadErrorKey ? t(loadErrorKey) : null;
   const [shareState, setShareState] = useState<TrackLeaderboardShareState | null>(null);
 
   async function handleChangeTitle(newTitle: string) {
@@ -60,7 +65,7 @@ export default function PostSessionScreen() {
     async function loadSession() {
       if (!params.id) {
         if (isMounted) {
-          setLoadError(i18n.t("sessions.sessionNotFound"));
+          setLoadErrorKey("sessions.sessionNotFound");
           setIsLoading(false);
         }
         return;
@@ -76,12 +81,12 @@ export default function PostSessionScreen() {
 
         if (!nextSession) {
           setSessionDetail(null);
-          setLoadError(i18n.t("sessions.sessionNotFound"));
+          setLoadErrorKey("sessions.sessionNotFound");
           return;
         }
 
         setSessionDetail(nextSession);
-        setLoadError(null);
+        setLoadErrorKey(null);
 
         let willOfferShare = false;
         try {
@@ -111,7 +116,7 @@ export default function PostSessionScreen() {
           return;
         }
 
-        setLoadError(i18n.t("sessions.unableToLoadSession"));
+        setLoadErrorKey("sessions.unableToLoadSession");
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -158,22 +163,22 @@ export default function PostSessionScreen() {
             <Text className="text-xs text-zinc-500 dark:text-zinc-400">
               {sessionDetail
                 ? getTrackDisplayTitle(sessionDetail.track, locale)
-                : i18n.t("circuits.loadingTrack")}
+                : t("circuits.loadingTrack")}
             </Text>
             <View className="flex-row items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1.5 border border-emerald-400/20">
               <View className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
               <Text className="text-sm text-emerald-400">
-                {i18n.t("session.saved")}
+                {t("session.saved")}
               </Text>
             </View>
           </View>
 
           <View className="mb-4">
             <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-              {i18n.t("postSession.title")}
+              {t("postSession.title")}
             </Text>
             <EditableSessionTitle
-              title={sessionDetail?.session.name ?? i18n.t("sessions.sessionNotFound")}
+              title={sessionDetail?.session.name ?? t("sessions.sessionNotFound")}
               onChangeTitle={handleChangeTitle}
             />
           </View>
@@ -181,7 +186,7 @@ export default function PostSessionScreen() {
           {isLoading ? (
             <View className="mb-4 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-3">
               <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-                {i18n.t("sessions.loadingSession")}
+                {t("sessions.loadingSession")}
               </Text>
             </View>
           ) : null}
@@ -197,10 +202,10 @@ export default function PostSessionScreen() {
           <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
             <View className="flex-row items-center justify-between mb-2">
               <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-                {i18n.t("session.bestLap")}
+                {t("session.bestLap")}
               </Text>
               <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-                {i18n.t("session.lapCount", { count: totalLaps })}
+                {t("session.lapCount", { count: totalLaps })}
               </Text>
             </View>
             <Text
@@ -254,17 +259,18 @@ export default function PostSessionScreen() {
 
           <View className="flex-row gap-3">
             {[
-              [i18n.t("session.topSpeed"), formatSpeed(topSpeedKph)],
+              [t("session.topSpeed"), formatSpeed(topSpeedKph, t('common.tbd'))],
               [
-                i18n.t("session.duration"),
+                t("session.duration"),
                 sessionDetail
                   ? formatDuration(
                       sessionDetail.session.startedAt,
                       sessionDetail.session.endedAt,
+                      t("common.tbd"),
                     )
-                  : i18n.t("common.tbd"),
+                  : t("common.tbd"),
               ],
-              [i18n.t("session.totalLaps"), `${totalLaps}`],
+              [t("session.totalLaps"), `${totalLaps}`],
             ].map(([label, value]) => (
               <View
                 key={label}
@@ -283,7 +289,7 @@ export default function PostSessionScreen() {
           {sessionDetail?.session.car ? (
             <Card>
               <View className="flex-row items-center">
-                <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('profile.car')}</Text>
+                <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('profile.car')}</Text>
                 <Text className="flex-1 text-sm font-medium text-center text-zinc-900 dark:text-white">{sessionDetail.session.car}</Text>
               </View>
             </Card>
@@ -292,16 +298,16 @@ export default function PostSessionScreen() {
           <Card>
             <View className="mb-4">
               <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-                {i18n.t("sessions.sessionInsights")}
+                {t("sessions.sessionInsights")}
               </Text>
               <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                {i18n.t("sessions.performanceSummary")}
+                {t("sessions.performanceSummary")}
               </Text>
             </View>
 
             <View className="mb-4">
               <ProgressBar
-                label={i18n.t("postSession.consistency")}
+                label={t("postSession.consistency")}
                 value={`${consistency}%`}
                 color="bg-white dark:bg-white"
               />
@@ -310,7 +316,7 @@ export default function PostSessionScreen() {
             <View className="mb-4">
               <View className="flex-row justify-between mb-1">
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {i18n.t("sessions.theoreticalBest")}
+                  {t("sessions.theoreticalBest")}
                 </Text>
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
                   {formatLapTime(theoreticalBestMs)}
@@ -332,27 +338,27 @@ export default function PostSessionScreen() {
                 </View>
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
                   {theoreticalBestMs !== null && bestLapMs !== null
-                    ? i18n.t("sessions.gap", {
+                    ? t("sessions.gap", {
                         gap: ((bestLapMs - theoreticalBestMs) / 1000).toFixed(
                           3,
                         ),
                       })
-                    : i18n.t("common.tbd")}
+                    : t("common.tbd")}
                 </Text>
               </View>
               <Text className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">
-                {i18n.t("sessions.bestSectorsCombined")}
+                {t("sessions.bestSectorsCombined")}
               </Text>
             </View>
 
             <View>
               <View className="flex-row justify-between mb-2">
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {i18n.t("sessions.lapDeltaTrend")}
+                  {t("sessions.lapDeltaTrend")}
                 </Text>
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {i18n.t("sessions.avgPerLap", {
-                    delta: getAverageLapDeltaLabel(sessionDetail),
+                  {t("sessions.avgPerLap", {
+                    delta: getAverageLapDeltaLabel(sessionDetail, t('common.tbd')),
                   })}
                 </Text>
               </View>
@@ -370,12 +376,12 @@ export default function PostSessionScreen() {
                   </View>
                   <View className="flex-row justify-between mt-1">
                     <Text className="text-xs text-zinc-400 dark:text-zinc-500">
-                      {i18n.t("sessions.lapLabel", {
+                      {t("sessions.lapLabel", {
                         number: trendBars[0]?.lap ?? 0,
                       })}
                     </Text>
                     <Text className="text-xs text-zinc-400 dark:text-zinc-500">
-                      {i18n.t("sessions.lapLabel", {
+                      {t("sessions.lapLabel", {
                         number: trendBars[trendBars.length - 1]?.lap ?? 0,
                       })}
                     </Text>
@@ -383,7 +389,7 @@ export default function PostSessionScreen() {
                 </>
               ) : (
                 <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-                  {i18n.t("sessions.noLapDataYet")}
+                  {t("sessions.noLapDataYet")}
                 </Text>
               )}
             </View>
@@ -391,7 +397,7 @@ export default function PostSessionScreen() {
 
           <Card>
             <Text className="text-sm font-medium text-zinc-900 dark:text-white mb-3">
-              {i18n.t("postSession.lapBreakdown")}
+              {t("postSession.lapBreakdown")}
             </Text>
             {getValidTimedLaps(sessionDetail).length > 0 ? (
               <View className="gap-2">
@@ -409,13 +415,13 @@ export default function PostSessionScreen() {
                     >
                       <View className="flex-row items-center gap-2">
                         <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-                          {i18n.t("sessions.lapLabel", {
+                          {t("sessions.lapLabel", {
                             number: lap.lapNumber,
                           })}
                         </Text>
                         {isBest ? (
                           <Text className="text-xs font-medium text-emerald-400">
-                            {i18n.t("sessions.best")}
+                            {t("sessions.best")}
                           </Text>
                         ) : null}
                       </View>
@@ -431,7 +437,7 @@ export default function PostSessionScreen() {
               </View>
             ) : (
               <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-                {i18n.t("sessions.noLapDataYet")}
+                {t("sessions.noLapDataYet")}
               </Text>
             )}
           </Card>
@@ -443,7 +449,7 @@ export default function PostSessionScreen() {
             className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center"
           >
             <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-              {i18n.t("postSession.viewSessions")}
+              {t("postSession.viewSessions")}
             </Text>
           </Pressable>
           <Pressable
@@ -451,7 +457,7 @@ export default function PostSessionScreen() {
             className="flex-1 rounded-2xl bg-emerald-500 py-3.5 items-center"
           >
             <Text className="text-sm font-semibold text-black">
-              {i18n.t("session.newSession")}
+              {t("session.newSession")}
             </Text>
           </Pressable>
         </View>

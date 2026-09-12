@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Battery from 'expo-battery';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import Card from '@/components/Card';
 import EditableSessionTitle from '@/components/EditableSessionTitle';
 import ProLimitModal from '@/components/ProLimitModal';
@@ -44,9 +44,15 @@ type ChecklistItemKey = 'gpsLock' | 'battery' | 'startFinishLineSet';
 
 type ChecklistStatus = 'ready' | 'warning' | 'error';
 
+// The checklist holds what a value *is*, not its translated text: a stored
+// string would not follow a language change, and making the effect that
+// builds it depend on the translator would repeat its database, weather,
+// location and battery work on every switch.
+type ChecklistValue = { kind: 'key'; key: string } | { kind: 'text'; text: string };
+
 type ChecklistItem = {
   key: ChecklistItemKey;
-  value: string;
+  value: ChecklistValue;
   status: ChecklistStatus;
 };
 
@@ -64,6 +70,7 @@ function getChecklistValueClass(status: ChecklistStatus) {
 }
 
 export default function PreSessionScreen() {
+  const t = useT();
   const router = useRouter();
   const { trackId } = useLocalSearchParams<{ trackId?: string }>();
   const db = useSQLiteContext();
@@ -72,16 +79,20 @@ export default function PreSessionScreen() {
   const [selectedCircuit, setSelectedCircuit] = useState<TrackListItem | null>(null);
   const [showCircuitPicker, setShowCircuitPicker] = useState(false);
   const [isLoadingCircuits, setIsLoadingCircuits] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadErrorKey, setLoadErrorKey] = useState<string | null>(null);
+  // The key is stored, not the message: a translated string held in
+  // state would not follow a language change, and making the effect
+  // that sets it depend on the translator would re-run a data load.
+  const loadError = loadErrorKey ? t(loadErrorKey) : null;
   const [trackSummary, setTrackSummary] = useState<{ lastVisit: string | null; bestLapMs: number | null }>({
     lastVisit: null,
     bestLapMs: null,
   });
   const [sessionNumber, setSessionNumber] = useState(1);
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([
-    { key: 'gpsLock', value: i18n.t('telemetry.searching'), status: 'warning' },
-    { key: 'battery', value: i18n.t('common.tbd'), status: 'warning' },
-    { key: 'startFinishLineSet', value: i18n.t('common.tbd'), status: 'warning' },
+    { key: 'gpsLock', value: { kind: 'key', key: 'telemetry.searching' }, status: 'warning' },
+    { key: 'battery', value: { kind: 'key', key: 'common.tbd' }, status: 'warning' },
+    { key: 'startFinishLineSet', value: { kind: 'key', key: 'common.tbd' }, status: 'warning' },
   ]);
   const [weather, setWeather] = useState<TrackWeather | null>(null);
   const { colorScheme } = useColorScheme();
@@ -114,7 +125,7 @@ export default function PreSessionScreen() {
   const badgeOpacity = useSharedValue(0.5);
   const badgeStyle = useAnimatedStyle(() => ({ opacity: badgeOpacity.value }));
   const [circuitSearch, setCircuitSearch] = useState('');
-  const sessionTitle: string = customSessionTitle ?? (i18n.t('preSession.sessionTitle', { number: sessionNumber }) as string);
+  const sessionTitle: string = customSessionTitle ?? (t('preSession.sessionTitle', { number: sessionNumber }) as string);
   const displaySelectedCircuit = selectedCircuit
     ? localizeTrack(selectedCircuit, locale)
     : null;
@@ -147,13 +158,13 @@ export default function PreSessionScreen() {
 
           return null;
         });
-        setLoadError(null);
+        setLoadErrorKey(null);
       } catch {
         if (!isMounted) {
           return;
         }
 
-        setLoadError(i18n.t('circuits.loadError'));
+        setLoadErrorKey('circuits.loadError');
       } finally {
         if (isMounted) {
           setIsLoadingCircuits(false);
@@ -345,17 +356,17 @@ export default function PreSessionScreen() {
     async function loadChecklist() {
       let gpsItem: ChecklistItem = {
         key: 'gpsLock',
-        value: i18n.t('telemetry.searching'),
+        value: { kind: 'key', key: 'telemetry.searching' },
         status: 'warning',
       };
       let batteryItem: ChecklistItem = {
         key: 'battery',
-        value: i18n.t('common.tbd'),
+        value: { kind: 'key', key: 'common.tbd' },
         status: 'warning',
       };
       let startFinishItem: ChecklistItem = {
         key: 'startFinishLineSet',
-        value: i18n.t('common.tbd'),
+        value: { kind: 'key', key: 'common.tbd' },
         status: 'warning',
       };
 
@@ -365,7 +376,7 @@ export default function PreSessionScreen() {
         // GPS in the recording flow.
         gpsItem = {
           key: 'gpsLock',
-          value: selectedDevice.name,
+          value: { kind: 'text', text: selectedDevice.name },
           status: 'ready',
         };
       } else {
@@ -379,7 +390,7 @@ export default function PreSessionScreen() {
           if (permissionState === 'denied') {
             gpsItem = {
               key: 'gpsLock',
-              value: i18n.t('telemetry.blocked'),
+              value: { kind: 'key', key: 'telemetry.blocked' },
               status: 'error',
             };
           } else if (permissionState === 'granted') {
@@ -389,19 +400,19 @@ export default function PreSessionScreen() {
             if (accuracyM === null) {
               gpsItem = {
                 key: 'gpsLock',
-                value: i18n.t('telemetry.searching'),
+                value: { kind: 'key', key: 'telemetry.searching' },
                 status: 'warning',
               };
             } else if (accuracyM <= 10) {
               gpsItem = {
                 key: 'gpsLock',
-                value: i18n.t('telemetry.strong'),
+                value: { kind: 'key', key: 'telemetry.strong' },
                 status: 'ready',
               };
             } else {
               gpsItem = {
                 key: 'gpsLock',
-                value: i18n.t('telemetry.weak'),
+                value: { kind: 'key', key: 'telemetry.weak' },
                 status: 'warning',
               };
             }
@@ -409,7 +420,7 @@ export default function PreSessionScreen() {
         } catch {
           gpsItem = {
             key: 'gpsLock',
-            value: i18n.t('telemetry.searching'),
+            value: { kind: 'key', key: 'telemetry.searching' },
             status: 'warning',
           };
         }
@@ -420,13 +431,13 @@ export default function PreSessionScreen() {
 
         batteryItem = {
           key: 'battery',
-          value: `${Math.round(batteryLevel * 100)}%`,
+          value: { kind: 'text', text: `${Math.round(batteryLevel * 100)}%` },
           status: 'ready',
         };
       } catch {
         batteryItem = {
           key: 'battery',
-          value: i18n.t('common.tbd'),
+          value: { kind: 'key', key: 'common.tbd' },
           status: 'warning',
         };
       }
@@ -438,13 +449,13 @@ export default function PreSessionScreen() {
 
           startFinishItem = {
             key: 'startFinishLineSet',
-            value: hasStartFinishLine ? i18n.t('common.ok') : i18n.t('common.tbd'),
+            value: { kind: 'key', key: hasStartFinishLine ? 'common.ok' : 'common.tbd' },
             status: hasStartFinishLine ? 'ready' : 'error',
           };
         } catch {
           startFinishItem = {
             key: 'startFinishLineSet',
-            value: i18n.t('common.tbd'),
+            value: { kind: 'key', key: 'common.tbd' },
             status: 'error',
           };
         }
@@ -548,7 +559,7 @@ export default function PreSessionScreen() {
 
   function formatTrackLength(lengthMeters: number | null) {
     if (lengthMeters === null) {
-      return i18n.t('common.tbd');
+      return t('common.tbd');
     }
 
     return `${(lengthMeters / 1000).toFixed(3)} km`;
@@ -556,10 +567,10 @@ export default function PreSessionScreen() {
 
   function formatLastVisit(value: string | null) {
     if (!value) {
-      return i18n.t('common.tbd');
+      return t('common.tbd');
     }
 
-    return new Date(value).toLocaleDateString(i18n.locale === 'ja' ? 'ja-JP' : 'en-US', {
+    return new Date(value).toLocaleDateString(locale === 'ja' ? 'ja-JP' : 'en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -568,7 +579,7 @@ export default function PreSessionScreen() {
 
   function formatTemperature(value: number | null) {
     if (value === null) {
-      return i18n.t('common.tbd');
+      return t('common.tbd');
     }
 
     return `${Math.round(value)}°C`;
@@ -576,7 +587,7 @@ export default function PreSessionScreen() {
 
   function formatWindSpeed(value: number | null) {
     if (value === null) {
-      return i18n.t('common.tbd');
+      return t('common.tbd');
     }
 
     return `${Math.round(value)} km/h`;
@@ -622,34 +633,34 @@ export default function PreSessionScreen() {
               <Pressable onPress={openMenu} hitSlop={8}>
                 <Ionicons name="menu" size={22} color={isDark ? '#a1a1aa' : '#71717a'} />
               </Pressable>
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.title')}</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{t('preSession.title')}</Text>
             </View>
             <Animated.View style={badgeStyle} className="flex-row items-center gap-2 rounded-full bg-emerald-500/15 dark:bg-emerald-500/30 px-3 py-1.5 border border-emerald-600/30 dark:border-emerald-400/40">
               <View className="h-2.5 w-2.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />
-              <Text className="text-sm font-medium text-emerald-700 dark:text-emerald-400">{i18n.t('session.ready')}</Text>
+              <Text className="text-sm font-medium text-emerald-700 dark:text-emerald-400">{t('session.ready')}</Text>
             </Animated.View>
           </View>
 
           {/* Title + READY badge */}
           <View className="mb-4">
-            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.readyToRecord')}</Text>
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('preSession.readyToRecord')}</Text>
             <EditableSessionTitle title={sessionTitle} onChangeTitle={(t) => setCustomSessionTitle(t)} />
           </View>
 
           {/* Track Selection */}
           <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
             <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.selectedCircuit')}</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('preSession.selectedCircuit')}</Text>
               <Pressable onPress={() => { setShowCircuitPicker(!showCircuitPicker); setCircuitSearch(''); }}>
                 <Text className="text-sm font-medium text-emerald-400">
-                  {showCircuitPicker ? i18n.t('common.done') : i18n.t('common.change')}
+                  {showCircuitPicker ? t('common.done') : t('common.change')}
                 </Text>
               </Pressable>
             </View>
 
             {isLoadingCircuits ? (
               <View className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-3">
-                <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.loadingTracks')}</Text>
+                <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('circuits.loadingTracks')}</Text>
               </View>
             ) : loadError ? (
               <View className="rounded-2xl bg-red-500/10 border border-red-500/20 px-3 py-3">
@@ -657,21 +668,21 @@ export default function PreSessionScreen() {
               </View>
             ) : !selectedCircuit && circuits.length === 0 ? (
               <View className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-3">
-                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('circuits.noTracksFound')}</Text>
+                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{t('circuits.noTracksFound')}</Text>
                 <Text className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                  {i18n.t('circuits.noTracksFoundHint')}
+                  {t('circuits.noTracksFoundHint')}
                 </Text>
               </View>
             ) : !selectedCircuit && !showCircuitPicker && !hasResolvedAutoSelection ? (
               <Animated.View style={pulseStyle} className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-3">
-                <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.detectingTrack')}</Text>
+                <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('preSession.detectingTrack')}</Text>
               </Animated.View>
             ) : !selectedCircuit && !showCircuitPicker ? (
               <Pressable
                 onPress={() => { setShowCircuitPicker(true); setCircuitSearch(''); }}
                 className="flex-row items-center justify-between rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-3"
               >
-                <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.selectTrack')}</Text>
+                <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('preSession.selectTrack')}</Text>
                 <Ionicons name="chevron-forward" size={16} color="#71717a" />
               </Pressable>
             ) : selectedCircuit && !showCircuitPicker ? (
@@ -682,7 +693,7 @@ export default function PreSessionScreen() {
                       {getTrackDisplayTitle(selectedCircuit, locale)}
                     </Text>
                     <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-                      {[displaySelectedCircuit?.country, formatTrackLength(selectedCircuit.lengthMeters), i18n.t('preSession.cornersCount', { count: selectedCircuit.corners ?? 0 })]
+                      {[displaySelectedCircuit?.country, formatTrackLength(selectedCircuit.lengthMeters), t('preSession.cornersCount', { count: selectedCircuit.corners ?? 0 })]
                         .filter(Boolean)
                         .join(' · ')}
                     </Text>
@@ -691,11 +702,11 @@ export default function PreSessionScreen() {
                 </View>
                 <View className="flex-row gap-2 mt-3">
                   <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-2">
-                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-0.5">{i18n.t('preSession.lastVisit')}</Text>
+                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-0.5">{t('preSession.lastVisit')}</Text>
                     <Text className="text-sm font-medium text-zinc-900 dark:text-white">{formatLastVisit(trackSummary.lastVisit)}</Text>
                   </View>
                   <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-2">
-                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-0.5">{i18n.t('session.bestLap')}</Text>
+                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-0.5">{t('session.bestLap')}</Text>
                     <Text className="text-sm font-medium text-zinc-900 dark:text-white">{formatLapTime(trackSummary.bestLapMs)}</Text>
                   </View>
                 </View>
@@ -706,7 +717,7 @@ export default function PreSessionScreen() {
                   <Ionicons name="search" size={16} color={isDark ? '#a1a1aa' : '#71717a'} />
                   <TextInput
                     className="flex-1 ml-2 text-sm text-zinc-900 dark:text-white p-0"
-                    placeholder={i18n.t('circuits.searchTracks')}
+                    placeholder={t('circuits.searchTracks')}
                     placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
                     value={circuitSearch}
                     onChangeText={setCircuitSearch}
@@ -745,7 +756,7 @@ export default function PreSessionScreen() {
                             {getTrackDisplayTitle(circuit, locale)}
                           </Text>
                           <Text className="text-xs text-zinc-400 dark:text-zinc-500">
-                            {formatTrackLength(circuit.lengthMeters)} · {i18n.t('preSession.cornersCount', { count: circuit.corners ?? 0 })}
+                            {formatTrackLength(circuit.lengthMeters)} · {t('preSession.cornersCount', { count: circuit.corners ?? 0 })}
                           </Text>
                         </View>
                         {selectedCircuit?.id === circuit.id && (
@@ -755,7 +766,7 @@ export default function PreSessionScreen() {
                     ))
                   ) : (
                     <View className="rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-3">
-                      <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('circuits.noTracksFound')}</Text>
+                      <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('circuits.noTracksFound')}</Text>
                     </View>
                   )}
                 </ScrollView>
@@ -768,9 +779,9 @@ export default function PreSessionScreen() {
             onPress={() => router.push('/profile')}
             className="mt-3 rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 px-4 py-3.5 flex-row items-center"
           >
-            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('profile.car')}</Text>
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('profile.car')}</Text>
             <Text className={`flex-1 text-sm font-medium text-center ${userCar ? 'text-zinc-900 dark:text-white' : 'text-zinc-400 dark:text-zinc-500'}`}>
-              {userCar ?? i18n.t('preSession.setCar')}
+              {userCar ?? t('preSession.setCar')}
             </Text>
             <Ionicons name="chevron-forward" size={16} color={isDark ? '#52525b' : '#a1a1aa'} />
           </Pressable>
@@ -780,14 +791,14 @@ export default function PreSessionScreen() {
             {accessStatus === 'resolved_free' && sessionQuota?.limit != null ? (
               <View className="mb-2 flex-row items-center justify-between px-1">
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {i18n.t('pro.sessionUsage', {
+                  {t('pro.sessionUsage', {
                     used: sessionQuota?.used ?? 0,
                     limit: sessionQuota?.limit ?? FREE_SESSION_LIMIT,
                   })}
                 </Text>
                 <Pressable onPress={() => router.push('/pro')} hitSlop={8}>
                   <Text className="text-xs font-medium text-violet-600 dark:text-violet-400">
-                    {i18n.t('pro.viewPro')}
+                    {t('pro.viewPro')}
                   </Text>
                 </Pressable>
               </View>
@@ -798,7 +809,7 @@ export default function PreSessionScreen() {
               className="w-full rounded-2xl bg-emerald-500 py-4 items-center disabled:opacity-60"
             >
               <Text className="text-sm font-semibold text-black">
-                {isCheckingQuota ? i18n.t('common.loading') : i18n.t('session.start')}
+                {isCheckingQuota ? t('common.loading') : t('session.start')}
               </Text>
             </Pressable>
           </View>
@@ -808,23 +819,23 @@ export default function PreSessionScreen() {
           {/* Conditions */}
           <View className="flex-row gap-3">
             <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('preSession.condition')}</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{t('preSession.condition')}</Text>
               <Text className="text-2xl mb-1 text-center">{weather?.emoji ?? '—'}</Text>
               <Text className="text-sm font-semibold text-zinc-900 dark:text-white text-center">
-                {weather ? i18n.t(`preSession.${weather.conditionKey}`) : i18n.t('common.tbd')}
+                {weather ? t(`preSession.${weather.conditionKey}`) : t('common.tbd')}
               </Text>
             </View>
             <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('preSession.airTemp')}</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{t('preSession.airTemp')}</Text>
               <View className="flex-1 justify-center">
                 <Text className="text-lg font-semibold text-zinc-900 dark:text-white text-center">{formatTemperature(weather?.temperatureC ?? null)}</Text>
               </View>
             </View>
             <View className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('preSession.wind')}</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{t('preSession.wind')}</Text>
               <View className="flex-1 justify-center">
                 <Text className="text-lg font-semibold text-zinc-900 dark:text-white text-center">{formatWindSpeed(weather?.windSpeedKph ?? null)}</Text>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400 text-center">{weather?.windDirectionCardinal ?? i18n.t('common.tbd')}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400 text-center">{weather?.windDirectionCardinal ?? t('common.tbd')}</Text>
               </View>
             </View>
           </View>
@@ -833,16 +844,16 @@ export default function PreSessionScreen() {
           <Card>
             <View className="flex-row items-center justify-between mb-3">
               <View>
-                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('preSession.sessionChecklist')}</Text>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('preSession.checklistSubtitle')}</Text>
+                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{t('preSession.sessionChecklist')}</Text>
+                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{t('preSession.checklistSubtitle')}</Text>
               </View>
-              <Text className="text-sm text-emerald-400">{i18n.t('preSession.allReady', { count: readyChecklistCount, total: checklistItems.length })}</Text>
+              <Text className="text-sm text-emerald-400">{t('preSession.allReady', { count: readyChecklistCount, total: checklistItems.length })}</Text>
             </View>
             <View className="gap-2">
               {checklistItems.map((item) => (
                 <View key={item.key} className="flex-row items-center justify-between rounded-2xl bg-zinc-50 dark:bg-black/20 px-3 py-2.5 border border-zinc-100 dark:border-white/5">
-                  <Text className="text-sm text-zinc-900 dark:text-white">{i18n.t(`preSession.${item.key}`)}</Text>
-                  <Text className={`text-sm font-medium ${getChecklistValueClass(item.status)}`}>{item.value}</Text>
+                  <Text className="text-sm text-zinc-900 dark:text-white">{t(`preSession.${item.key}`)}</Text>
+                  <Text className={`text-sm font-medium ${getChecklistValueClass(item.status)}`}>{item.value.kind === 'key' ? t(item.value.key) : item.value.text}</Text>
                 </View>
               ))}
             </View>

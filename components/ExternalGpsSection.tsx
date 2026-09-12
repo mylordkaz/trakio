@@ -1,23 +1,13 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import { useExternalGps } from '@/contexts/ExternalGpsContext';
-import { useMenu } from '@/contexts/MenuContext';
 import DeviceScanModal from '@/components/DeviceScanModal';
 
 export default function ExternalGpsSection() {
+  const t = useT();
   const { selectedDevice, clearDevice } = useExternalGps();
-  const { locale } = useMenu();
   const [scanVisible, setScanVisible] = useState(false);
-
-  // Wrap i18n.t so the React compiler treats translations as dependent on
-  // locale; a raw i18n.t call reads as a constant and is memoized across
-  // language changes.
-  const t = useCallback(
-    (key: string, opts?: Record<string, unknown>) => i18n.t(key, opts),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [locale],
-  );
 
 
   return (

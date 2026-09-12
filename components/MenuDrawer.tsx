@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dimensions,
   Image,
@@ -19,7 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import { useRouter, type Href } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
-import i18n from "@/i18n";
+import { useT } from "@/hooks/useT";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useMenu } from "@/contexts/MenuContext";
 import { useEntitlements } from "@/contexts/EntitlementContext";
@@ -82,6 +82,7 @@ const FLAG_MAP: Record<string, string> = {
 };
 
 export default function MenuDrawer() {
+  const t = useT();
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
@@ -133,13 +134,6 @@ export default function MenuDrawer() {
   }));
 
   const currentAppearance = appearanceMode;
-
-  // Wrap i18n.t so React compiler treats translations as dependent on locale
-  const t = useCallback(
-    (key: string, opts?: Record<string, unknown>) => i18n.t(key, opts),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [locale],
-  );
 
   const currentLang = LANGUAGES.find((l) => l.code === locale) ?? LANGUAGES[0];
   const [isLangOpen, setIsLangOpen] = useState(false);
