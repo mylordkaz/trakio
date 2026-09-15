@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import { useExternalGps } from '@/contexts/ExternalGpsContext';
 import DeviceScanModal from '@/components/DeviceScanModal';
 
 export default function ExternalGpsSection() {
+  const t = useT();
   const { selectedDevice, clearDevice } = useExternalGps();
   const [scanVisible, setScanVisible] = useState(false);
+
 
   return (
     <>
@@ -14,7 +16,7 @@ export default function ExternalGpsSection() {
         <View className="flex-row items-center justify-between">
           <View className="flex-1 mr-3">
             <Text className="text-[15px] font-medium text-zinc-900 dark:text-white">
-              {i18n.t('menu.externalGpsDevice')}
+              {t('menu.externalGpsDevice')}
             </Text>
             {selectedDevice ? (
               <View className="flex-row items-center mt-0.5">
@@ -28,7 +30,7 @@ export default function ExternalGpsSection() {
               </View>
             ) : (
               <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-                {i18n.t('menu.noDevicePaired')}
+                {t('menu.noDevicePaired')}
               </Text>
             )}
           </View>
@@ -38,7 +40,7 @@ export default function ExternalGpsSection() {
               className="px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10"
             >
               <Text className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
-                {i18n.t('menu.removeDevice')}
+                {t('menu.removeDevice')}
               </Text>
             </Pressable>
           )}
@@ -49,7 +51,7 @@ export default function ExternalGpsSection() {
           className="mt-3 rounded-xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 py-3 items-center"
         >
           <Text className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
-            {i18n.t('menu.scanForDevices')}
+            {t('menu.scanForDevices')}
           </Text>
         </Pressable>
       </View>

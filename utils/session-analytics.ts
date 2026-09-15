@@ -153,11 +153,11 @@ export function getLapBreakdownItems(sessionDetail: SessionDetail | null): LapBr
   });
 }
 
-export function getAverageLapDeltaLabel(sessionDetail: SessionDetail | null) {
+export function getAverageLapDeltaLabel(sessionDetail: SessionDetail | null, tbd: string) {
   const validTimedLaps = getValidTimedLaps(sessionDetail);
 
   if (validTimedLaps.length < 2) {
-    return i18n.t('common.tbd');
+    return tbd;
   }
 
   const deltas = validTimedLaps.slice(1).map((lap, index) => {

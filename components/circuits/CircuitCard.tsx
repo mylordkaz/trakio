@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { View, Text, Pressable } from "react-native";
 import { FontAwesome6 } from "@expo/vector-icons";
-import i18n from "@/i18n";
+import { useT } from "@/hooks/useT";
 import TrackOutlineThumbnail from "@/components/circuits/TrackOutlineThumbnail";
 import type { TrackListItem } from "@/db";
 import { formatDistanceKm } from "@/utils/format";
@@ -25,9 +25,9 @@ const STAR_TOP = 16;
 const STAR_RIGHT = 20;
 const STAR_SIZE = 18;
 
-function formatTrackLength(lengthMeters: number | null) {
+function formatTrackLength(lengthMeters: number | null, tbd: string) {
   if (lengthMeters === null) {
-    return i18n.t("common.tbd");
+    return tbd;
   }
 
   return `${(lengthMeters / 1000).toFixed(3)} km`;
@@ -41,6 +41,7 @@ function CircuitCard({
   onPress,
   onToggleFavorite,
 }: Props) {
+  const t = useT();
   const localized = localizeTrack(circuit, locale);
 
   return (
@@ -66,7 +67,7 @@ function CircuitCard({
             </Text>
             <View className="mt-1.5 self-start rounded-full px-2 py-0.5 border bg-sky-500/15 border-sky-400/20">
               <Text className="text-xs text-sky-600 dark:text-sky-300">
-                {localized.layoutName ?? i18n.t("common.track")}
+                {localized.layoutName ?? t("common.track")}
               </Text>
             </View>
             {distanceMeters != null ? (
@@ -91,18 +92,18 @@ function CircuitCard({
         <View className="flex-row gap-3">
           <View className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 px-3 py-2.5">
             <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">
-              {i18n.t("circuits.length")}
+              {t("circuits.length")}
             </Text>
             <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-              {formatTrackLength(circuit.lengthMeters)}
+              {formatTrackLength(circuit.lengthMeters, t("common.tbd"))}
             </Text>
           </View>
           <View className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 px-3 py-2.5">
             <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">
-              {i18n.t("circuits.corners")}
+              {t("circuits.corners")}
             </Text>
             <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-              {circuit.corners ?? i18n.t("common.tbd")}
+              {circuit.corners ?? t("common.tbd")}
             </Text>
           </View>
         </View>
@@ -111,7 +112,7 @@ function CircuitCard({
         onPress={() => onToggleFavorite(circuit.id)}
         hitSlop={8}
         accessibilityRole="button"
-        accessibilityLabel={i18n.t("circuits.toggleFavorite")}
+        accessibilityLabel={t("circuits.toggleFavorite")}
         accessibilityState={{ selected: circuit.isFavorite }}
         className="absolute"
         style={{ top: STAR_TOP, right: STAR_RIGHT }}

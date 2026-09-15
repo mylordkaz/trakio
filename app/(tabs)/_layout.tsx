@@ -1,7 +1,7 @@
 import { Tabs } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useMenu } from '@/contexts/MenuContext';
 import MenuDrawer from '@/components/MenuDrawer';
@@ -17,6 +17,7 @@ function UnmountOnBlur({ children }: { children: React.ReactNode }) {
 }
 
 function TabsNavigator() {
+  const t = useT();
   const { colorScheme } = useColorScheme();
   const { locale } = useMenu();
   const isDark = colorScheme === 'dark';
@@ -38,7 +39,7 @@ function TabsNavigator() {
         <Tabs.Screen
           name="circuits"
           options={{
-            tabBarLabel: i18n.t('circuits.header', { locale }),
+            tabBarLabel: t('circuits.header', { locale }),
             tabBarActiveTintColor: '#0ea5e9',
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="map-outline" size={size} color={color} />
@@ -48,7 +49,7 @@ function TabsNavigator() {
         <Tabs.Screen
           name="record"
           options={{
-            tabBarLabel: i18n.t('tabs.record', { locale }),
+            tabBarLabel: t('tabs.record', { locale }),
             tabBarActiveTintColor: '#10b981',
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="radio-button-on" size={size} color={color} />
@@ -58,7 +59,7 @@ function TabsNavigator() {
         <Tabs.Screen
           name="sessions"
           options={{
-            tabBarLabel: i18n.t('sessions.header', { locale }),
+            tabBarLabel: t('sessions.header', { locale }),
             tabBarActiveTintColor: '#8b5cf6',
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="timer-outline" size={size} color={color} />

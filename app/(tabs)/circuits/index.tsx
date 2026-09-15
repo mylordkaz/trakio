@@ -13,7 +13,7 @@ import { FontAwesome6, Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
 import * as Location from "expo-location";
-import i18n from "@/i18n";
+import { useT, type TranslateFn } from "@/hooks/useT";
 import type { TrackListItem } from "@/db";
 import { listTracks, listRecentTracks, setTrackFavorite } from "@/db";
 import { haversineDistanceMeters } from "@/utils/geo";
@@ -44,11 +44,12 @@ function countryFlag(code: string): string {
     );
 }
 
-function countryName(code: string): string {
-  return i18n.t(`countries.${code}`, { defaultValue: code });
+function countryName(code: string, t: TranslateFn): string {
+  return t(`countries.${code}`, { defaultValue: code });
 }
 
 export default function CircuitsScreen() {
+  const t = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const db = useSQLiteContext();
@@ -65,8 +66,16 @@ export default function CircuitsScreen() {
     longitude: number;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [circuitsError, setCircuitsError] = useState<string | null>(null);
-  const [recentError, setRecentError] = useState<string | null>(null);
+  const [circuitsErrorKey, setCircuitsErrorKey] = useState<string | null>(null);
+  // The key is stored, not the message: a translated string held in
+  // state would not follow a language change, and making the effect
+  // that sets it depend on the translator would re-run a data load.
+  const circuitsError = circuitsErrorKey ? t(circuitsErrorKey) : null;
+  const [recentErrorKey, setRecentErrorKey] = useState<string | null>(null);
+  // The key is stored, not the message: a translated string held in
+  // state would not follow a language change, and making the effect
+  // that sets it depend on the translator would re-run a data load.
+  const recentError = recentErrorKey ? t(recentErrorKey) : null;
   const [isRequestOpen, setIsRequestOpen] = useState(false);
   const [requestCircuitName, setRequestCircuitName] = useState("");
   const { colorScheme } = useColorScheme();
@@ -95,14 +104,14 @@ export default function CircuitsScreen() {
         }
 
         setCircuits(tracks);
-        setCircuitsError(null);
+        setCircuitsErrorKey(null);
       } catch {
         if (generation !== refreshGenerationRef.current) {
           return;
         }
 
         if (surfaceError) {
-          setCircuitsError(i18n.t("circuits.loadError"));
+          setCircuitsErrorKey("circuits.loadError");
         }
       }
     },
@@ -119,14 +128,14 @@ export default function CircuitsScreen() {
         }
 
         setRecentCircuits(tracks);
-        setRecentError(null);
+        setRecentErrorKey(null);
       } catch {
         if (generation !== refreshGenerationRef.current) {
           return;
         }
 
         if (surfaceError) {
-          setRecentError(i18n.t("circuits.loadError"));
+          setRecentErrorKey("circuits.loadError");
         }
       }
     },
@@ -219,9 +228,9 @@ export default function CircuitsScreen() {
     }
 
     return [...codes].sort((a, b) =>
-      countryName(a).localeCompare(countryName(b), locale),
+      countryName(a, t).localeCompare(countryName(b, t), locale),
     );
-  }, [circuits, locale]);
+  }, [circuits, locale, t]);
 
   const distances = useMemo(() => {
     if (!position) {
@@ -377,20 +386,20 @@ export default function CircuitsScreen() {
             />
           </Pressable>
           <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-            {i18n.t("circuits.header")}
+            {t("circuits.header")}
           </Text>
         </View>
         <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-          {i18n.t("circuits.trackCount", { count: circuits.length })}
+          {t("circuits.trackCount", { count: circuits.length })}
         </Text>
       </View>
 
       <View className="mb-5">
         <Text className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">
-          {i18n.t("circuits.subtitle")}
+          {t("circuits.subtitle")}
         </Text>
         <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
-          {i18n.t("circuits.title")}
+          {t("circuits.title")}
         </Text>
       </View>
 
@@ -400,7 +409,7 @@ export default function CircuitsScreen() {
       >
         <Ionicons name="add-circle-outline" size={18} color="#0ea5e9" />
         <Text className="text-sm font-semibold text-sky-600 dark:text-sky-400">
-          {i18n.t("circuits.requestCircuit")}
+          {t("circuits.requestCircuit")}
         </Text>
       </Pressable>
 
@@ -418,7 +427,7 @@ export default function CircuitsScreen() {
               color: isDark ? "#fff" : "#18181b",
               padding: 0,
             }}
-            placeholder={i18n.t("circuits.searchPlaceholder")}
+            placeholder={t("circuits.searchPlaceholder")}
             placeholderTextColor={isDark ? "#a1a1aa" : "#71717a"}
             value={search}
             onChangeText={setSearch}
@@ -439,7 +448,7 @@ export default function CircuitsScreen() {
               className={pillClassName(mode === key)}
             >
               <Text className={pillTextClassName(mode === key)}>
-                {i18n.t(labelKey)}
+                {t(labelKey)}
               </Text>
             </Pressable>
           ))}
@@ -447,12 +456,12 @@ export default function CircuitsScreen() {
 
         {mode === "nearby" && locationStatus === "loading" ? (
           <Text className="pt-2 text-xs text-zinc-500 dark:text-zinc-400">
-            {i18n.t("circuits.locatingYou")}
+            {t("circuits.locatingYou")}
           </Text>
         ) : null}
         {mode === "nearby" && locationStatus === "denied" ? (
           <Text className="pt-2 text-xs text-zinc-500 dark:text-zinc-400">
-            {i18n.t("circuits.locationUnavailable")}
+            {t("circuits.locationUnavailable")}
           </Text>
         ) : null}
       </View>
@@ -470,8 +479,8 @@ export default function CircuitsScreen() {
           />
           <Text className="text-sm font-medium text-zinc-900 dark:text-white">
             {countryCode
-              ? `${countryFlag(countryCode)} ${countryName(countryCode)}`
-              : i18n.t("circuits.allCountries")}
+              ? `${countryFlag(countryCode)} ${countryName(countryCode, t)}`
+              : t("circuits.allCountries")}
           </Text>
           <Ionicons
             name={isCountryOpen ? "chevron-up" : "chevron-down"}
@@ -498,7 +507,7 @@ export default function CircuitsScreen() {
                     : "text-zinc-900 dark:text-white"
                 }`}
               >
-                {i18n.t("circuits.allCountries")}
+                {t("circuits.allCountries")}
               </Text>
               {countryCode === null ? (
                 <Ionicons name="checkmark" size={16} color="#0ea5e9" />
@@ -527,7 +536,7 @@ export default function CircuitsScreen() {
                           : "text-zinc-900 dark:text-white"
                       }`}
                     >
-                      {countryName(code)}
+                      {countryName(code, t)}
                     </Text>
                   </View>
                   {isSelected ? (
@@ -545,7 +554,7 @@ export default function CircuitsScreen() {
           onPress={() => setSortAscending((ascending) => !ascending)}
           hitSlop={4}
           accessibilityRole="button"
-          accessibilityLabel={i18n.t("circuits.sortOrder")}
+          accessibilityLabel={t("circuits.sortOrder")}
           accessibilityValue={{ text: sortAscending ? "A → Z" : "Z → A" }}
           className="items-center justify-center rounded-2xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-3"
         >
@@ -587,7 +596,7 @@ export default function CircuitsScreen() {
             {isLoading ? (
               <View className="rounded-3xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4">
                 <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-                  {i18n.t("circuits.loadingTracks")}
+                  {t("circuits.loadingTracks")}
                 </Text>
               </View>
             ) : loadError ? (
@@ -604,10 +613,10 @@ export default function CircuitsScreen() {
             <View className="px-5">
               <View className="rounded-3xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4">
                 <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-                  {i18n.t("circuits.noTracksFound")}
+                  {t("circuits.noTracksFound")}
                 </Text>
                 <Text className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                  {i18n.t("circuits.noTracksFoundHint")}
+                  {t("circuits.noTracksFoundHint")}
                 </Text>
                 {search.trim() ? (
                   <Pressable
@@ -620,7 +629,7 @@ export default function CircuitsScreen() {
                       color="#ffffff"
                     />
                     <Text className="text-sm font-semibold text-white">
-                      {i18n.t("circuits.requestSearch", { name: search.trim() })}
+                      {t("circuits.requestSearch", { name: search.trim() })}
                     </Text>
                   </Pressable>
                 ) : null}

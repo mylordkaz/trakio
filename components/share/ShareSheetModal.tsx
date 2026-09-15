@@ -1,6 +1,6 @@
 import { Modal, Pressable, View, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import { useColorScheme } from '@/hooks/useColorScheme';
 
 type ShareSheetModalProps = {
@@ -11,6 +11,7 @@ type ShareSheetModalProps = {
 };
 
 export default function ShareSheetModal({ visible, onClose, onSelectInstagramStory, onSelectXPost }: ShareSheetModalProps) {
+  const t = useT();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -33,7 +34,7 @@ export default function ShareSheetModal({ visible, onClose, onSelectInstagramSto
             <View className="h-1 w-10 rounded-full bg-zinc-300 dark:bg-zinc-700" />
           </View>
           <Text className="text-base font-semibold text-zinc-900 dark:text-white mb-4">
-            {i18n.t('sessions.shareTo')}
+            {t('sessions.shareTo')}
           </Text>
 
           <Pressable
@@ -45,7 +46,7 @@ export default function ShareSheetModal({ visible, onClose, onSelectInstagramSto
             </View>
             <View className="flex-1">
               <Text className="text-sm font-semibold text-zinc-900 dark:text-white">
-                {i18n.t('sessions.instagramStory')}
+                {t('sessions.instagramStory')}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={isDark ? '#52525b' : '#a1a1aa'} />
@@ -60,7 +61,7 @@ export default function ShareSheetModal({ visible, onClose, onSelectInstagramSto
             </View>
             <View className="flex-1">
               <Text className="text-sm font-semibold text-zinc-900 dark:text-white">
-                {i18n.t('sessions.sharePost')}
+                {t('sessions.sharePost')}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={isDark ? '#52525b' : '#a1a1aa'} />
@@ -71,7 +72,7 @@ export default function ShareSheetModal({ visible, onClose, onSelectInstagramSto
             className="mt-4 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-200/70 dark:bg-white/5 py-3.5 items-center"
           >
             <Text className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
-              {i18n.t('common.cancel')}
+              {t('common.cancel')}
             </Text>
           </Pressable>
         </Pressable>

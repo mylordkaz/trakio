@@ -36,6 +36,8 @@ type FinishLapInput = {
   isInvalid?: 0 | 1;
   maxSpeedKph?: number | null;
   isTimingEstimated?: 0 | 1;
+  endedLatitude?: number | null;
+  endedLongitude?: number | null;
 };
 
 type SetLapInLapInput = {
@@ -156,12 +158,16 @@ export function createSessionRecorder(db: SQLiteDatabase, config: RecorderConfig
     await db.runAsync(
       `UPDATE laps
        SET ended_at = ?,
+           ended_latitude = ?,
+           ended_longitude = ?,
            lap_time_ms = ?,
            is_invalid = ?,
            max_speed_kph = ?,
            is_timing_estimated = ?
        WHERE id = ?;`,
       input.endedAt,
+      input.endedLatitude ?? null,
+      input.endedLongitude ?? null,
       input.lapTimeMs,
       input.isInvalid ?? 0,
       input.maxSpeedKph ?? null,

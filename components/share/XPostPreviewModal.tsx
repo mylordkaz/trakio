@@ -1,7 +1,7 @@
 import { Modal, Pressable, View, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import XPostCard from '@/components/share/XPostCard';
 
@@ -36,6 +36,7 @@ export default function XPostPreviewModal({
   onShare,
   onSaveToGallery,
 }: XPostPreviewModalProps) {
+  const t = useT();
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -50,12 +51,12 @@ export default function XPostPreviewModal({
       <View className="flex-1 bg-zinc-50 dark:bg-zinc-950" style={{ paddingTop: insets.top }}>
         <View className="flex-row items-center justify-between px-5 py-3 border-b border-zinc-200 dark:border-white/10">
           <Pressable onPress={onClose} className="w-16 py-1">
-            <Text className="text-[15px] text-zinc-500 dark:text-zinc-400">{i18n.t('common.cancel')}</Text>
+            <Text className="text-[15px] text-zinc-500 dark:text-zinc-400">{t('common.cancel')}</Text>
           </Pressable>
-          <Text className="text-[15px] font-semibold text-zinc-900 dark:text-white">{i18n.t('sessions.previewPost')}</Text>
+          <Text className="text-[15px] font-semibold text-zinc-900 dark:text-white">{t('sessions.previewPost')}</Text>
           <Pressable onPress={onShare} disabled={isSharing} className="w-16 items-end py-1">
             <Text className={`text-[15px] font-semibold ${isSharing ? 'text-sky-400/50' : 'text-sky-500 dark:text-sky-400'}`}>
-              {isSharing ? i18n.t('sessions.preparingShare') : i18n.t('sessions.share')}
+              {isSharing ? t('sessions.preparingShare') : t('sessions.share')}
             </Text>
           </Pressable>
         </View>
@@ -75,9 +76,9 @@ export default function XPostPreviewModal({
                   bestLap={cardData.bestLap}
                   totalLaps={cardData.totalLaps}
                   topSpeed={cardData.topSpeed}
-                  bestLapLabel={i18n.t('sessions.storyBestLap')}
-                  totalLapsLabel={i18n.t('sessions.storyTotalLaps')}
-                  topSpeedLabel={i18n.t('sessions.storyTopSpeed')}
+                  bestLapLabel={t('sessions.storyBestLap')}
+                  totalLapsLabel={t('sessions.storyTotalLaps')}
+                  topSpeedLabel={t('sessions.storyTopSpeed')}
                 />
               </View>
             </View>
@@ -90,7 +91,7 @@ export default function XPostPreviewModal({
           >
             <Ionicons name="download-outline" size={18} color={isDark ? '#ffffff' : '#18181b'} />
             <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-              {i18n.t('sessions.saveToGallery')}
+              {t('sessions.saveToGallery')}
             </Text>
           </Pressable>
         </View>

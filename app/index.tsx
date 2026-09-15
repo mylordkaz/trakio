@@ -11,11 +11,12 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 
 const LANDING_DURATION_MS = 2500;
 
 export default function LandingScreen() {
+  const t = useT();
   const router = useRouter();
   const logoOpacity = useSharedValue(0);
   const textOpacity = useSharedValue(0);
@@ -80,7 +81,7 @@ export default function LandingScreen() {
               textShadowRadius: 16,
             }}
           >
-            {i18n.t('home.title')}
+            {t('home.title')}
           </Text>
 
           <Text
@@ -93,7 +94,7 @@ export default function LandingScreen() {
               color: 'rgba(255,255,255,0.4)',
             }}
           >
-            {i18n.t('home.subtitle')}
+            {t('home.subtitle')}
           </Text>
 
           <LinearGradient

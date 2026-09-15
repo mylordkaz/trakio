@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSQLiteContext } from 'expo-sqlite';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import StatusPill from '@/components/StatusPill';
 import type { SessionListItem } from '@/db';
 import { listSessions, deleteSession } from '@/db';
@@ -18,22 +18,23 @@ import { getTrackDisplayTitle } from '@/utils/track-localization';
 
 const FILTER_KEYS = ['sessions.all', 'sessions.recent', 'sessions.best'] as const;
 
-function formatSessionDate(value: string) {
-  return new Date(value).toLocaleDateString(i18n.locale === 'ja' ? 'ja-JP' : 'en-US', {
+function formatSessionDate(value: string, locale: string) {
+  return new Date(value).toLocaleDateString(locale === 'ja' ? 'ja-JP' : 'en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
   });
 }
 
-function formatSessionTime(value: string) {
-  return new Date(value).toLocaleTimeString(i18n.locale === 'ja' ? 'ja-JP' : 'en-US', {
+function formatSessionTime(value: string, locale: string) {
+  return new Date(value).toLocaleTimeString(locale === 'ja' ? 'ja-JP' : 'en-US', {
     hour: 'numeric',
     minute: '2-digit',
   });
 }
 
 export default function SessionListScreen() {
+  const t = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { trackId, trackName: trackNameParam } = useLocalSearchParams<{ trackId?: string; trackName?: string }>();
@@ -44,7 +45,11 @@ export default function SessionListScreen() {
   const [search, setSearch] = useState('');
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadErrorKey, setLoadErrorKey] = useState<string | null>(null);
+  // The key is stored, not the message: a translated string held in
+  // state would not follow a language change, and making the effect
+  // that sets it depend on the translator would re-run a data load.
+  const loadError = loadErrorKey ? t(loadErrorKey) : null;
   const [editMode, setEditMode] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const { colorScheme } = useColorScheme();
@@ -76,13 +81,13 @@ export default function SessionListScreen() {
           }
 
           setSessions(nextSessions);
-          setLoadError(null);
+          setLoadErrorKey(null);
         } catch {
           if (!isMounted) {
             return;
           }
 
-          setLoadError(i18n.t('sessions.unableToLoadSession'));
+          setLoadErrorKey('sessions.unableToLoadSession');
         } finally {
           if (isMounted) {
             setIsLoading(false);
@@ -111,7 +116,7 @@ export default function SessionListScreen() {
     );
 
   const filteredSessions = sessions.filter((session) => {
-    const dateLabel = formatSessionDate(session.startedAt);
+    const dateLabel = formatSessionDate(session.startedAt, locale);
     const displayTrackName = sessionTrackTitle(session);
     const matchesTrack = !activeTrackFilter || session.trackId === activeTrackFilter;
     const matchesSearch =
@@ -147,12 +152,12 @@ export default function SessionListScreen() {
   const handleDeleteSession = useCallback(
     (session: SessionListItem) => {
       Alert.alert(
-        i18n.t('sessions.deleteTitle'),
-        i18n.t('sessions.deleteMessage', { name: session.name }),
+        t('sessions.deleteTitle'),
+        t('sessions.deleteMessage', { name: session.name }),
         [
-          { text: i18n.t('common.cancel'), style: 'cancel' },
+          { text: t('common.cancel'), style: 'cancel' },
           {
-            text: i18n.t('common.delete'),
+            text: t('common.delete'),
             style: 'destructive',
             onPress: async () => {
               await deleteSession(db, session.id);
@@ -162,7 +167,7 @@ export default function SessionListScreen() {
         ]
       );
     },
-    [db]
+    [db, t]
   );
 
   const handleRefresh = useCallback(async () => {
@@ -174,9 +179,9 @@ export default function SessionListScreen() {
     try {
       const nextSessions = await listSessions(db);
       setSessions(nextSessions);
-      setLoadError(null);
+      setLoadErrorKey(null);
     } catch {
-      setLoadError(i18n.t('sessions.unableToLoadSession'));
+      setLoadErrorKey('sessions.unableToLoadSession');
     } finally {
       setRefreshing(false);
     }
@@ -213,18 +218,18 @@ export default function SessionListScreen() {
               <Pressable onPress={openMenu} hitSlop={8}>
                 <Ionicons name="menu" size={22} color={isDark ? '#a1a1aa' : '#71717a'} />
               </Pressable>
-              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.header')}</Text>
+              <Text className="text-xs text-zinc-500 dark:text-zinc-400">{t('sessions.header')}</Text>
             </View>
             <Pressable onPress={() => setEditMode((prev) => !prev)}>
               <Text className="text-base font-medium text-violet-400">
-                {editMode ? i18n.t('common.done') : i18n.t('common.edit')}
+                {editMode ? t('common.done') : t('common.edit')}
               </Text>
             </Pressable>
           </View>
 
           <View className="mb-5">
-            <Text className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">{i18n.t('sessions.subtitle')}</Text>
-            <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">{i18n.t('sessions.title')}</Text>
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">{t('sessions.subtitle')}</Text>
+            <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">{t('sessions.title')}</Text>
           </View>
 
           <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-3">
@@ -232,7 +237,7 @@ export default function SessionListScreen() {
               <Ionicons name="search" size={16} color={isDark ? '#a1a1aa' : '#71717a'} />
               <TextInput
                 style={{ flex: 1, fontSize: 14, color: isDark ? '#fff' : '#18181b', padding: 0 }}
-                placeholder={i18n.t('sessions.searchPlaceholder')}
+                placeholder={t('sessions.searchPlaceholder')}
                 placeholderTextColor={isDark ? '#a1a1aa' : '#71717a'}
                 value={search}
                 onChangeText={setSearch}
@@ -259,7 +264,7 @@ export default function SessionListScreen() {
                       activeFilter === index ? 'text-white' : 'text-zinc-600 dark:text-zinc-300'
                     }`}
                   >
-                    {i18n.t(key)}
+                    {t(key)}
                   </Text>
                 </Pressable>
               ))}
@@ -275,7 +280,7 @@ export default function SessionListScreen() {
               accessibilityRole="button"
             >
               <Text className="text-xs text-zinc-600 dark:text-zinc-300">
-                {i18n.t('sessions.trackFilterLabel', { name: activeTrackName })}
+                {t('sessions.trackFilterLabel', { name: activeTrackName })}
               </Text>
               <Ionicons name="close-circle" size={12} color={isDark ? '#a1a1aa' : '#71717a'} />
             </Pressable>
@@ -285,7 +290,7 @@ export default function SessionListScreen() {
         <View className="px-5 py-4 gap-3">
           {isLoading ? (
             <View className="rounded-3xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4">
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{i18n.t('sessions.loadingSessions')}</Text>
+              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('sessions.loadingSessions')}</Text>
             </View>
           ) : null}
 
@@ -297,9 +302,9 @@ export default function SessionListScreen() {
 
           {!isLoading && !loadError && filteredSessions.length === 0 ? (
             <View className="rounded-3xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-4">
-              <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('sessions.noSessionsFound')}</Text>
+              <Text className="text-sm font-medium text-zinc-900 dark:text-white">{t('sessions.noSessionsFound')}</Text>
               <Text className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                {i18n.t('sessions.noSessionsFoundHint')}
+                {t('sessions.noSessionsFoundHint')}
               </Text>
             </View>
           ) : null}
@@ -328,21 +333,21 @@ export default function SessionListScreen() {
                 </View>
                 <View className="flex-row gap-3 mb-3">
                   <View className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 px-3 py-2.5">
-                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{i18n.t('sessions.date')}</Text>
-                    <Text className="text-sm font-medium text-zinc-900 dark:text-white">{formatSessionDate(session.startedAt)}</Text>
+                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{t('sessions.date')}</Text>
+                    <Text className="text-sm font-medium text-zinc-900 dark:text-white">{formatSessionDate(session.startedAt, locale)}</Text>
                   </View>
                   <View className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 px-3 py-2.5">
-                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{i18n.t('sessions.startTime')}</Text>
-                    <Text className="text-sm font-medium text-zinc-900 dark:text-white">{formatSessionTime(session.startedAt)}</Text>
+                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{t('sessions.startTime')}</Text>
+                    <Text className="text-sm font-medium text-zinc-900 dark:text-white">{formatSessionTime(session.startedAt, locale)}</Text>
                   </View>
                 </View>
                 <View className="flex-row items-center justify-between rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 px-3 py-2.5">
                   <View>
-                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{i18n.t('session.bestLap')}</Text>
+                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{t('session.bestLap')}</Text>
                     <Text className="text-sm font-semibold text-zinc-900 dark:text-white">{formatLapTime(session.bestLapMs)}</Text>
                   </View>
                   <View className="items-end">
-                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{i18n.t('sessions.laps')}</Text>
+                    <Text className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">{t('sessions.laps')}</Text>
                     <Text className="text-sm font-semibold text-zinc-900 dark:text-white">{session.totalLaps}</Text>
                   </View>
                 </View>
@@ -364,7 +369,7 @@ export default function SessionListScreen() {
         {/* TODO: Export not yet implemented
         <View className="px-5 pb-5 pt-1">
           <Pressable className="w-full rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center">
-            <Text className="text-sm font-medium text-zinc-900 dark:text-white">{i18n.t('sessions.exportSessions')}</Text>
+            <Text className="text-sm font-medium text-zinc-900 dark:text-white">{t('sessions.exportSessions')}</Text>
           </Pressable>
         </View>
         */}

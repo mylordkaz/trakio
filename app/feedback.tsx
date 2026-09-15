@@ -15,6 +15,7 @@ import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { getOrCreateDefaultUserProfile } from '@/db';
@@ -22,6 +23,7 @@ import { submitFeedback } from '@/services/feedback';
 import { getOrCreatePublisherIdSync } from '@/services/publisher-id';
 
 export default function FeedbackScreen() {
+  const t = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const db = useSQLiteContext();
@@ -44,12 +46,12 @@ export default function FeedbackScreen() {
     const trimmedMessage = message.trim();
 
     if (!trimmedName) {
-      Alert.alert(i18n.t('feedback.missingName'), i18n.t('feedback.missingNameMessage'));
+      Alert.alert(t('feedback.missingName'), t('feedback.missingNameMessage'));
       return;
     }
 
     if (!trimmedMessage) {
-      Alert.alert(i18n.t('feedback.missingMessage'), i18n.t('feedback.missingMessageMessage'));
+      Alert.alert(t('feedback.missingMessage'), t('feedback.missingMessageMessage'));
       return;
     }
 
@@ -63,12 +65,12 @@ export default function FeedbackScreen() {
         locale: i18n.locale,
       });
       Alert.alert(
-        i18n.t('feedback.successTitle'),
-        i18n.t('feedback.successMessage'),
-        [{ text: i18n.t('common.done'), onPress: () => router.back() }],
+        t('feedback.successTitle'),
+        t('feedback.successMessage'),
+        [{ text: t('common.done'), onPress: () => router.back() }],
       );
     } catch {
-      Alert.alert(i18n.t('feedback.failedTitle'), i18n.t('feedback.failedMessage'));
+      Alert.alert(t('feedback.failedTitle'), t('feedback.failedMessage'));
     } finally {
       setIsSending(false);
     }
@@ -96,15 +98,15 @@ export default function FeedbackScreen() {
         >
           <View className="flex-row items-center mb-6">
             <Pressable onPress={() => router.back()} hitSlop={12}>
-              <Text className="text-sm font-medium text-sky-400">{i18n.t('common.back')}</Text>
+              <Text className="text-sm font-medium text-sky-400">{t('common.back')}</Text>
             </Pressable>
           </View>
 
           <Text className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white mb-1">
-            {i18n.t('feedback.title')}
+            {t('feedback.title')}
           </Text>
           <Text className="text-sm text-zinc-500 dark:text-zinc-400 leading-5">
-            {i18n.t('feedback.subtitle')}
+            {t('feedback.subtitle')}
           </Text>
         </LinearGradient>
 
@@ -112,12 +114,12 @@ export default function FeedbackScreen() {
           {/* Name */}
           <View className="rounded-2xl bg-white dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-4 py-3">
             <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1.5">
-              {i18n.t('feedback.nameLabel')}
+              {t('feedback.nameLabel')}
             </Text>
             <TextInput
               value={name}
               onChangeText={setName}
-              placeholder={i18n.t('feedback.namePlaceholder')}
+              placeholder={t('feedback.namePlaceholder')}
               placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
               style={{
                 color: isDark ? '#e4e4e7' : '#18181b',
@@ -132,12 +134,12 @@ export default function FeedbackScreen() {
           {/* Message */}
           <View className="rounded-2xl bg-white dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-4 py-3">
             <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1.5">
-              {i18n.t('feedback.messageLabel')}
+              {t('feedback.messageLabel')}
             </Text>
             <TextInput
               value={message}
               onChangeText={setMessage}
-              placeholder={i18n.t('feedback.messagePlaceholder')}
+              placeholder={t('feedback.messagePlaceholder')}
               placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
               style={{
                 color: isDark ? '#e4e4e7' : '#18181b',
@@ -158,7 +160,7 @@ export default function FeedbackScreen() {
             className={`rounded-2xl py-4 items-center ${isSending ? 'bg-sky-500/60' : 'bg-sky-500'}`}
           >
             <Text className="text-sm font-semibold text-white">
-              {isSending ? i18n.t('feedback.sending') : i18n.t('feedback.submit')}
+              {isSending ? t('feedback.sending') : t('feedback.submit')}
             </Text>
           </Pressable>
         </View>

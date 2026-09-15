@@ -15,7 +15,7 @@ type Migration = {
 };
 
 const TIMING_LINE_TYPE_CHECK = `
-  type IN ('start_finish', 'sector', 'speedtrap', 'split', 'pit_entry', 'pit_exit')
+  type IN ('start_finish', 'start', 'finish', 'sector', 'speedtrap', 'split', 'pit_entry', 'pit_exit')
 `;
 
 async function createBaseSchema(db: SQLiteDatabase) {
@@ -710,6 +710,77 @@ async function ensureLeaderboardShareColumns(db: SQLiteDatabase) {
 // pinching. Seed-owned: syncTrackSeeds rewrites both on launch, and tracks
 // without an outline stay NULL. Must run before syncTrackSeeds, which writes
 // these columns.
+// Point-to-point tracks need 'start' and 'finish' line types, and SQLite
+// cannot alter a CHECK constraint, so the table is rebuilt. Detection is
+// checked against the stored DDL rather than a version number, since a device
+// can carry a user_version claimed by a parallel branch.
+//
+// The probe uses quote-delimited literals: 'start_finish' does not contain
+// 'start' once the quotes are included, so a device already rebuilt is not
+// rebuilt again.
+export async function ensureTimingLineTypes(db: SQLiteDatabase) {
+  const row = await db.getFirstAsync<{ sql: string | null }>(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'timing_lines';"
+  );
+  const ddl = row?.sql;
+
+  if (!ddl || (ddl.includes("'start'") && ddl.includes("'finish'"))) {
+    return;
+  }
+
+  // No table references timing_lines, so the rebuild needs no foreign-key
+  // toggle: dropping it cannot orphan a reference. That matters because
+  // re-enabling foreign keys is silently ignored while a transaction is still
+  // open, so a failed rebuild that only toggled the pragma would leave them
+  // disabled. The transaction alone makes the swap atomic and rolls back.
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.execAsync(`
+      CREATE TABLE timing_lines_rebuild (
+        id TEXT PRIMARY KEY NOT NULL,
+        track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL CHECK (${TIMING_LINE_TYPE_CHECK}),
+        seq INTEGER NOT NULL,
+        a_lat REAL NOT NULL,
+        a_lng REAL NOT NULL,
+        b_lat REAL NOT NULL,
+        b_lng REAL NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(track_id, seq)
+      );
+
+      INSERT INTO timing_lines_rebuild (
+        id, track_id, name, type, seq, a_lat, a_lng, b_lat, b_lng, created_at, updated_at
+      )
+      SELECT id, track_id, name, type, seq, a_lat, a_lng, b_lat, b_lng, created_at, updated_at
+      FROM timing_lines;
+
+      DROP TABLE timing_lines;
+      ALTER TABLE timing_lines_rebuild RENAME TO timing_lines;
+
+      CREATE INDEX IF NOT EXISTS idx_timing_lines_track_seq
+        ON timing_lines(track_id, seq);
+      CREATE INDEX IF NOT EXISTS idx_timing_lines_track_type
+        ON timing_lines(track_id, type, seq);
+    `);
+  });
+}
+
+// The interpolated finish crossing, stored so a point-to-point run's line can
+// be clipped at the line it actually ended on. A closed lap takes its ending
+// boundary from the next lap's stored start, which a final run does not have.
+async function ensureLapEndCoordinates(db: SQLiteDatabase) {
+  const cols = await getColumnNames(db, 'laps');
+
+  if (!cols.includes('ended_latitude')) {
+    await db.execAsync('ALTER TABLE laps ADD COLUMN ended_latitude REAL;');
+  }
+  if (!cols.includes('ended_longitude')) {
+    await db.execAsync('ALTER TABLE laps ADD COLUMN ended_longitude REAL;');
+  }
+}
+
 async function ensureTrackPathColumns(db: SQLiteDatabase) {
   const cols = await getColumnNames(db, 'tracks');
   if (!cols.includes('path')) {
@@ -764,6 +835,8 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   await ensureLeaderboardShareColumns(db);
   await ensureTrackPathColumns(db);
   await ensureTrackCountryCodeColumn(db);
+  await ensureTimingLineTypes(db);
+  await ensureLapEndCoordinates(db);
   await ensureTrackFavoriteColumn(db);
   await recoverStaleRecordingSessions(db);
   await syncTrackSeeds(db);

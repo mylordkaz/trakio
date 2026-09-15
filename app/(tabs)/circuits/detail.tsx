@@ -21,7 +21,7 @@ import MapView, {
 } from "react-native-maps";
 import { SCHEMATIC_MAP_STYLE } from "@/constants/mapStyle";
 import { buildTrackRibbon } from "@/utils/trackRibbon";
-import i18n from "@/i18n";
+import { useT, type TranslateFn } from "@/hooks/useT";
 import StatusPill from "@/components/StatusPill";
 import Card from "@/components/Card";
 import type { Coordinate, TrackDetail, TrackNoteRow } from "@/db";
@@ -53,22 +53,22 @@ import {
   localizeTrack,
 } from "@/utils/track-localization";
 
-function formatTrackLength(lengthMeters: number | null) {
+function formatTrackLength(lengthMeters: number | null, t: TranslateFn) {
   if (lengthMeters === null) {
-    return i18n.t("common.tbd");
+    return t("common.tbd");
   }
 
   return `${(lengthMeters / 1000).toFixed(3)} km`;
 }
 
-function formatDirection(direction: TrackDetail["direction"]) {
+function formatDirection(direction: TrackDetail["direction"], t: TranslateFn) {
   if (!direction) {
-    return i18n.t("common.tbd");
+    return t("common.tbd");
   }
 
   return direction === "clockwise"
-    ? i18n.t("circuits.clockwise")
-    : i18n.t("circuits.counterclockwise");
+    ? t("circuits.clockwise")
+    : t("circuits.counterclockwise");
 }
 
 function getMapLatitudeDelta(lengthMeters: number | null) {
@@ -108,6 +108,7 @@ function getPathRegion(path: Coordinate[] | null) {
 }
 
 export default function CircuitDetailScreen() {
+  const t = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const db = useSQLiteContext();
@@ -115,10 +116,18 @@ export default function CircuitDetailScreen() {
   const [circuit, setCircuit] = useState<TrackDetail | null>(null);
   const [isSchematic, setIsSchematic] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadErrorKey, setLoadErrorKey] = useState<string | null>(null);
+  // The key is stored, not the message: a translated string held in
+  // state would not follow a language change, and making the effect
+  // that sets it depend on the translator would re-run a data load.
+  const loadError = loadErrorKey ? t(loadErrorKey) : null;
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
-  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+  const [leaderboardErrorKey, setLeaderboardErrorKey] = useState<string | null>(null);
+  // The key is stored, not the message: a translated string held in
+  // state would not follow a language change, and making the effect
+  // that sets it depend on the translator would re-run a data load.
+  const leaderboardError = leaderboardErrorKey ? t(leaderboardErrorKey) : null;
   const [userBestLapMs, setUserBestLapMs] = useState<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [newNote, setNewNote] = useState("");
@@ -132,7 +141,7 @@ export default function CircuitDetailScreen() {
 
   const loadCircuit = useCallback(async () => {
     if (!id) {
-      setLoadError(i18n.t("circuits.trackNotFound"));
+      setLoadErrorKey("circuits.trackNotFound");
       setIsLoading(false);
       return;
     }
@@ -142,15 +151,15 @@ export default function CircuitDetailScreen() {
       const nextCircuit = await getTrackById(db, id);
 
       if (!nextCircuit) {
-        setLoadError(i18n.t("circuits.trackNotFound"));
+        setLoadErrorKey("circuits.trackNotFound");
         setCircuit(null);
         return;
       }
 
       setCircuit(nextCircuit);
-      setLoadError(null);
+      setLoadErrorKey(null);
     } catch {
-      setLoadError(i18n.t("circuits.unableToLoadTrack"));
+      setLoadErrorKey("circuits.unableToLoadTrack");
     } finally {
       setIsLoading(false);
     }
@@ -171,7 +180,7 @@ export default function CircuitDetailScreen() {
   useEffect(() => {
     if (!id) {
       setLeaderboardEntries([]);
-      setLeaderboardError(null);
+      setLeaderboardErrorKey(null);
       return;
     }
 
@@ -180,7 +189,7 @@ export default function CircuitDetailScreen() {
     async function loadLeaderboard() {
       try {
         setLeaderboardLoading(true);
-        setLeaderboardError(null);
+        setLeaderboardErrorKey(null);
         try {
           const shareState = await getTrackLeaderboardShareState(db, id);
           if (!isMounted) return;
@@ -206,7 +215,7 @@ export default function CircuitDetailScreen() {
         }
       } catch {
         if (!isMounted) return;
-        setLeaderboardError(i18n.t('leaderboard.unableToLoad'));
+        setLeaderboardErrorKey('leaderboard.unableToLoad');
         setLeaderboardEntries([]);
       } finally {
         if (isMounted) {
@@ -283,10 +292,15 @@ export default function CircuitDetailScreen() {
   const displayCircuit = circuit ? localizeTrack(circuit, locale) : null;
   const personalBest = circuit?.personalBest ?? null;
   const sectorCount = circuit?.sectorCount ?? 0;
-  const startFinishLine =
-    circuit?.timingLines.find(
-      (timingLine) => timingLine.type === "start_finish",
-    ) ?? null;
+  // A point-to-point layout has two of these, so they are filtered rather
+  // than found: drawing only the first would hide the finish line.
+  const runBoundaryLines =
+    circuit?.timingLines.filter(
+      (timingLine) =>
+        timingLine.type === "start_finish" ||
+        timingLine.type === "start" ||
+        timingLine.type === "finish",
+    ) ?? [];
   const sectorLines =
     circuit?.timingLines.filter((timingLine) => timingLine.type === "sector") ??
     [];
@@ -310,7 +324,7 @@ export default function CircuitDetailScreen() {
 
   function formatSetOnDate(iso: string): string {
     const d = new Date(iso);
-    return d.toLocaleDateString(i18n.locale === "ja" ? "ja-JP" : "en-US", {
+    return d.toLocaleDateString(locale === "ja" ? "ja-JP" : "en-US", {
       year: "numeric",
       month: "short",
       day: "numeric",
@@ -344,11 +358,11 @@ export default function CircuitDetailScreen() {
             <View className="flex-row items-center justify-between mb-4">
               <Pressable onPress={() => router.back()}>
                 <Text className="text-sm font-medium text-sky-400">
-                  {i18n.t("common.back")}
+                  {t("common.back")}
                 </Text>
               </Pressable>
               <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                {i18n.t("circuits.trackDetails")}
+                {t("circuits.trackDetails")}
               </Text>
             </View>
 
@@ -356,17 +370,17 @@ export default function CircuitDetailScreen() {
             <View className="flex-row items-start justify-between mb-5">
               <View className="flex-1 mr-3">
                 <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-                  {i18n.t("circuits.circuitProfile")}
+                  {t("circuits.circuitProfile")}
                 </Text>
                 <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
-                  {displayCircuit?.name ?? i18n.t("common.track")}
+                  {displayCircuit?.name ?? t("common.track")}
                 </Text>
                 <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
                   {circuit
                     ? formatTrackDisplayLocation(circuit, locale)
                     : isLoading
-                      ? i18n.t("common.loading")
-                      : i18n.t("common.track")}
+                      ? t("common.loading")
+                      : t("common.track")}
                 </Text>
               </View>
               <View className="items-end gap-2">
@@ -374,7 +388,7 @@ export default function CircuitDetailScreen() {
                   onPress={handleToggleFavorite}
                   hitSlop={8}
                   accessibilityRole="button"
-                  accessibilityLabel={i18n.t("circuits.toggleFavorite")}
+                  accessibilityLabel={t("circuits.toggleFavorite")}
                   accessibilityState={{ selected: circuit?.isFavorite ?? false }}
                 >
                   <FontAwesome6
@@ -391,7 +405,7 @@ export default function CircuitDetailScreen() {
                   />
                 </Pressable>
                 <StatusPill
-                  text={displayCircuit?.layoutName ?? i18n.t("common.track")}
+                  text={displayCircuit?.layoutName ?? t("common.track")}
                   color="sky"
                 />
               </View>
@@ -451,16 +465,17 @@ export default function CircuitDetailScreen() {
                           strokeWidth={2}
                         />
                       ))}
-                      {startFinishLine ? (
+                      {runBoundaryLines.map((line) => (
                         <Polyline
-                          coordinates={[startFinishLine.a, startFinishLine.b]}
+                          key={line.id}
+                          coordinates={[line.a, line.b]}
                           strokeColor="#ef4444"
                           strokeColors={
                             Platform.OS === "ios" ? ["#ef4444"] : undefined
                           }
                           strokeWidth={3}
                         />
-                      ) : null}
+                      ))}
                     </MapView>
                     <Pressable
                       onPress={() => setIsSchematic((current) => !current)}
@@ -473,7 +488,7 @@ export default function CircuitDetailScreen() {
                 ) : (
                   <View className="flex-1 items-center justify-center p-5">
                     <Text className="text-zinc-400 dark:text-zinc-500 text-sm">
-                      {i18n.t("circuits.trackMap")}
+                      {t("circuits.trackMap")}
                     </Text>
                   </View>
                 )}
@@ -483,22 +498,22 @@ export default function CircuitDetailScreen() {
                   <View className="flex-row items-center gap-1.5">
                     <View className="h-0.5 w-3 rounded-full bg-red-500" />
                     <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                      {i18n.t("circuits.startFinish")}
+                      {t("circuits.startFinish")}
                     </Text>
                   </View>
                   <View className="flex-row items-center gap-1.5">
                     <View className="h-0.5 w-3 rounded-full bg-zinc-900 dark:bg-zinc-950 dark:border dark:border-white/30" />
                     <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                      {i18n.t("circuits.sectors")}
+                      {t("circuits.sectors")}
                     </Text>
                   </View>
                 </View>
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
                   {circuit
-                    ? i18n.t("circuits.sectorsConfigured", {
+                    ? t("circuits.sectorsConfigured", {
                         count: circuit.sectorCount,
                       })
-                    : i18n.t("circuits.loadingTimingLines")}
+                    : t("circuits.loadingTimingLines")}
                 </Text>
               </View>
             </View>
@@ -516,7 +531,7 @@ export default function CircuitDetailScreen() {
             {isLoading ? (
               <Card>
                 <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-                  {i18n.t("circuits.loadingTrack")}
+                  {t("circuits.loadingTrack")}
                 </Text>
               </Card>
             ) : null}
@@ -525,16 +540,16 @@ export default function CircuitDetailScreen() {
             <View className="flex-row gap-3">
               {[
                 {
-                  label: i18n.t("circuits.length"),
-                  value: formatTrackLength(circuit?.lengthMeters ?? null),
+                  label: t("circuits.length"),
+                  value: formatTrackLength(circuit?.lengthMeters ?? null, t),
                 },
                 {
-                  label: i18n.t("circuits.corners"),
-                  value: `${circuit?.corners ?? i18n.t("common.tbd")}`,
+                  label: t("circuits.corners"),
+                  value: `${circuit?.corners ?? t("common.tbd")}`,
                 },
                 {
-                  label: i18n.t("circuits.direction"),
-                  value: formatDirection(circuit?.direction ?? null),
+                  label: t("circuits.direction"),
+                  value: formatDirection(circuit?.direction ?? null, t),
                 },
               ].map((s) => (
                 <View
@@ -556,10 +571,10 @@ export default function CircuitDetailScreen() {
               <View className="flex-row items-center justify-between mb-3">
                 <View>
                   <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-                    {i18n.t("circuits.personalBest")}
+                    {t("circuits.personalBest")}
                   </Text>
                   <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                    {i18n.t("circuits.personalBestSubtitle")}
+                    {t("circuits.personalBestSubtitle")}
                   </Text>
                 </View>
                 <Pressable
@@ -575,7 +590,7 @@ export default function CircuitDetailScreen() {
                   }
                 >
                   <Text className="text-sm font-medium text-sky-500">
-                    {i18n.t("circuits.history")}
+                    {t("circuits.history")}
                   </Text>
                 </Pressable>
               </View>
@@ -585,7 +600,7 @@ export default function CircuitDetailScreen() {
                 <View className="flex-row items-start justify-between">
                   <View className="flex-1">
                     <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">
-                      {i18n.t("session.bestLap")}
+                      {t("session.bestLap")}
                     </Text>
                     <Text
                       className={
@@ -608,7 +623,7 @@ export default function CircuitDetailScreen() {
                   {personalBest ? (
                     <View className="items-end pt-1">
                       <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                        {i18n.t("circuits.setOn")}
+                        {t("circuits.setOn")}
                       </Text>
                       <Text className="text-sm font-medium text-zinc-900 dark:text-white">
                         {formatSetOnDate(personalBest.setOn)}
@@ -630,7 +645,7 @@ export default function CircuitDetailScreen() {
                           className="flex-1 rounded-2xl bg-zinc-50 dark:bg-black/20 border border-zinc-100 dark:border-white/5 p-3"
                         >
                           <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">
-                            {i18n.t("circuits.sectorLabel", { number: i + 1 })}
+                            {t("circuits.sectorLabel", { number: i + 1 })}
                           </Text>
                           <Text
                             className={
@@ -653,7 +668,7 @@ export default function CircuitDetailScreen() {
                     })}
                   </View>
                   <Text className="text-xs text-zinc-400 dark:text-zinc-500 text-center">
-                    {i18n.t("circuits.gpsApproximatedSplits")}
+                    {t("circuits.gpsApproximatedSplits")}
                   </Text>
                 </>
               ) : null}
@@ -680,7 +695,7 @@ export default function CircuitDetailScreen() {
                       blockedPublisherIds,
                     );
                     setLeaderboardEntries(entries);
-                    setLeaderboardError(null);
+                    setLeaderboardErrorKey(null);
                   } catch {
                     // Share succeeded; refreshing local state and the board is
                     // best-effort and will retry on next mount.
@@ -702,10 +717,10 @@ export default function CircuitDetailScreen() {
               <View className="flex-row items-center justify-between mb-3">
                 <View>
                   <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-                    {i18n.t("circuits.driverNotes")}
+                    {t("circuits.driverNotes")}
                   </Text>
                   <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                    {i18n.t("circuits.driverNotesSubtitle")}
+                    {t("circuits.driverNotesSubtitle")}
                   </Text>
                 </View>
                 <Pressable
@@ -718,7 +733,7 @@ export default function CircuitDetailScreen() {
                   hitSlop={8}
                 >
                   <Text className="text-sm font-medium text-sky-500">
-                    {isEditing ? i18n.t("common.done") : i18n.t("common.edit")}
+                    {isEditing ? t("common.done") : t("common.edit")}
                   </Text>
                 </Pressable>
               </View>
@@ -747,7 +762,7 @@ export default function CircuitDetailScreen() {
                               hitSlop={4}
                             >
                               <Text className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
-                                {i18n.t("common.cancel")}
+                                {t("common.cancel")}
                               </Text>
                             </Pressable>
                             <Pressable
@@ -756,7 +771,7 @@ export default function CircuitDetailScreen() {
                               hitSlop={4}
                             >
                               <Text className="text-sm font-medium text-white">
-                                {i18n.t("common.save")}
+                                {t("common.save")}
                               </Text>
                             </Pressable>
                           </View>
@@ -796,7 +811,7 @@ export default function CircuitDetailScreen() {
                 ) : !isEditing ? (
                   <View className="rounded-2xl bg-zinc-50 dark:bg-black/20 px-4 py-3 border border-zinc-100 dark:border-white/5">
                     <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-                      {i18n.t("circuits.noDriverNotesYet")}
+                      {t("circuits.noDriverNotesYet")}
                     </Text>
                   </View>
                 ) : null}
@@ -810,7 +825,7 @@ export default function CircuitDetailScreen() {
                         padding: 0,
                         minHeight: 44,
                       }}
-                      placeholder={i18n.t("circuits.addNotePlaceholder")}
+                      placeholder={t("circuits.addNotePlaceholder")}
                       placeholderTextColor={isDark ? "#71717a" : "#a1a1aa"}
                       value={newNote}
                       onChangeText={setNewNote}
@@ -830,7 +845,7 @@ export default function CircuitDetailScreen() {
                         hitSlop={4}
                       >
                         <Text className="text-sm font-medium text-white">
-                          {i18n.t("circuits.addNote")}
+                          {t("circuits.addNote")}
                         </Text>
                       </Pressable>
                     ) : null}
@@ -855,7 +870,7 @@ export default function CircuitDetailScreen() {
               className="flex-1 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5 py-3.5 items-center"
             >
               <Text className="text-sm font-medium text-zinc-900 dark:text-white">
-                {i18n.t("circuits.viewHistory")}
+                {t("circuits.viewHistory")}
               </Text>
             </Pressable>
             <Pressable
@@ -863,7 +878,7 @@ export default function CircuitDetailScreen() {
               className="flex-1 rounded-2xl bg-sky-500 py-3.5 items-center"
             >
               <Text className="text-sm font-semibold text-black">
-                {i18n.t("session.start")}
+                {t("session.start")}
               </Text>
             </Pressable>
           </View>

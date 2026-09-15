@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import i18n from '@/i18n';
+import { useT } from '@/hooks/useT';
 import { getTrackById, setSharedLeaderboardTime } from '@/db';
 import type { TrackDetail } from '@/db';
 import { getOrCreatePublisherId } from '@/services/publisher-id';
@@ -84,6 +84,7 @@ function FullLeaderboardRow({
   p1Ms: number;
   onOpenActions: () => void;
 }) {
+  const t = useT();
   const gap = entry.lapTimeMs - p1Ms;
   const gapStr = gap === 0 ? '—' : (formatDeltaMs(gap) ?? '—');
   const isMeBelowPodium = entry.isCurrentUser && entry.rank > 3;
@@ -139,7 +140,7 @@ function FullLeaderboardRow({
             numberOfLines={1}
           >
             {entry.isCurrentUser
-              ? `${entry.name} (${i18n.t('leaderboard.me')})`
+              ? `${entry.name} (${t('leaderboard.me')})`
               : entry.name}
           </Text>
         </View>
@@ -181,7 +182,7 @@ function FullLeaderboardRow({
         onPress={onOpenActions}
         hitSlop={10}
         accessibilityRole="button"
-        accessibilityLabel={i18n.t('leaderboard.entryActions')}
+        accessibilityLabel={t('leaderboard.entryActions')}
         style={{ marginLeft: 12, padding: 2 }}
       >
         <Ionicons name="ellipsis-horizontal" size={20} color="rgba(255,255,255,0.55)" />
@@ -193,6 +194,7 @@ function FullLeaderboardRow({
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function LeaderboardScreen() {
+  const t = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const db = useSQLiteContext();
@@ -204,8 +206,12 @@ export default function LeaderboardScreen() {
   const [track, setTrack] = useState<TrackDetail | null>(null);
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [moderatingPublisherId, setModeratingPublisherId] = useState<string | null>(null);
+  const [loadErrorKey, setLoadErrorKey] = useState<string | null>(null);
+  // The key is stored, not the message: a translated string held in
+  // state would not follow a language change, and making the effect
+  // that sets it depend on the translator would re-run a data load.
+  const loadError = loadErrorKey ? t(loadErrorKey) : null;
   const { locale } = useMenu();
 
   useEffect(() => {
@@ -220,7 +226,7 @@ export default function LeaderboardScreen() {
   useEffect(() => {
     if (!id) {
       setEntries([]);
-      setLoadError(null);
+      setLoadErrorKey(null);
       return;
     }
 
@@ -229,7 +235,7 @@ export default function LeaderboardScreen() {
     async function loadLeaderboard() {
       try {
         setIsLoading(true);
-        setLoadError(null);
+        setLoadErrorKey(null);
         const [publisherId, blockedPublisherIds] = await Promise.all([
           getOrCreatePublisherId(),
           getBlockedLeaderboardPublisherIds(db),
@@ -249,7 +255,7 @@ export default function LeaderboardScreen() {
       } catch {
         if (!isMounted) return;
         setEntries([]);
-        setLoadError(i18n.t('leaderboard.unableToLoad'));
+        setLoadErrorKey('leaderboard.unableToLoad');
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -288,12 +294,12 @@ export default function LeaderboardScreen() {
         locale,
       });
       Alert.alert(
-        i18n.t(
+        t(
           action === 'removal'
             ? 'leaderboard.removalRequestedTitle'
             : 'leaderboard.reportSubmittedTitle',
         ),
-        i18n.t(
+        t(
           action === 'removal'
             ? 'leaderboard.removalRequestedMessage'
             : 'leaderboard.reportSubmittedMessage',
@@ -301,8 +307,8 @@ export default function LeaderboardScreen() {
       );
     } catch {
       Alert.alert(
-        i18n.t('leaderboard.moderationFailedTitle'),
-        i18n.t('leaderboard.moderationFailedMessage'),
+        t('leaderboard.moderationFailedTitle'),
+        t('leaderboard.moderationFailedMessage'),
       );
     } finally {
       setModeratingPublisherId(null);
@@ -319,13 +325,13 @@ export default function LeaderboardScreen() {
         currentEntries.filter((candidate) => candidate.publisherId !== entry.publisherId),
       );
       Alert.alert(
-        i18n.t('leaderboard.blockedTitle'),
-        i18n.t('leaderboard.blockedMessage'),
+        t('leaderboard.blockedTitle'),
+        t('leaderboard.blockedMessage'),
       );
     } catch {
       Alert.alert(
-        i18n.t('leaderboard.moderationFailedTitle'),
-        i18n.t('leaderboard.moderationFailedMessage'),
+        t('leaderboard.moderationFailedTitle'),
+        t('leaderboard.moderationFailedMessage'),
       );
     } finally {
       setModeratingPublisherId(null);
@@ -337,12 +343,12 @@ export default function LeaderboardScreen() {
 
     if (entry.isCurrentUser) {
       Alert.alert(
-        i18n.t('leaderboard.removeMyEntryTitle'),
-        i18n.t('leaderboard.removeMyEntryMessage'),
+        t('leaderboard.removeMyEntryTitle'),
+        t('leaderboard.removeMyEntryMessage'),
         [
-          { text: i18n.t('common.cancel'), style: 'cancel' },
+          { text: t('common.cancel'), style: 'cancel' },
           {
-            text: i18n.t('leaderboard.requestRemoval'),
+            text: t('leaderboard.requestRemoval'),
             style: 'destructive',
             onPress: () => void sendModerationRequest(entry, 'removal'),
           },
@@ -352,25 +358,25 @@ export default function LeaderboardScreen() {
     }
 
     Alert.alert(
-      i18n.t('leaderboard.entryActionsTitle', { name: entry.name }),
-      i18n.t('leaderboard.entryActionsMessage'),
+      t('leaderboard.entryActionsTitle', { name: entry.name }),
+      t('leaderboard.entryActionsMessage'),
       [
-        { text: i18n.t('common.cancel'), style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: i18n.t('leaderboard.reportEntry'),
+          text: t('leaderboard.reportEntry'),
           onPress: () => void sendModerationRequest(entry, 'report'),
         },
         {
-          text: i18n.t('leaderboard.blockDriver'),
+          text: t('leaderboard.blockDriver'),
           style: 'destructive',
           onPress: () => {
             Alert.alert(
-              i18n.t('leaderboard.blockDriverTitle'),
-              i18n.t('leaderboard.blockDriverMessage', { name: entry.name }),
+              t('leaderboard.blockDriverTitle'),
+              t('leaderboard.blockDriverMessage', { name: entry.name }),
               [
-                { text: i18n.t('common.cancel'), style: 'cancel' },
+                { text: t('common.cancel'), style: 'cancel' },
                 {
-                  text: i18n.t('leaderboard.blockDriver'),
+                  text: t('leaderboard.blockDriver'),
                   style: 'destructive',
                   onPress: () => void blockEntry(entry),
                 },
@@ -398,11 +404,11 @@ export default function LeaderboardScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
             <Pressable onPress={() => router.back()}>
               <Text style={{ fontSize: 14, fontWeight: '500', color: '#38bdf8' }}>
-                {i18n.t('common.back')}
+                {t('common.back')}
               </Text>
             </Pressable>
             <Text style={{ fontSize: 14, fontWeight: '500', color: 'rgba(255,255,255,0.5)' }}>
-              {i18n.t('leaderboard.title')}
+              {t('leaderboard.title')}
             </Text>
           </View>
 
@@ -412,10 +418,10 @@ export default function LeaderboardScreen() {
               <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 4 }}>
                 {track
                   ? getTrackDisplayTitle(track, locale)
-                  : i18n.t('common.track')}
+                  : t('common.track')}
               </Text>
               <Text style={{ fontSize: 28, fontWeight: '800', color: '#ffffff', letterSpacing: -0.5 }}>
-                {i18n.t('leaderboard.allTimeBest')}
+                {t('leaderboard.allTimeBest')}
               </Text>
             </View>
             <View
@@ -428,7 +434,7 @@ export default function LeaderboardScreen() {
               }}
             >
               <Text style={{ fontSize: 13, fontWeight: '600', color: '#ffffff' }}>
-                {i18n.t('leaderboard.driversCount', { count: entries.length })}
+                {t('leaderboard.driversCount', { count: entries.length })}
               </Text>
             </View>
           </View>
@@ -447,7 +453,7 @@ export default function LeaderboardScreen() {
         <View style={{ paddingHorizontal: 16, paddingTop: 16, gap: 8 }}>
           {isLoading ? (
             <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>
-              {i18n.t('common.loading')}
+              {t('common.loading')}
             </Text>
           ) : loadError ? (
             <Text style={{ color: '#fca5a5', fontSize: 14 }}>
@@ -455,7 +461,7 @@ export default function LeaderboardScreen() {
             </Text>
           ) : entries.length === 0 ? (
             <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>
-              {i18n.t('leaderboard.noEntries')}
+              {t('leaderboard.noEntries')}
             </Text>
           ) : (
             entries.map((entry, index) => (

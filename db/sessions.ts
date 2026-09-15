@@ -124,6 +124,8 @@ type DbLapRow = {
   started_at: ISODateString;
   started_latitude: number | null;
   started_longitude: number | null;
+  ended_latitude: number | null;
+  ended_longitude: number | null;
   ended_at: ISODateString | null;
   lap_time_ms: number | null;
   is_out_lap: 0 | 1;
@@ -292,6 +294,8 @@ function mapLapRow(row: DbLapRow): LapRow {
     startedAt: row.started_at,
     startedLatitude: row.started_latitude ?? null,
     startedLongitude: row.started_longitude ?? null,
+    endedLatitude: row.ended_latitude ?? null,
+    endedLongitude: row.ended_longitude ?? null,
     endedAt: row.ended_at,
     lapTimeMs: row.lap_time_ms,
     isOutLap: row.is_out_lap,
@@ -694,7 +698,9 @@ export async function listSessions(db: SQLiteDatabase): Promise<SessionListItem[
       ) AS computed_best_lap_ms,
       CASE
         WHEN s.total_laps > 0 THEN s.total_laps
-        ELSE COUNT(l.id)
+        -- Abandoned attempts are kept as untimed rows; counting them here
+        -- would report laps the runtime never completed.
+        ELSE COUNT(CASE WHEN l.lap_time_ms IS NOT NULL THEN 1 END)
       END AS computed_total_laps
     FROM sessions s
     INNER JOIN tracks t
@@ -800,7 +806,9 @@ export async function getSessionById(
       ) AS computed_best_lap_ms,
       CASE
         WHEN s.total_laps > 0 THEN s.total_laps
-        ELSE COUNT(l.id)
+        -- Abandoned attempts are kept as untimed rows; counting them here
+        -- would report laps the runtime never completed.
+        ELSE COUNT(CASE WHEN l.lap_time_ms IS NOT NULL THEN 1 END)
       END AS computed_total_laps,
       t.slug AS track_slug,
       t.name AS track_name,
