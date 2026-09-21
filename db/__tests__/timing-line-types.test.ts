@@ -70,6 +70,22 @@ describe('seeded timing topology', () => {
     }
   });
 
+  it('keeps Tsukuba 1000 on the main OSM course instead of the optional chicane', () => {
+    const path = seeds.find((seed) => seed.track.id === 'tsukuba1000')?.track.path;
+    const straightEntry: [number, number] = [36.150303, 139.924549];
+    const straightExit: [number, number] = [36.149948, 139.924327];
+
+    expect(path).toBeDefined();
+    const entryIndex = path!.findIndex(
+      ([latitude, longitude]) =>
+        latitude === straightEntry[0] && longitude === straightEntry[1],
+    );
+
+    expect(entryIndex).toBeGreaterThanOrEqual(0);
+    expect(path![entryIndex + 1]).toEqual(straightExit);
+    expect(path).not.toContainEqual([36.150239, 139.924331]);
+  });
+
   it('starts and ends a point-to-point path at its own timing lines', () => {
     const METERS_PER_DEGREE_LAT = 111132;
 
