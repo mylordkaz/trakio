@@ -55,6 +55,14 @@ const JAPANESE_TRACK_METADATA: Record<string, JapaneseTrackMetadata> = {
     name: '十勝スピードウェイ',
     layoutName: 'グランプリコース',
   },
+  'tokachi-speedway-clubman': {
+    name: '十勝スピードウェイ',
+    layoutName: 'クラブマンコース',
+  },
+  'tokachi-speedway-junior': {
+    name: '十勝スピードウェイ',
+    layoutName: 'ジュニアコース',
+  },
   'suzuka-circuit': {
     name: '鈴鹿サーキット',
     layoutName: 'フルコース',
@@ -69,6 +77,14 @@ const JAPANESE_TRACK_METADATA: Record<string, JapaneseTrackMetadata> = {
   'autopolis-international': {
     name: 'オートポリス',
     layoutName: 'インターナショナルコース',
+  },
+  'ebisu-higashi': {
+    name: 'エビスサーキット',
+    layoutName: '東コース',
+  },
+  'ebisu-nishi': {
+    name: 'エビスサーキット',
+    layoutName: '西コース',
   },
   'okayama-international-circuit': {
     name: '岡山国際サーキット',
@@ -113,6 +129,7 @@ const JAPANESE_LOCATION_NAMES: Record<string, string> = {
   Okayama: '岡山県',
   Saitama: '埼玉県',
   Ōita: '大分県',
+  Fukushima: '福島県',
 };
 
 const JAPANESE_LAYOUT_NAMES: Record<string, string> = {
