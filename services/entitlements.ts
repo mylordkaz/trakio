@@ -8,7 +8,7 @@ export const STORE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 export const PURCHASE_MATCH_TOLERANCE_MS = 10 * 60_000;
 
 export type PaidProSource = 'yearly' | 'lifetime';
-export type ProSource = PaidProSource | 'grandfathered';
+export type ProSource = PaidProSource | 'grandfathered' | 'review';
 export type GrandfatheringStatus = 'pending' | 'eligible' | 'ineligible' | 'not_applicable';
 export type AccessStatus = 'pending' | 'resolved_free' | 'resolved_pro' | 'offline_grace';
 

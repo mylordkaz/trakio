@@ -36,6 +36,7 @@ import {
 import { useSQLiteContext } from 'expo-sqlite';
 import { Storage } from 'expo-sqlite/kv-store';
 import { wasInstalledBeforeMonetization } from '@/db/app-metadata';
+import { isValidPlayReviewCode } from '@/services/play-review-access';
 import {
   PRO_ANNUAL_PRODUCT_ID,
   PRO_LIFETIME_PRODUCT_ID,
@@ -62,6 +63,8 @@ import {
 
 const GRANDFATHERING_CACHE_KEY = 'pro_grandfathering_v1';
 const PAID_ENTITLEMENT_CACHE_KEY = 'pro_paid_entitlement_v1';
+const PLAY_REVIEW_ACCESS_CACHE_KEY = 'play_review_access_v1';
+const PLAY_REVIEW_ACCESS_GRANTED = 'granted';
 const PURCHASE_TIMEOUT_MS = 90_000;
 const MAX_ENTITLEMENT_TIMER_DELAY_MS = 24 * 60 * 60 * 1000;
 
@@ -87,6 +90,13 @@ function removeValue(key: string) {
   } catch {
     // A later successful StoreKit refresh will retry cache cleanup.
   }
+}
+
+function readPlayReviewAccess(): boolean {
+  return (
+    Platform.OS === 'android' &&
+    readValue(PLAY_REVIEW_ACCESS_CACHE_KEY) === PLAY_REVIEW_ACCESS_GRANTED
+  );
 }
 
 type MonetizationConfig = {
@@ -135,6 +145,7 @@ type EntitlementContextValue = {
   purchaseAnnual: () => Promise<PurchaseOutcome>;
   purchaseLifetime: () => Promise<PurchaseOutcome>;
   restorePurchases: () => Promise<RestoreOutcome>;
+  unlockPlayReviewAccess: (code: string) => boolean;
   refresh: () => Promise<void>;
   manageSubscription: () => Promise<void>;
 };
@@ -201,6 +212,7 @@ function readPaidCache(): CachedPaidEntitlement | null {
 function initialAccess(
   grandfatheringStatus: GrandfatheringStatus,
   paidCache: CachedPaidEntitlement | null,
+  hasPlayReviewAccess: boolean,
 ): { status: AccessStatus; source: ProSource | null } {
   if (grandfatheringStatus === 'eligible') {
     return { status: 'resolved_pro', source: 'grandfathered' };
@@ -208,6 +220,10 @@ function initialAccess(
 
   if (canUseCachedPaidEntitlement(paidCache)) {
     return { status: 'offline_grace', source: paidCache!.source };
+  }
+
+  if (hasPlayReviewAccess) {
+    return { status: 'resolved_pro', source: 'review' };
   }
 
   if (grandfatheringStatus === 'pending') {
@@ -336,9 +352,13 @@ export function EntitlementProvider({ children }: { children: ReactNode }) {
   const forceFree = isDevelopmentOverride(config, 'forceFree');
   const initialGrandfathering = useMemo(() => readGrandfatheringStatus(config), [config]);
   const initialPaidCache = useMemo(() => (forceFree ? null : readPaidCache()), [forceFree]);
+  const initialPlayReviewAccess = useMemo(
+    () => !forceFree && readPlayReviewAccess(),
+    [forceFree],
+  );
   const initial = useMemo(
-    () => initialAccess(initialGrandfathering, initialPaidCache),
-    [initialGrandfathering, initialPaidCache],
+    () => initialAccess(initialGrandfathering, initialPaidCache, initialPlayReviewAccess),
+    [initialGrandfathering, initialPaidCache, initialPlayReviewAccess],
   );
   const [snapshotSequencer] = useState(createStoreSnapshotSequencer);
   const canResolveGrandfathering = supportsAppTransactionIOS();
@@ -354,6 +374,7 @@ export function EntitlementProvider({ children }: { children: ReactNode }) {
   const [paidCacheRevision, setPaidCacheRevision] = useState(0);
   const grandfatheringRef = useRef(initialGrandfathering);
   const paidCacheRef = useRef(initialPaidCache);
+  const playReviewAccessRef = useRef(initialPlayReviewAccess);
   const pathnameRef = useRef(pathname);
   const previousRecordingPathRef = useRef(isRecordingPath(pathname));
   pathnameRef.current = pathname;
@@ -404,9 +425,27 @@ export function EntitlementProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const next = initialAccess(grandfatheringRef.current, forceFree ? null : paidCache);
+    const next = initialAccess(
+      grandfatheringRef.current,
+      forceFree ? null : paidCache,
+      !forceFree && playReviewAccessRef.current,
+    );
     setAccessStatus(next.status);
     setSource(next.source);
+  }, [forceFree]);
+
+  const unlockPlayReviewAccess = useCallback((code: string): boolean => {
+    if (forceFree || Platform.OS !== 'android' || !isValidPlayReviewCode(code)) {
+      return false;
+    }
+
+    playReviewAccessRef.current = true;
+    storeValue(PLAY_REVIEW_ACCESS_CACHE_KEY, PLAY_REVIEW_ACCESS_GRANTED);
+    if (mountedRef.current) {
+      setAccessStatus('resolved_pro');
+      setSource('review');
+    }
+    return true;
   }, [forceFree]);
 
   const resolveGrandfathering = useCallback(
@@ -1128,6 +1167,7 @@ export function EntitlementProvider({ children }: { children: ReactNode }) {
       purchaseAnnual: () => purchase(annualProduct, 'subs'),
       purchaseLifetime: () => purchase(lifetimeProduct, 'in-app'),
       restorePurchases,
+      unlockPlayReviewAccess,
       refresh,
       manageSubscription,
     }),
@@ -1145,6 +1185,7 @@ export function EntitlementProvider({ children }: { children: ReactNode }) {
       refresh,
       restorePurchases,
       source,
+      unlockPlayReviewAccess,
     ],
   );
 

@@ -1,6 +1,7 @@
 // Feature flags for gating work that isn't ready to ship to users.
 
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 // External GPS pairing (RaceBox, Qstarz); on-device validation is vendor-side only.
 export const EXTERNAL_GPS_ENABLED: boolean = true;
@@ -10,8 +11,10 @@ export const EXTERNAL_GPS_ENABLED: boolean = true;
 // for offline fusion benching only. No app behavior consumes them. ON for the
 // Phase 2b capture campaign (street-drive validation, then Tsukuba): expect
 // roughly 10 MB of rows per 30 recorded minutes and an unmeasured battery
-// cost — measuring it is part of the campaign.
-export const IMU_CAPTURE_ENABLED: boolean = true;
+// cost — measuring it is part of the campaign. Android is excluded because
+// expo-sensors maps DeviceMotion permission requests to ACTIVITY_RECOGNITION,
+// which Trakio does not need for any user-facing or health feature.
+export const IMU_CAPTURE_ENABLED: boolean = Platform.OS !== 'android';
 
 // Crossing recovery: when a GPS hole spans a timing line and the chord
 // between the surviving fixes crosses the line's extension just past the

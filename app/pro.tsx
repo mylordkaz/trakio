@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -25,7 +36,11 @@ export default function ProScreen() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [selectedPlan, setSelectedPlan] = useState<PlanChoice>('annual');
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [reviewCode, setReviewCode] = useState('');
+  const [reviewCodeError, setReviewCodeError] = useState(false);
   const storeActionInFlightRef = useRef(false);
+  const suppressRestoreUntilRef = useRef(0);
   const {
     accessStatus,
     source,
@@ -37,6 +52,7 @@ export default function ProScreen() {
     purchaseAnnual,
     purchaseLifetime,
     restorePurchases,
+    unlockPlayReviewAccess,
     refresh,
     manageSubscription,
   } = useEntitlements();
@@ -72,6 +88,11 @@ export default function ProScreen() {
   }
 
   async function handleRestore() {
+    if (Date.now() < suppressRestoreUntilRef.current) {
+      suppressRestoreUntilRef.current = 0;
+      return;
+    }
+
     if (storeActionInFlightRef.current) {
       return;
     }
@@ -89,6 +110,33 @@ export default function ProScreen() {
     } finally {
       storeActionInFlightRef.current = false;
     }
+  }
+
+  function handleReviewLongPress() {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    suppressRestoreUntilRef.current = Date.now() + 10_000;
+    setReviewCode('');
+    setReviewCodeError(false);
+    setReviewModalVisible(true);
+  }
+
+  function closeReviewModal() {
+    setReviewModalVisible(false);
+    setReviewCode('');
+    setReviewCodeError(false);
+  }
+
+  function handleReviewUnlock() {
+    if (!unlockPlayReviewAccess(reviewCode)) {
+      setReviewCodeError(true);
+      return;
+    }
+
+    closeReviewModal();
+    Alert.alert(t('pro.reviewAccessSuccessTitle'), t('pro.reviewAccessSuccessMessage'));
   }
 
   const selectedProduct = selectedPlan === 'annual' ? annualProduct : lifetimeProduct;
@@ -252,8 +300,10 @@ export default function ProScreen() {
           <View className="mt-auto pt-8">
             <Pressable
               disabled={isProcessing}
+              delayLongPress={Platform.OS === 'android' ? 3_000 : undefined}
               className="items-center py-3 disabled:opacity-50"
               onPress={() => void handleRestore()}
+              onLongPress={Platform.OS === 'android' ? handleReviewLongPress : undefined}
             >
               <Text className="text-sm font-medium text-violet-600 dark:text-violet-400">
                 {t('pro.restore')}
@@ -275,6 +325,63 @@ export default function ProScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={closeReviewModal}
+        transparent
+        visible={reviewModalVisible}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          className="flex-1 justify-center bg-black/60 px-6"
+        >
+          <View className="rounded-2xl bg-white p-5 dark:bg-zinc-800">
+            <Text className="text-xl font-semibold text-zinc-900 dark:text-white">
+              {t('pro.reviewAccessTitle')}
+            </Text>
+            <Text className="mt-2 text-sm leading-5 text-zinc-600 dark:text-zinc-300">
+              {t('pro.reviewAccessMessage')}
+            </Text>
+            <TextInput
+              autoCapitalize="none"
+              autoComplete="off"
+              autoCorrect={false}
+              autoFocus
+              className="mt-5 rounded-xl border border-zinc-300 px-4 py-3 text-base text-zinc-900 dark:border-white/20 dark:text-white"
+              maxLength={128}
+              onChangeText={(value) => {
+                setReviewCode(value);
+                setReviewCodeError(false);
+              }}
+              onSubmitEditing={handleReviewUnlock}
+              placeholder={t('pro.reviewAccessPlaceholder')}
+              placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
+              returnKeyType="done"
+              value={reviewCode}
+            />
+            {reviewCodeError ? (
+              <Text className="mt-2 text-sm text-red-600 dark:text-red-400">
+                {t('pro.reviewAccessInvalid')}
+              </Text>
+            ) : null}
+            <View className="mt-5 flex-row justify-end gap-3">
+              <Pressable className="px-4 py-3" onPress={closeReviewModal}>
+                <Text className="font-medium text-zinc-600 dark:text-zinc-300">
+                  {t('common.cancel')}
+                </Text>
+              </Pressable>
+              <Pressable
+                className="rounded-xl bg-violet-500 px-5 py-3 disabled:opacity-50"
+                disabled={!reviewCode.trim()}
+                onPress={handleReviewUnlock}
+              >
+                <Text className="font-semibold text-white">{t('pro.reviewAccessUnlock')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
