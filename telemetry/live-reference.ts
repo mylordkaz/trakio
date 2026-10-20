@@ -36,9 +36,12 @@ export type SectorStatus = 'pending' | 'active' | 'faster' | 'slower' | 'neutral
 type TracePoint = { x: number; y: number; distM: number; lapElapsedMs: number };
 
 const METERS_PER_DEG_LAT = 111320;
-const SEARCH_WINDOW_M = 300;
-const SEARCH_BACK_SEGMENTS = 2;
 const MAX_REGRESS_M = 50;
+// Metres of lateral offset one second of delta jump is worth when choosing
+// between candidate placements. Low enough that the nearest point on the
+// car's own leg always wins locally (a metre along track is tens of ms), high
+// enough that a leg implying a jump of seconds loses to any leg within reach.
+const JUMP_WEIGHT_M_PER_MS = 0.005;
 
 export function createLiveReference(opts: {
   sectorLineCount: number;
@@ -57,7 +60,6 @@ export function createLiveReference(opts: {
   let lastSectorSeq = 0;
   let splits: (number | null)[] = emptySplits();
   let reference: TracePoint[] | null = null;
-  let matchedIndex = 0;
   let lastProgressM = 0;
   let knownCompletedCount = 0;
   let state: LiveDeltaState = {
@@ -114,7 +116,6 @@ export function createLiveReference(opts: {
     lastSectorSeq = 0;
     splits = emptySplits();
     append(buffer, event.sampleLat, event.sampleLng, 0);
-    matchedIndex = 0;
     lastProgressM = 0;
     state = { ...state, deltaMs: reference ? 0 : null, stale: false };
   }
@@ -130,7 +131,7 @@ export function createLiveReference(opts: {
     const lapTimeMs = event.sampleElapsedMs - lapStartElapsedMs;
     append(buffer, event.sampleLat, event.sampleLng, lapTimeMs);
     if (sectorCount > 0 && lastSectorSeq === sectorLineCount) {
-      splits[sectorCount - 1] = lapTimeMs - sectorStartElapsedMs;
+      splits[sectorCount - 1] = event.sampleElapsedMs - sectorStartElapsedMs;
     }
 
     const closed = completedLaps[completedLaps.length - 1];
@@ -159,63 +160,47 @@ export function createLiveReference(opts: {
     sectorStartElapsedMs = event.sampleElapsedMs;
   }
 
-  function nearestOnSegments(
-    ref: TracePoint[],
-    from: number,
-    to: number,
-    x: number,
-    y: number
-  ): { index: number; t: number; offsetM: number } | null {
-    let best: { index: number; t: number; offsetM: number } | null = null;
-    for (let i = from; i < to; i++) {
-      const a = ref[i];
-      const b = ref[i + 1];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const lengthSq = dx * dx + dy * dy;
-      const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / lengthSq));
-      const offsetM = Math.hypot(x - (a.x + t * dx), y - (a.y + t * dy));
-      if (!best || offsetM < best.offsetM) {
-        best = { index: i, t, offsetM };
-      }
-    }
-    return best;
-  }
-
+  // Places a fix on the reference. Every segment within maxOffsetM is a
+  // candidate, so a return straight or the far side of a hairpin can be as
+  // close as the car's own leg. Candidates are scored by offset plus the delta
+  // jump they imply: the true delta drifts by tenths between fixes while a
+  // wrong leg implies a jump of seconds.
   function match(lat: number, lng: number, lapElapsedMs: number) {
     if (!reference || reference.length < 2) {
       return;
     }
     const { x, y } = project(lat, lng);
-    const lastSegment = reference.length - 1;
-    const from = Math.max(0, matchedIndex - SEARCH_BACK_SEGMENTS);
-    let to = matchedIndex;
-    while (to < lastSegment && reference[to].distM - reference[matchedIndex].distM <= SEARCH_WINDOW_M) {
-      to++;
+    const previousDeltaMs = state.deltaMs ?? 0;
+    let best: { deltaMs: number; progressM: number; score: number } | null = null;
+
+    for (let i = 0; i < reference.length - 1; i++) {
+      const a = reference[i];
+      const b = reference[i + 1];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const lengthSq = dx * dx + dy * dy;
+      const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / lengthSq));
+      const offsetM = Math.hypot(x - (a.x + t * dx), y - (a.y + t * dy));
+      if (offsetM > maxOffsetM) {
+        continue;
+      }
+      const progressM = a.distM + t * (b.distM - a.distM);
+      if (progressM < lastProgressM - MAX_REGRESS_M) {
+        continue;
+      }
+      const deltaMs = lapElapsedMs - (a.lapElapsedMs + t * (b.lapElapsedMs - a.lapElapsedMs));
+      const score = offsetM + JUMP_WEIGHT_M_PER_MS * Math.abs(deltaMs - previousDeltaMs);
+      if (!best || score < best.score) {
+        best = { deltaMs, progressM, score };
+      }
     }
 
-    let hit = nearestOnSegments(reference, from, to, x, y);
-    if (!hit || hit.offsetM > maxOffsetM) {
-      // Outside the window (long GPS gap): place anywhere ahead of the last match.
-      hit = nearestOnSegments(reference, 0, lastSegment, x, y);
-    }
-    if (!hit || hit.offsetM > maxOffsetM) {
+    if (!best) {
       state = { ...state, stale: true };
       return;
     }
-
-    const a = reference[hit.index];
-    const b = reference[hit.index + 1];
-    const progressM = a.distM + hit.t * (b.distM - a.distM);
-    if (progressM < lastProgressM - MAX_REGRESS_M) {
-      state = { ...state, stale: true };
-      return;
-    }
-
-    const refElapsedMs = a.lapElapsedMs + hit.t * (b.lapElapsedMs - a.lapElapsedMs);
-    matchedIndex = hit.index;
-    lastProgressM = progressM;
-    state = { ...state, deltaMs: lapElapsedMs - refElapsedMs, stale: false };
+    lastProgressM = best.progressM;
+    state = { ...state, deltaMs: best.deltaMs, stale: false };
   }
 
   function onAccepted(input: LiveReferenceInput): LiveDeltaState {
@@ -288,7 +273,9 @@ export type SectorCard = {
 // the reference sector, or its time when there is no reference. The active
 // sector shows the delta gained or lost inside it so far (live delta minus
 // what the completed sectors already account for) when every earlier sector
-// has a reference, otherwise its running time.
+// has a split and a reference, otherwise its running time. Pass a null
+// liveDeltaMs whenever the live delta is not current (GPS lost, stale match,
+// pit-in) so a held value is never shown as live feedback.
 export function deriveSectorCards(args: {
   statuses: SectorStatus[];
   currentLapSectorSplitsMs: Record<number, number>;
@@ -312,7 +299,13 @@ export function deriveSectorCards(args: {
       return { status, valueMs: split - ref, isDelta: true, progress: 1 };
     }
 
-    if (status === 'active') {
+    if (status !== 'active') {
+      // An earlier sector without a split leaves the delta it carried unknown.
+      completedDeltaMs = null;
+      return { status, valueMs: null, isDelta: false, progress: 0 };
+    }
+
+    {
       const elapsed = args.activeSectorElapsedMs;
       const progress = elapsed !== null && ref !== null && ref > 0 ? Math.min(1, elapsed / ref) : 0;
       if (args.liveDeltaMs !== null && completedDeltaMs !== null && ref !== null) {
@@ -320,7 +313,5 @@ export function deriveSectorCards(args: {
       }
       return { status, valueMs: elapsed, isDelta: false, progress };
     }
-
-    return { status, valueMs: null, isDelta: false, progress: 0 };
   });
 }

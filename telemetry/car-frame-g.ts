@@ -52,6 +52,11 @@ const MIN_GPS_SPEED_MPS = 3;
 const MIN_OBSERVATION_DT_S = 0.5;
 const MAX_OBSERVATION_DT_S = 2;
 const MIN_CONSISTENCY = 0.8;
+const MIN_HANDEDNESS_MARGIN = 0.1;
+// GPS and sensor must agree on the size of an acceleration within this
+// factor for its direction to count: a GPS speed glitch has no counterpart in
+// the sensor and would otherwise outweigh every genuine observation.
+const MAX_MAGNITUDE_RATIO = 2;
 const EVIDENCE_CAP = 50;
 const FORWARD_HINTS: Vec3[] = [
   { x: 0, y: 0, z: -1 },
@@ -127,6 +132,7 @@ export function createCarFrameG(opts?: {
   let observations = 0;
   let mountYawRad = 0;
   let isMirrored = false;
+  let handednessResolved = handednessKnown;
   let aligned = false;
   let previousGps: { speedMps: number; headingRad: number; atMs: number } | null = null;
   let parkedWindowStartMs: number | null = null;
@@ -327,15 +333,28 @@ export function createCarFrameG(opts?: {
     const imuA2 = meanCount > 0 ? meanA2 / meanCount : 0;
     const imuMagnitude = Math.hypot(imuA1, imuA2);
 
-    if (gpsMagnitude >= minGpsAccel && imuMagnitude >= minImuAccel) {
+    const magnitudesAgree =
+      imuMagnitude * MAX_MAGNITUDE_RATIO >= gpsMagnitude && gpsMagnitude * MAX_MAGNITUDE_RATIO >= imuMagnitude;
+    if (gpsMagnitude >= minGpsAccel && imuMagnitude >= minImuAccel && magnitudesAgree) {
       const gpsAngle = Math.atan2(rightMps2, forwardMps2);
       addEvidence(normal, wrapAngle(Math.atan2(imuA2, imuA1) - gpsAngle), gpsMagnitude);
       addEvidence(mirrored, wrapAngle(Math.atan2(-imuA2, imuA1) - gpsAngle), gpsMagnitude);
       observations++;
-      isMirrored = !handednessKnown && consistency(mirrored) > consistency(normal) + 0.05;
+      // Handedness is a fixed property of the sensor, so it is decided once.
+      // Braking alone fits both hypotheses; a corner tells them apart. Only
+      // the mount yaw keeps adapting afterwards (decaying evidence lets a
+      // nudged mount re-converge, and would otherwise let one long corner
+      // make the wrong hypothesis look consistent again).
+      if (!handednessResolved && observations >= minObservations) {
+        const margin = consistency(normal) - consistency(mirrored);
+        if (Math.abs(margin) >= MIN_HANDEDNESS_MARGIN) {
+          isMirrored = margin < 0;
+          handednessResolved = true;
+        }
+      }
       const chosen = isMirrored ? mirrored : normal;
       mountYawRad = Math.atan2(chosen.y, chosen.x);
-      aligned = observations >= minObservations && consistency(chosen) >= MIN_CONSISTENCY;
+      aligned = handednessResolved && observations >= minObservations && consistency(chosen) >= MIN_CONSISTENCY;
     }
 
     previousGps = current;

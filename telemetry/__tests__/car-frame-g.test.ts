@@ -186,8 +186,8 @@ function lapStart(g: ReturnType<typeof createCarFrameG>, mount: Mount, transform
   driveDevice(g, mount, clock, 6, 4, 0, transform); // launch
   driveDevice(g, mount, clock, 2, 0, 0, transform); // steady straight
   driveDevice(g, mount, clock, 2, -6, 0, transform); // brake
-  driveDevice(g, mount, clock, 3, 0, 0.12, transform); // right-hander
-  driveDevice(g, mount, clock, 3, 0, -0.12, transform); // left-hander
+  driveDevice(g, mount, clock, 3, 0, 0.25, transform); // right-hander, 3 m/s² at 12 m/s
+  driveDevice(g, mount, clock, 3, 0, -0.25, transform); // left-hander
   return clock;
 }
 
@@ -219,12 +219,27 @@ describe('createCarFrameG with an external device', () => {
     const clock = { tMs: 0, speedMps: 30, headingRad: 2 };
     driveDevice(g, BOX, clock, 3, 0, 0); // steady straight, no stop at all
     driveDevice(g, BOX, clock, 2, -6, 0);
-    driveDevice(g, BOX, clock, 3, 0, 0.12);
+    driveDevice(g, BOX, clock, 3, 0, 0.15);
     driveDevice(g, BOX, clock, 2, 3, -0.1);
     expect(g.getState().aligned).toBe(true);
     clock.speedMps = 25;
     driveDevice(g, BOX, clock, 2, 0, -0.2); // 5 m/s² to the left
     expect(g.getState().lateralG).toBeCloseTo(-5 / G, 1);
+  });
+
+  it('does not align on braking alone while handedness is unknown', () => {
+    const g = createCarFrameG({ handedness: 'unknown' });
+    const clock = { tMs: 0, speedMps: 0, headingRad: 0.4 };
+    driveDevice(g, BOX, clock, 2, 0, 0);
+    driveDevice(g, BOX, clock, 6, 4, 0);
+    driveDevice(g, BOX, clock, 2, 0, 0);
+    driveDevice(g, BOX, clock, 3, -6, 0);
+    expect(g.getState().aligned).toBe(false);
+
+    clock.speedMps = 20;
+    driveDevice(g, BOX, clock, 3, 0, 0.2);
+    expect(g.getState().aligned).toBe(true);
+    expect(g.getState().lateralG).toBeCloseTo(4 / G, 1);
   });
 
   it('keeps gravity stable through a long sustained corner', () => {

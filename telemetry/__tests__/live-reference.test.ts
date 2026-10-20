@@ -281,3 +281,98 @@ describe('deriveSectorCards', () => {
     expect(cards[1]).toEqual({ status: 'active', valueMs: 5_000, isDelta: false, progress: 0.25 });
   });
 });
+
+describe('createLiveReference regressions', () => {
+  it('times the final sector of a later reference lap on the session timeline', () => {
+    const ref = createLiveReference({ sectorLineCount: 2 });
+    const laps: Lap[] = [];
+    const lap1 = driveLap(ref, laps, { lapNumber: 1, speedMps: 20, startMs: 0, opening: true });
+    const lap2 = driveLap(ref, laps, { lapNumber: 2, speedMps: 25, startMs: lap1.endMs });
+    const state = lap2.states[lap2.states.length - 1];
+
+    expect(state.referenceLapNumber).toBe(2);
+    expect(state.referenceSectorSplitsMs).toEqual([20_000, 20_000, 24_000]);
+    const total = (state.referenceSectorSplitsMs as number[]).reduce((sum, ms) => sum + ms, 0);
+    expect(total).toBe(state.referenceLapTimeMs);
+  });
+
+  it('stays on its own leg when a return straight is nearer', () => {
+    // Paperclip: out along y = 0, a 10 m-radius hairpin, back along y = 20.
+    const STRAIGHT_M = 600;
+    const RADIUS_M = 10;
+    const ARC_M = Math.PI * RADIUS_M;
+    const LOOP_M = 2 * STRAIGHT_M + 2 * ARC_M;
+    const at = (sM: number) => {
+      const s = ((sM % LOOP_M) + LOOP_M) % LOOP_M;
+      if (s < STRAIGHT_M) return { x: s, y: 0 };
+      if (s < STRAIGHT_M + ARC_M) {
+        const a = (s - STRAIGHT_M) / RADIUS_M;
+        return { x: STRAIGHT_M + RADIUS_M * Math.sin(a), y: RADIUS_M - RADIUS_M * Math.cos(a) };
+      }
+      if (s < 2 * STRAIGHT_M + ARC_M) return { x: STRAIGHT_M - (s - STRAIGHT_M - ARC_M), y: 2 * RADIUS_M };
+      const a = (s - 2 * STRAIGHT_M - ARC_M) / RADIUS_M;
+      return { x: -RADIUS_M * Math.sin(a), y: RADIUS_M + RADIUS_M * Math.cos(a) };
+    };
+    const sample = (xy: { x: number; y: number }, tMs: number): TelemetrySample => ({
+      ...sampleAt(0, tMs),
+      lat: LAT0 + xy.y / M_LAT,
+      lng: LNG0 + xy.x / M_LNG,
+    });
+    const crossing = (tMs: number): TelemetryDetectionEvent => ({
+      ...eventAt('start_finish_crossed', 0, 0, tMs),
+      sampleLat: LAT0,
+      sampleLng: LNG0,
+    });
+
+    const ref = createLiveReference({ sectorLineCount: 0 });
+    const lapMs = Math.round((LOOP_M / 20) * 1000);
+    ref.onAccepted(input(sample(at(0), 0), [crossing(0)]));
+    for (let t = 1000; t < lapMs; t += 1000) {
+      ref.onAccepted(input(sample(at((t / 1000) * 20), t)));
+    }
+    const laps: Lap[] = [{ lapNumber: 1, lapTimeMs: lapMs, isBest: true, isExcluded: false }];
+    ref.onAccepted(input(sample(at(0), lapMs), [crossing(lapMs)], laps));
+
+    // Lap 2 at the same pace; at x = 500 the fix drifts 12 m toward the
+    // return straight, which is then 8 m away against 12 m for its own leg.
+    let state = ref.getState();
+    for (let s = 20; s <= 480; s += 20) {
+      state = ref.onAccepted(input(sample(at(s), lapMs + s * 50), [], laps));
+    }
+    state = ref.onAccepted(input(sample({ x: 500, y: 12 }, lapMs + 25_000), [], laps));
+    expect(state.stale).toBe(false);
+    expect(Math.abs(state.deltaMs!)).toBeLessThan(500);
+  });
+});
+
+describe('deriveSectorCards regressions', () => {
+  it('shows the running time when an earlier sector was missed', () => {
+    // S1 line missed, S2 crossed: S3 must not claim the whole-lap delta.
+    const cards = deriveSectorCards({
+      statuses: deriveSectorStatuses({
+        sectorCount: 3,
+        isLapInProgress: true,
+        lastCrossedSectorSeq: 2,
+        currentLapSectorSplitsMs: { 1: 20_100 },
+        referenceSectorSplitsMs: [25_000, 20_000, 30_000],
+      }),
+      currentLapSectorSplitsMs: { 1: 20_100 },
+      referenceSectorSplitsMs: [25_000, 20_000, 30_000],
+      activeSectorElapsedMs: 12_000,
+      liveDeltaMs: 900,
+    });
+    expect(cards.map((card) => card.status)).toEqual(['pending', 'slower', 'active']);
+    expect(cards[2]).toEqual({ status: 'active', valueMs: 12_000, isDelta: false, progress: 0.4 });
+  });
+
+  it('shows the running time when the live delta is not current', () => {
+    const cards = deriveSectorCards({
+      statuses: ['faster', 'active'],
+      currentLapSectorSplitsMs: { 0: 24_000 },
+      referenceSectorSplitsMs: [25_000, 20_000],
+      activeSectorElapsedMs: 4_000,
+      liveDeltaMs: null,
+    });
+    expect(cards[1]).toEqual({ status: 'active', valueMs: 4_000, isDelta: false, progress: 0.2 });
+  });
+});

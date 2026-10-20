@@ -22,6 +22,9 @@ type Props = {
   lapLabel: string | number;
   bestLapMs: number | null;
   lastLapMs: number | null;
+  // Laps timed across a GPS gap are shown with ≈, as everywhere else.
+  bestLapEstimated: boolean;
+  lastLapEstimated: boolean;
   lapStartedWallClockMs: number | null;
   sectorStatuses: SectorStatus[];
   liveDelta: LiveDeltaState;
@@ -35,7 +38,7 @@ type Props = {
   onEnd: () => void;
 };
 
-function TimeTile({ label, ms, accent }: { label: string; ms: number | null; accent: boolean }) {
+function TimeTile({ label, ms, estimated, accent }: { label: string; ms: number | null; estimated: boolean; accent: boolean }) {
   return (
     <View style={{ gap: 2 }}>
       <Text className="text-[11px] tracking-widest text-zinc-500 uppercase">{label}</Text>
@@ -43,7 +46,7 @@ function TimeTile({ label, ms, accent }: { label: string; ms: number | null; acc
         style={{ fontSize: 22, lineHeight: 26, fontVariant: ['tabular-nums'] }}
         className={`font-bold ${accent ? 'text-emerald-400' : 'text-white'}`}
       >
-        {formatLapTime(ms)}
+        {`${estimated && ms !== null ? '≈' : ''}${formatLapTime(ms)}`}
       </Text>
     </View>
   );
@@ -96,9 +99,9 @@ export default function LandscapeDashboard(props: Props) {
           ) : null}
         </View>
         <View className="flex-row items-center rounded-xl bg-white/5 border border-white/10 px-4 py-1.5" style={{ gap: 16 }}>
-          <TimeTile label={t('session.bestLap')} ms={props.bestLapMs} accent />
+          <TimeTile label={t('session.bestLap')} ms={props.bestLapMs} estimated={props.bestLapEstimated} accent />
           <View style={{ width: 1, alignSelf: 'stretch' }} className="bg-white/10" />
-          <TimeTile label={t('session.lastLap')} ms={props.lastLapMs} accent={false} />
+          <TimeTile label={t('session.lastLap')} ms={props.lastLapMs} estimated={props.lastLapEstimated} accent={false} />
         </View>
       </View>
 

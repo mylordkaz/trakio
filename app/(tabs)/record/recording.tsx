@@ -566,8 +566,11 @@ export default function RecordingScreen() {
     currentLapSectorSplitsMs: runtimeSnapshot?.currentLapSectorSplitsMs ?? {},
     referenceSectorSplitsMs: liveDelta.referenceSectorSplitsMs,
     activeSectorElapsedMs: currentSectorElapsedMs,
-    liveDeltaMs: liveDelta.deltaMs,
+    liveDeltaMs: deltaDimmed ? null : liveDelta.deltaMs,
   });
+  const completedLaps = runtimeSnapshot?.completedLaps ?? [];
+  const lastLapEstimated = completedLaps[completedLaps.length - 1]?.isEstimated ?? false;
+  const bestLapEstimated = completedLaps.find((lap) => lap.isBest)?.isEstimated ?? false;
 
   function handlePitIn() {
     void runtimeRef.current?.markPitIn().then((snapshot) => {
@@ -615,6 +618,8 @@ export default function RecordingScreen() {
         lapLabel={currentLapLabel}
         bestLapMs={runtimeSnapshot?.bestLapMs ?? null}
         lastLapMs={runtimeSnapshot?.lastLapMs ?? null}
+        bestLapEstimated={bestLapEstimated}
+        lastLapEstimated={lastLapEstimated}
         lapStartedWallClockMs={
           runtimeSnapshot?.status === 'lap_in_progress' ? runtimeSnapshot.currentLapStartedWallClockMs : null
         }
@@ -650,6 +655,8 @@ export default function RecordingScreen() {
         lapLabel={currentLapLabel}
         bestLapMs={runtimeSnapshot?.bestLapMs ?? null}
         lastLapMs={runtimeSnapshot?.lastLapMs ?? null}
+        bestLapEstimated={bestLapEstimated}
+        lastLapEstimated={lastLapEstimated}
         lapStartedWallClockMs={
           runtimeSnapshot?.status === 'lap_in_progress' ? runtimeSnapshot.currentLapStartedWallClockMs : null
         }

@@ -29,6 +29,9 @@ type Props = {
   lapLabel: string | number;
   bestLapMs: number | null;
   lastLapMs: number | null;
+  // Laps timed across a GPS gap are shown with ≈, as everywhere else.
+  bestLapEstimated: boolean;
+  lastLapEstimated: boolean;
   lapStartedWallClockMs: number | null;
   liveDelta: LiveDeltaState;
   deltaDimmed: boolean;
@@ -79,6 +82,10 @@ const BANNER_TEXT = {
   amber: 'text-amber-700 dark:text-amber-300',
   neutral: 'text-zinc-500 dark:text-zinc-400',
 } as const;
+
+function lapTimeLabel(ms: number | null, estimated: boolean) {
+  return `${estimated && ms !== null ? '≈' : ''}${formatLapTime(ms)}`;
+}
 
 const CARD = 'rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10';
 
@@ -168,9 +175,9 @@ export default function PortraitDashboard(props: Props) {
           <View className="flex-row items-center">
             <LapStat label={t('recording.lap')} value={String(props.lapLabel)} valueClass={primaryText} />
             <View className="bg-zinc-200 dark:bg-white/10" style={{ width: 1, alignSelf: 'stretch' }} />
-            <LapStat label={t('session.bestLap')} value={formatLapTime(props.bestLapMs)} valueClass="text-emerald-500 dark:text-emerald-400" />
+            <LapStat label={t('session.bestLap')} value={lapTimeLabel(props.bestLapMs, props.bestLapEstimated)} valueClass="text-emerald-500 dark:text-emerald-400" />
             <View className="bg-zinc-200 dark:bg-white/10" style={{ width: 1, alignSelf: 'stretch' }} />
-            <LapStat label={t('session.lastLap')} value={formatLapTime(props.lastLapMs)} valueClass={primaryText} />
+            <LapStat label={t('session.lastLap')} value={lapTimeLabel(props.lastLapMs, props.lastLapEstimated)} valueClass={primaryText} />
           </View>
           <View className="items-center" style={{ marginTop: 6 }}>
             <Text className="text-xs tracking-widest text-zinc-500 dark:text-zinc-400 uppercase">{t('recording.currentLap')}</Text>
