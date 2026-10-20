@@ -3,8 +3,9 @@ import Svg, { Circle, Line } from 'react-native-svg';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import type { CarFrameG } from '@/telemetry/car-frame-g';
 
-// Outer ring is 1.0 G, inner ring 0.5 G. The dot follows the acceleration
-// vector: braking moves it down, a right-hand corner moves it right.
+// Outer ring is 1.0 G, inner ring 0.5 G. The dot shows the force the driver
+// feels, opposite to the car's acceleration: braking moves it up,
+// accelerating moves it down, a right-hand corner moves it left.
 const MAX_G = 1.2;
 const DOT_SIZE = 16;
 const HALO_SIZE = 44;
@@ -28,7 +29,7 @@ export default function GForceMeter({ size, reading, lateralSv, longitudinalSv, 
     const lat = Math.max(-MAX_G, Math.min(MAX_G, lateralSv.value));
     const long = Math.max(-MAX_G, Math.min(MAX_G, longitudinalSv.value));
     return {
-      transform: [{ translateX: lat * pxPerG }, { translateY: -long * pxPerG }],
+      transform: [{ translateX: -lat * pxPerG }, { translateY: long * pxPerG }],
     };
   });
 
