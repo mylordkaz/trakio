@@ -103,7 +103,7 @@ export type ReplayResult = {
   maxAcceptedGapMs: number;
 };
 
-function createMockRecorder() {
+export function createMockRecorder() {
   const sectorsByLapId = new Map<string, { sectorIndex: number; splitTimeMs: number }[]>();
   const lapIdByNumber = new Map<number, string>();
 

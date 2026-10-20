@@ -86,7 +86,11 @@ function rowParams(sessionId: string, row: ImuSampleRow): (string | number | nul
   ];
 }
 
-export function createImuCapture(db: SQLiteDatabase, sessionId: string) {
+export type ImuSampleListener = (measurement: DeviceMotionMeasurement, recordedAt: number) => void;
+
+// `onSample` shares the single DeviceMotion subscription with live consumers
+// (the landscape G meter); storage is unaffected by it.
+export function createImuCapture(db: SQLiteDatabase, sessionId: string, onSample?: ImuSampleListener) {
   let subscription: { remove: () => void } | null = null;
   let buffer: ImuSampleRow[] = [];
   let flushing = Promise.resolve();
@@ -134,7 +138,9 @@ export function createImuCapture(db: SQLiteDatabase, sessionId: string) {
           return;
         }
 
-        buffer.push(toImuSampleRow(measurement, Date.now()));
+        const recordedAt = Date.now();
+        onSample?.(measurement, recordedAt);
+        buffer.push(toImuSampleRow(measurement, recordedAt));
         if (buffer.length >= FLUSH_ROW_COUNT) {
           enqueueFlush();
         }
