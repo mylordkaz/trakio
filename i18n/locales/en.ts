@@ -77,16 +77,21 @@ export default {
     dataCapture: 'Data Capture',
   },
   postSession: {
-    title: 'Session Complete',
     sessionOverview: 'Session Overview',
     personalBest: 'Personal Best',
     consistency: 'Consistency',
     throttleAvg: 'Throttle Avg',
     brakingEfficiency: 'Braking Efficiency',
     lapBreakdown: 'Lap Breakdown',
-    viewSessions: 'View Sessions',
     export: 'Export',
     performanceSummary: 'Performance summary from this run',
+  },
+  sessionComplete: {
+    titleSaved: 'Session Complete',
+    titleFirstAtTrack: 'First Lap Time at %{track}!',
+    titleNewBest: 'New Personal Best!',
+    improvement: '%{gap} s faster than your previous best',
+    noTimedLap: 'Session saved. No lap was timed this time.',
   },
   leaderboard: {
     title: 'Global Leaderboard',

@@ -17,10 +17,6 @@ export default function RecordLayout() {
         name="recording"
         options={{ gestureEnabled: false }}
       />
-      <Stack.Screen
-        name="post-session"
-        options={{ gestureEnabled: false, animation: 'none' }}
-      />
     </Stack>
   );
 }

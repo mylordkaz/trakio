@@ -70,7 +70,7 @@ export async function maybeRequestAppReview(
     client.markRequestedReview();
     return true;
   } catch {
-    // Review requests are best-effort and must never block post-session.
+    // Review requests are best-effort and must never block the end of a session.
     return false;
   }
 }

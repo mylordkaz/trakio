@@ -186,10 +186,14 @@ export default function RecordingScreen() {
 
   useEffect(() => {
     if (pendingSessionId !== null && !isLandscape) {
-      router.replace({
-        pathname: '/(tabs)/record/post-session',
-        params: { id: pendingSessionId },
-      });
+      // The Record tab returns to its start screen, ready for the next session.
+      router.dismissAll();
+      if (pendingSessionId) {
+        router.navigate({
+          pathname: '/(tabs)/sessions/detail',
+          params: { id: pendingSessionId, completed: '1' },
+        }, { withAnchor: true });
+      }
     }
   }, [pendingSessionId, isLandscape, router]);
 
@@ -602,8 +606,8 @@ export default function RecordingScreen() {
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
       setPendingSessionId(sessionId);
     } catch {
-      // Avoid stranding on dark curtain — navigate directly as fallback
-      router.replace('/(tabs)/record/post-session');
+      // Avoid stranding on the dark curtain.
+      router.dismissAll();
     }
   }
 

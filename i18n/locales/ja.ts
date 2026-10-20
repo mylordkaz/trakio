@@ -77,16 +77,21 @@ export default {
     dataCapture: 'データ取得',
   },
   postSession: {
-    title: 'セッション完了',
     sessionOverview: 'セッション概要',
     personalBest: '自己ベスト',
     consistency: '一貫性',
     throttleAvg: 'スロットル平均',
     brakingEfficiency: 'ブレーキ効率',
     lapBreakdown: 'ラップ詳細',
-    viewSessions: 'セッション一覧',
     export: 'エクスポート',
     performanceSummary: 'この走行のパフォーマンスサマリー',
+  },
+  sessionComplete: {
+    titleSaved: 'セッション完了',
+    titleFirstAtTrack: '%{track}で初のラップタイム！',
+    titleNewBest: '自己ベスト更新！',
+    improvement: '前回のベストより%{gap}秒速い',
+    noTimedLap: 'セッションを保存しました。今回は計測されたラップがありません。',
   },
   leaderboard: {
     title: 'グローバルランキング',
