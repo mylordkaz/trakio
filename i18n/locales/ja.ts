@@ -284,6 +284,9 @@ export default {
     gpsSignalLost: 'GPS信号ロスト — 再取得待ち',
     gpsDegraded: 'GPS精度低下 — 不良ポイントを除外中',
     recordingInterrupted: '記録が中断されました — 走行ラインに欠落の可能性',
+    deltaReference: 'Lap %{lap} 比',
+    deltaNoReference: '基準ラップなし',
+    gAligning: '方向を学習中…',
   },
   profile: {
     title: 'プロフィール',

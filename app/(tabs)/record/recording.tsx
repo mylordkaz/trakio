@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useKeepAwake } from 'expo-keep-awake';
 import * as Haptics from 'expo-haptics';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import { useSharedValue } from 'react-native-reanimated';
 import { useT, type TranslateFn } from '@/hooks/useT';
 import Card from '@/components/Card';
 import LapRow from '@/components/LapRow';
@@ -19,6 +20,9 @@ import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { requestForegroundLocationPermission } from '@/telemetry/location';
 import { createConnectionLifecycle } from '@/telemetry/sources/connection-lifecycle';
 import { createImuCapture } from '@/telemetry/imu-capture';
+import { createLiveReference, deriveSectorStatuses, type LiveDeltaState } from '@/telemetry/live-reference';
+import { createCarFrameG, type CarFrameG } from '@/telemetry/car-frame-g';
+import LandscapeDashboard from '@/components/recording/landscape/LandscapeDashboard';
 import { IMU_CAPTURE_ENABLED } from '@/constants/featureFlags';
 import { useExternalGps } from '@/contexts/ExternalGpsContext';
 import { useEntitlements } from '@/contexts/EntitlementContext';
@@ -103,6 +107,14 @@ function getBrakePercent(
 }
 
 const TELEMETRY_DISPLAY_REFRESH_MS = 100;
+const EMPTY_LIVE_DELTA: LiveDeltaState = {
+  deltaMs: null,
+  stale: false,
+  referenceLapNumber: null,
+  referenceLapTimeMs: null,
+  referenceSectorSplitsMs: [],
+};
+const EMPTY_G: CarFrameG = { longitudinalG: 0, lateralG: 0, magnitudeG: 0, aligned: false };
 
 export default function RecordingScreen() {
   const t = useT();
@@ -136,6 +148,16 @@ export default function RecordingScreen() {
   const runtimeRef = useRef<ReturnType<typeof createSessionRuntime> | null>(null);
   const lifecycleRef = useRef<ReturnType<typeof createConnectionLifecycle> | null>(null);
   const imuCaptureRef = useRef<ReturnType<typeof createImuCapture> | null>(null);
+  // Live reference and G state live here, not in the dashboard, so rotating
+  // to portrait keeps the reference lap and the learned mount yaw.
+  const liveReferenceRef = useRef<ReturnType<typeof createLiveReference> | null>(null);
+  const liveDeltaRef = useRef<LiveDeltaState>(EMPTY_LIVE_DELTA);
+  const [liveDelta, setLiveDelta] = useState<LiveDeltaState>(EMPTY_LIVE_DELTA);
+  const carFrameGRef = useRef<ReturnType<typeof createCarFrameG> | null>(null);
+  const [gReading, setGReading] = useState<CarFrameG>(EMPTY_G);
+  const lastGReadingMsRef = useRef(0);
+  const lateralSv = useSharedValue(0);
+  const longitudinalSv = useSharedValue(0);
   const hasStoppedRef = useRef(false);
   const pulseOpacity = useRef(new Animated.Value(1)).current;
   const previousAcceptedSampleRef = useRef<TelemetrySample | null>(null);
@@ -161,7 +183,18 @@ export default function RecordingScreen() {
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
     void ScreenOrientation.unlockAsync();
+    void ScreenOrientation.getOrientationAsync()
+      .then((orientation) => {
+        if (isMounted) {
+          setIsLandscape(
+            orientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
+            orientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT
+          );
+        }
+      })
+      .catch(() => undefined);
 
     const subscription = ScreenOrientation.addOrientationChangeListener((event) => {
       const orientation = event.orientationInfo.orientation;
@@ -172,6 +205,7 @@ export default function RecordingScreen() {
     });
 
     return () => {
+      isMounted = false;
       ScreenOrientation.removeOrientationChangeListener(subscription);
       void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     };
@@ -300,8 +334,29 @@ export default function RecordingScreen() {
 
       setRuntimeSnapshot(startedSnapshot);
 
+      liveReferenceRef.current = createLiveReference({
+        sectorLineCount: track.sectorCount > 0 ? track.sectorCount - 1 : 0,
+      });
+      liveDeltaRef.current = EMPTY_LIVE_DELTA;
+      setLiveDelta(EMPTY_LIVE_DELTA);
+      const carFrameG = createCarFrameG();
+      carFrameGRef.current = carFrameG;
+      setGReading(EMPTY_G);
+
       if (IMU_CAPTURE_ENABLED && startedSnapshot.sessionId) {
-        const imuCapture = createImuCapture(db, startedSnapshot.sessionId);
+        const imuCapture = createImuCapture(db, startedSnapshot.sessionId, (measurement, recordedAt) => {
+          const reading = carFrameG.ingest(
+            measurement.acceleration ?? null,
+            measurement.accelerationIncludingGravity ?? null,
+            recordedAt
+          );
+          lateralSv.value = reading.lateralG;
+          longitudinalSv.value = reading.longitudinalG;
+          if (isMounted && recordedAt - lastGReadingMsRef.current >= TELEMETRY_DISPLAY_REFRESH_MS) {
+            lastGReadingMsRef.current = recordedAt;
+            setGReading(reading);
+          }
+        });
         imuCaptureRef.current = imuCapture;
         // Best-effort: capture never blocks or fails the recording flow.
         void imuCapture.start();
@@ -326,6 +381,21 @@ export default function RecordingScreen() {
               return;
             }
 
+            // Display-only consumers see every accepted sample; they run after
+            // the runtime has returned and never feed back into timing.
+            const acceptedSample = result.snapshot.latestAcceptedSample;
+            if (result.accepted && acceptedSample) {
+              carFrameGRef.current?.observeGps(acceptedSample);
+              const liveReference = liveReferenceRef.current;
+              if (liveReference) {
+                liveDeltaRef.current = liveReference.onAccepted({
+                  sample: acceptedSample,
+                  events: result.events,
+                  completedLaps: result.snapshot.completedLaps,
+                });
+              }
+            }
+
             // The runtime persists every sample; only the on-screen snapshot is
             // coalesced. Flush immediately on a lap/sector/status change,
             // otherwise cap the refresh so 25 Hz doesn't drive 25 renders/sec.
@@ -338,6 +408,7 @@ export default function RecordingScreen() {
               lastRenderMsRef.current = now;
               lastRenderedStatusRef.current = result.snapshot.status;
               setRuntimeSnapshot(result.snapshot);
+              setLiveDelta(liveDeltaRef.current);
             }
           }).catch(() => {
             if (!isMounted) {
@@ -387,7 +458,7 @@ export default function RecordingScreen() {
         void activeRuntime.stop().catch(() => undefined);
       }
     };
-  }, [db, params.sessionName, params.condition, params.temperatureC, router, track]);
+  }, [db, params.sessionName, params.condition, params.temperatureC, router, track, lateralSv, longitudinalSv]);
 
   useEffect(() => {
     const sessionStartedAtMs = runtimeSnapshot?.sessionStartedAtMs;
@@ -396,14 +467,16 @@ export default function RecordingScreen() {
       return;
     }
 
+    // Landscape has its own lap clock; the screen only needs the tick for
+    // GPS staleness there.
     const intervalId = setInterval(() => {
       setNowMs(Date.now());
-    }, 50);
+    }, isLandscape ? 1000 : 50);
 
     return () => {
       clearInterval(intervalId);
     };
-  }, [runtimeSnapshot?.sessionEndedAtMs, runtimeSnapshot?.sessionStartedAtMs]);
+  }, [isLandscape, runtimeSnapshot?.sessionEndedAtMs, runtimeSnapshot?.sessionStartedAtMs]);
 
   useEffect(() => {
     const animation = Animated.loop(
@@ -443,6 +516,13 @@ export default function RecordingScreen() {
   }, [runtimeSnapshot?.latestAcceptedSample]);
 
   const sectorCount = track?.sectorCount ?? 0;
+  const sectorStatuses = deriveSectorStatuses({
+    sectorCount,
+    isLapInProgress: runtimeSnapshot?.status === 'lap_in_progress',
+    lastCrossedSectorSeq: runtimeSnapshot?.lastCrossedSectorSeq ?? null,
+    currentLapSectorSplitsMs: runtimeSnapshot?.currentLapSectorSplitsMs ?? {},
+    referenceSectorSplitsMs: liveDelta.referenceSectorSplitsMs,
+  });
   const sessionDurationMs =
     runtimeSnapshot?.sessionStartedAtMs !== null && runtimeSnapshot?.sessionStartedAtMs !== undefined
       ? (runtimeSnapshot.sessionEndedAtMs ?? nowMs) - runtimeSnapshot.sessionStartedAtMs
@@ -520,6 +600,12 @@ export default function RecordingScreen() {
       ? (currentSpeedKph / Math.max(runtimeSnapshot.maxSpeedKph, 1)) * 100
       : 0;
 
+  function handlePitIn() {
+    void runtimeRef.current?.markPitIn().then((snapshot) => {
+      setRuntimeSnapshot(snapshot);
+    }).catch(() => undefined);
+  }
+
   async function handleEndSession() {
     if (isEndingSession) return;
     setIsEndingSession(true);
@@ -549,8 +635,6 @@ export default function RecordingScreen() {
     }
   }
 
-  const lastLap = recentLaps.length > 0 ? recentLaps[recentLaps.length - 1] : null;
-
   if (isEndingSession) {
     return <View className="flex-1 bg-zinc-950" />;
   }
@@ -558,81 +642,26 @@ export default function RecordingScreen() {
   return (
     <View className="flex-1 bg-zinc-950">
     {isLandscape ? (
-      <View
-        className="flex-1"
-        style={{ paddingLeft: insets.left + 16, paddingRight: insets.right + 16, paddingTop: insets.top + 8, paddingBottom: insets.bottom + 8 }}
-      >
-        {/* REC badge */}
-        <Animated.View style={{ opacity: pulseOpacity }} className="absolute top-2 right-4 z-10" >
-          <View className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-4 py-1.5 border border-red-400/20"
-            style={{ right: insets.right + 8, top: insets.top }}
-          >
-            <View className="h-3 w-3 rounded-full bg-red-400" />
-            <Text className="text-sm text-red-400">{t('session.recording')}</Text>
-          </View>
-        </Animated.View>
-
-        {/* Upper section: Last Lap / Best Lap */}
-        <View className="flex-row flex-1">
-          <View className="flex-1 items-center justify-center">
-            <Text className="text-sm text-zinc-500 mb-1">{t('session.lastLap')}</Text>
-            <Text className="text-4xl font-bold text-white">
-              {lastLap ? lastLap.time : '--:--.---'}
-            </Text>
-          </View>
-          <View style={{ width: 1 }} className="bg-white/10 my-3" />
-          <View className="flex-1 items-center justify-center">
-            <Text className="text-sm text-zinc-500 mb-1">{t('session.bestLap')}</Text>
-            <Text className="text-4xl font-bold text-emerald-400">
-              {formatLapTime(runtimeSnapshot?.bestLapMs ?? null)}
-            </Text>
-          </View>
-        </View>
-
-        {/* Middle section: Current Lap Time */}
-        <View className="flex-[2] items-center justify-center">
-          <Text className="text-sm text-zinc-500 mb-2">{t('recording.currentLap')}</Text>
-          {runtimeSnapshot?.status === 'lap_in_progress' ? (
-            <Text style={{ fontSize: 120, lineHeight: 128 }} className="font-bold text-white tabular-nums tracking-tight">
-              {formatLapTime(currentElapsedMs)}
-            </Text>
-          ) : (
-            <Animated.Text style={{ fontSize: 32, lineHeight: 40, opacity: pulseOpacity }} className="font-medium text-zinc-500">
-              {t('recording.waitingForStartLine')}
-            </Animated.Text>
-          )}
-        </View>
-
-        {warningMessage ? (
-          <View
-            className={`absolute z-10 rounded-full px-4 py-1.5 border ${
-              isGpsLost
-                ? 'bg-red-500/15 border-red-400/30'
-                : 'bg-amber-500/15 border-amber-400/30'
-            }`}
-            style={{ left: insets.left + 8, top: insets.top }}
-          >
-            <Text className={`text-sm ${isGpsLost ? 'text-red-400' : 'text-amber-400'}`}>
-              {warningMessage}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* Lower section: Lap count / End button */}
-        <View className="flex-row items-end justify-between flex-1">
-          <View className="rounded-2xl bg-white/5 border border-white/10 items-center justify-center px-6 py-4">
-            <Text className="text-sm text-zinc-500 mb-1">{t('sessions.laps')}</Text>
-            <Text className="text-4xl font-bold text-white">{currentLapLabel}</Text>
-          </View>
-          <Pressable
-            onPress={() => { void handleEndSession(); }}
-            className="rounded-full bg-red-500 items-center justify-center"
-            style={{ width: 72, height: 72 }}
-          >
-            <Text className="text-sm font-semibold text-white">{t('session.stop')}</Text>
-          </Pressable>
-        </View>
-      </View>
+      <LandscapeDashboard
+        lapLabel={currentLapLabel}
+        bestLapMs={runtimeSnapshot?.bestLapMs ?? null}
+        lastLapMs={runtimeSnapshot?.lastLapMs ?? null}
+        lapStartedWallClockMs={
+          runtimeSnapshot?.status === 'lap_in_progress' ? runtimeSnapshot.currentLapStartedWallClockMs : null
+        }
+        sectorStatuses={sectorStatuses}
+        liveDelta={liveDelta}
+        deltaDimmed={isGpsLost || liveDelta.stale || (runtimeSnapshot?.pitInMarked ?? false)}
+        gReading={gReading}
+        lateralSv={lateralSv}
+        longitudinalSv={longitudinalSv}
+        pitInMarked={runtimeSnapshot?.pitInMarked ?? false}
+        warning={warningMessage ? { message: warningMessage, severe: isGpsLost } : null}
+        onPitIn={handlePitIn}
+        onEnd={() => {
+          void handleEndSession();
+        }}
+      />
     ) : (
       <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
       {/* Fixed top: header + current lap + buttons */}
@@ -754,11 +783,7 @@ export default function RecordingScreen() {
         {/* Pit In + End buttons */}
         <View className="flex-row gap-3 mt-4">
           <Pressable
-            onPress={() => {
-              void runtimeRef.current?.markPitIn().then((snapshot) => {
-                setRuntimeSnapshot(snapshot);
-              }).catch(() => undefined);
-            }}
+            onPress={handlePitIn}
             disabled={runtimeSnapshot?.pitInMarked ?? false}
             className={`flex-1 rounded-2xl border py-3.5 items-center ${
               runtimeSnapshot?.pitInMarked

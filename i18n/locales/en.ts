@@ -284,6 +284,9 @@ export default {
     gpsSignalLost: 'GPS signal lost — waiting for fix',
     gpsDegraded: 'GPS accuracy degraded — rejecting bad points',
     recordingInterrupted: 'Recording was interrupted — the trace may have a gap',
+    deltaReference: 'vs Lap %{lap}',
+    deltaNoReference: 'No reference lap yet',
+    gAligning: 'Aligning…',
   },
   profile: {
     title: 'Profile',
