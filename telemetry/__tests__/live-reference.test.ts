@@ -25,6 +25,11 @@ function perimeterXY(sM: number): { x: number; y: number } {
   }
 }
 
+function headingAt(sM: number): number {
+  const s = ((sM % PERIMETER_M) + PERIMETER_M) % PERIMETER_M;
+  return [90, 0, 270, 180][Math.floor(s / SIDE_M)];
+}
+
 function toLatLng(xy: { x: number; y: number }) {
   return { lat: LAT0 + xy.y / M_LAT, lng: LNG0 + xy.x / M_LNG };
 }
@@ -39,7 +44,7 @@ function sampleAt(sM: number, tMs: number, offsetM = 0): TelemetrySample {
     lng,
     speedMps: 20,
     accuracyM: 4,
-    headingDeg: 90,
+    headingDeg: headingAt(sM),
     altitudeM: 0,
     source: 'gps',
   };
@@ -342,6 +347,47 @@ describe('createLiveReference regressions', () => {
     state = ref.onAccepted(input(sample({ x: 500, y: 12 }, lapMs + 25_000), [], laps));
     expect(state.stale).toBe(false);
     expect(Math.abs(state.deltaMs!)).toBeLessThan(500);
+  });
+});
+
+describe('createLiveReference gap recovery', () => {
+  // Out along y = 0, back along y = 10, 820 m at 20 m/s. After an 11 s GPS
+  // gap in which the car slowed and covered only 40 m, the return straight is
+  // as close as the car's own leg and implies a smaller jump.
+  const at = (s: number) =>
+    s <= 400 ? { x: s, y: 0 } : s <= 410 ? { x: 400, y: s - 400 } : s <= 810 ? { x: 810 - s, y: 10 } : { x: 0, y: 820 - s };
+  const sample = (xy: { x: number; y: number }, tMs: number, headingDeg: number | null): TelemetrySample => ({
+    ...sampleAt(0, tMs),
+    lat: LAT0 + xy.y / M_LAT,
+    lng: LNG0 + xy.x / M_LNG,
+    headingDeg,
+  });
+  const crossing = (tMs: number): TelemetryDetectionEvent => ({
+    ...eventAt('start_finish_crossed', 0, 0, tMs),
+    sampleLat: LAT0,
+    sampleLng: LNG0,
+  });
+
+  it.each([
+    ['with a GPS course', 90],
+    ['without a GPS course', null],
+  ])('keeps a slowdown during a GPS gap on the car\'s own leg %s', (_label, headingDeg) => {
+    const ref = createLiveReference({ sectorLineCount: 0 });
+    ref.onAccepted(input(sample(at(0), 0, headingDeg), [crossing(0)]));
+    for (let s = 20; s < 820; s += 20) {
+      ref.onAccepted(input(sample(at(s), s * 50, headingDeg)));
+    }
+    const laps: Lap[] = [{ lapNumber: 1, lapTimeMs: 41_000, isBest: true, isExcluded: false }];
+    ref.onAccepted(input(sample(at(0), 41_000, headingDeg), [crossing(41_000)], laps));
+    for (let s = 20; s <= 260; s += 20) {
+      ref.onAccepted(input(sample(at(s), 41_000 + s * 50, headingDeg), [], laps));
+    }
+
+    const afterGap = ref.onAccepted(input(sample(at(300), 65_000, headingDeg), [], laps));
+    expect(afterGap.stale).toBe(false);
+    expect(afterGap.deltaMs).toBeCloseTo(9000, 0);
+    const next = ref.onAccepted(input(sample(at(320), 66_000, headingDeg), [], laps));
+    expect(next.deltaMs).toBeCloseTo(9000, 0);
   });
 });
 

@@ -37,11 +37,16 @@ type TracePoint = { x: number; y: number; distM: number; lapElapsedMs: number };
 
 const METERS_PER_DEG_LAT = 111320;
 const MAX_REGRESS_M = 50;
-// Metres of lateral offset one second of delta jump is worth when choosing
-// between candidate placements. Low enough that the nearest point on the
-// car's own leg always wins locally (a metre along track is tens of ms), high
-// enough that a leg implying a jump of seconds loses to any leg within reach.
-const JUMP_WEIGHT_M_PER_MS = 0.005;
+// Metres of lateral offset a delta jump equal to the time since the last
+// placement is worth when choosing between candidate placements. The delta
+// can only drift by a fraction of the elapsed time, so the same jump is
+// suspicious after one second and plausible after a long GPS gap. Low enough
+// that the nearest point on the car's own leg always wins locally, high
+// enough that a leg implying a jump of seconds per second loses to any leg
+// within reach.
+const JUMP_WEIGHT_M = 5;
+// Below this the GPS course is noise and gives no direction of travel.
+const MIN_HEADING_SPEED_MPS = 3;
 
 export function createLiveReference(opts: {
   sectorLineCount: number;
@@ -61,6 +66,7 @@ export function createLiveReference(opts: {
   let splits: (number | null)[] = emptySplits();
   let reference: TracePoint[] | null = null;
   let lastProgressM = 0;
+  let lastPlacedElapsedMs = 0;
   let knownCompletedCount = 0;
   let state: LiveDeltaState = {
     deltaMs: null,
@@ -117,6 +123,7 @@ export function createLiveReference(opts: {
     splits = emptySplits();
     append(buffer, event.sampleLat, event.sampleLng, 0);
     lastProgressM = 0;
+    lastPlacedElapsedMs = 0;
     state = { ...state, deltaMs: reference ? 0 : null, stale: false };
   }
 
@@ -162,15 +169,25 @@ export function createLiveReference(opts: {
 
   // Places a fix on the reference. Every segment within maxOffsetM is a
   // candidate, so a return straight or the far side of a hairpin can be as
-  // close as the car's own leg. Candidates are scored by offset plus the delta
-  // jump they imply: the true delta drifts by tenths between fixes while a
-  // wrong leg implies a jump of seconds.
-  function match(lat: number, lng: number, lapElapsedMs: number) {
+  // close as the car's own leg. A segment running against the GPS course is
+  // the other leg and never a candidate. The rest are scored by offset plus
+  // the delta jump they imply relative to the time since the last placement:
+  // the true delta drifts by tenths per second while a wrong leg implies a
+  // jump of seconds.
+  function match(sample: TelemetrySample, lapElapsedMs: number) {
     if (!reference || reference.length < 2) {
       return;
     }
-    const { x, y } = project(lat, lng);
+    const { x, y } = project(sample.lat, sample.lng);
     const previousDeltaMs = state.deltaMs ?? 0;
+    const sincePlacedMs = Math.max(1000, lapElapsedMs - lastPlacedElapsedMs);
+    const course =
+      sample.headingDeg !== null && (sample.speedMps ?? 0) >= MIN_HEADING_SPEED_MPS
+        ? {
+            x: Math.sin((sample.headingDeg * Math.PI) / 180),
+            y: Math.cos((sample.headingDeg * Math.PI) / 180),
+          }
+        : null;
     let best: { deltaMs: number; progressM: number; score: number } | null = null;
 
     for (let i = 0; i < reference.length - 1; i++) {
@@ -181,7 +198,7 @@ export function createLiveReference(opts: {
       const lengthSq = dx * dx + dy * dy;
       const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / lengthSq));
       const offsetM = Math.hypot(x - (a.x + t * dx), y - (a.y + t * dy));
-      if (offsetM > maxOffsetM) {
+      if (offsetM > maxOffsetM || (course && course.x * dx + course.y * dy < 0)) {
         continue;
       }
       const progressM = a.distM + t * (b.distM - a.distM);
@@ -189,7 +206,7 @@ export function createLiveReference(opts: {
         continue;
       }
       const deltaMs = lapElapsedMs - (a.lapElapsedMs + t * (b.lapElapsedMs - a.lapElapsedMs));
-      const score = offsetM + JUMP_WEIGHT_M_PER_MS * Math.abs(deltaMs - previousDeltaMs);
+      const score = offsetM + (JUMP_WEIGHT_M * Math.abs(deltaMs - previousDeltaMs)) / sincePlacedMs;
       if (!best || score < best.score) {
         best = { deltaMs, progressM, score };
       }
@@ -200,6 +217,7 @@ export function createLiveReference(opts: {
       return;
     }
     lastProgressM = best.progressM;
+    lastPlacedElapsedMs = lapElapsedMs;
     state = { ...state, deltaMs: best.deltaMs, stale: false };
   }
 
@@ -226,7 +244,7 @@ export function createLiveReference(opts: {
     if (buffer) {
       const lapElapsedMs = input.sample.elapsedMs - lapStartElapsedMs;
       append(buffer, input.sample.lat, input.sample.lng, lapElapsedMs);
-      match(input.sample.lat, input.sample.lng, lapElapsedMs);
+      match(input.sample, lapElapsedMs);
     }
 
     return state;
