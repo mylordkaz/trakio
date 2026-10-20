@@ -1,24 +1,33 @@
 import type { TelemetrySample } from '@/telemetry/types';
 
-// Longitudinal / lateral G in the car frame from the phone's DeviceMotion
-// stream, with no manual calibration. Display-only; nothing is stored.
+// Longitudinal / lateral G in the car frame, with no manual calibration.
+// Display-only; nothing is stored.
 //
-// Levelling uses the gravity vector the platform already separates:
-// accelerationIncludingGravity − acceleration points down in device
-// coordinates on both iOS (userAcceleration + gravity) and Android
-// (accelerometer − 2·gravity). Projecting the user acceleration onto the
-// plane normal to it gives horizontal acceleration in a level frame that
-// co-rotates with the device, and therefore with the car it is mounted in.
-// Platform gravity estimation leaves a horizontal residual of about
-// 0.5 m/s² (≈0.05 G); values below that are noise.
+// Two sources feed the same core:
+// - Phone DeviceMotion: the platform already separates gravity, so
+//   accelerationIncludingGravity − acceleration points down in device
+//   coordinates (iOS: userAcceleration + gravity; Android: accelerometer −
+//   2·gravity). Platform gravity estimation leaves a horizontal residual of
+//   about 0.5 m/s² (≈0.05 G).
+// - External devices (RaceBox, Qstarz): G arrives with gravity included, in
+//   the box's own axes. RaceBox documents the specific-force convention (+1 G
+//   on Z at rest); Qstarz documents units only. Gravity is therefore the
+//   average of the readings between two GPS fixes, folded in only after GPS
+//   confirms the car was stationary or at steady speed in a straight line
+//   over that interval, so sustained braking or cornering never leaks into
+//   it. A
+//   box mounted at any angle, and either axis handedness, is resolved by the
+//   alignment below.
 //
-// The constant mount yaw between that frame and the car's axes is learned
-// from GPS: between consecutive fixes the car's own acceleration is
-// (Δspeed/Δt, v·Δheading/Δt) in (forward, right), and the IMU saw the same
-// vector rotated by the mount yaw. Comparing the two directions, weighted by
-// magnitude, converges after a brake and a corner. Heading rate fixes the
-// lateral sign; a longitudinal-only rule would be biased by trail-braking
-// on a one-direction circuit.
+// Projecting acceleration onto the plane normal to gravity gives a level
+// frame that co-rotates with the sensor, and therefore with the car it is
+// mounted in. The constant yaw between that frame and the car's axes is
+// learned from GPS: between fixes the car's own acceleration is
+// (Δspeed/Δt, v·Δheading/Δt) in (forward, right), and the sensor saw the
+// same vector rotated by the mount yaw. Comparing the two directions,
+// weighted by magnitude, converges after a brake and a corner. Heading rate
+// fixes the lateral sign; when the sensor's handedness is not known, both
+// hypotheses are scored and the consistent one wins once corners are seen.
 
 export type Vec3 = { x: number; y: number; z: number };
 
@@ -33,6 +42,12 @@ export type CarFrameG = {
 
 const STANDARD_GRAVITY = 9.80665;
 const MIN_GRAVITY_MPS2 = 5;
+const MIN_DEVICE_GRAVITY_G = 0.8;
+const MAX_DEVICE_GRAVITY_G = 1.2;
+const DEVICE_GRAVITY_TAU_MS = 2000;
+const STATIONARY_SPEED_MPS = 1;
+const PARKED_WINDOW_MS = 500;
+const STEADY_ACCEL_MPS2 = 0.5;
 const MIN_GPS_SPEED_MPS = 3;
 const MIN_OBSERVATION_DT_S = 0.5;
 const MAX_OBSERVATION_DT_S = 2;
@@ -41,6 +56,7 @@ const EVIDENCE_CAP = 50;
 const FORWARD_HINTS: Vec3[] = [
   { x: 0, y: 0, z: -1 },
   { x: 0, y: 1, z: 0 },
+  { x: 1, y: 0, z: 0 },
 ];
 
 function dot(a: Vec3, b: Vec3) {
@@ -69,28 +85,55 @@ function wrapAngle(rad: number) {
   return rad;
 }
 
+type Evidence = { x: number; y: number; weight: number };
+
+function addEvidence(evidence: Evidence, angle: number, weight: number) {
+  evidence.x += weight * Math.cos(angle);
+  evidence.y += weight * Math.sin(angle);
+  evidence.weight += weight;
+  if (evidence.weight > EVIDENCE_CAP) {
+    const shrink = EVIDENCE_CAP / evidence.weight;
+    evidence.x *= shrink;
+    evidence.y *= shrink;
+    evidence.weight = EVIDENCE_CAP;
+  }
+}
+
+function consistency(evidence: Evidence) {
+  return evidence.weight > 0 ? Math.hypot(evidence.x, evidence.y) / evidence.weight : 0;
+}
+
 export function createCarFrameG(opts?: {
   smoothingTauMs?: number;
   minGpsAccelMps2?: number;
   minImuAccelMps2?: number;
   minObservations?: number;
+  // Phone axes are right-handed by platform contract; external boxes are not
+  // documented well enough to assume it.
+  handedness?: 'known' | 'unknown';
 }) {
   const tauMs = opts?.smoothingTauMs ?? 150;
   const minGpsAccel = opts?.minGpsAccelMps2 ?? 1.5;
   const minImuAccel = opts?.minImuAccelMps2 ?? 0.75;
   const minObservations = opts?.minObservations ?? 3;
+  const handednessKnown = (opts?.handedness ?? 'known') === 'known';
 
   let forwardHint: Vec3 | null = null;
   let meanA1 = 0;
   let meanA2 = 0;
   let meanCount = 0;
-  let evidenceX = 0;
-  let evidenceY = 0;
-  let evidenceWeight = 0;
+  const normal: Evidence = { x: 0, y: 0, weight: 0 };
+  const mirrored: Evidence = { x: 0, y: 0, weight: 0 };
   let observations = 0;
   let mountYawRad = 0;
+  let isMirrored = false;
   let aligned = false;
   let previousGps: { speedMps: number; headingRad: number; atMs: number } | null = null;
+  let parkedWindowStartMs: number | null = null;
+  let pendingParked: { mean: Vec3; durationMs: number } | null = null;
+  let deviceGravity: Vec3 | null = null;
+  let intervalForce: Vec3 = { x: 0, y: 0, z: 0 };
+  let intervalCount = 0;
   let lastAtMs: number | null = null;
   let longEma = 0;
   let latEma = 0;
@@ -112,16 +155,8 @@ export function createCarFrameG(opts?: {
     return { e1, e2: cross(down, e1) };
   }
 
-  function ingest(acceleration: Vec3 | null, accelerationIncludingGravity: Vec3 | null, atMs: number): CarFrameG {
-    if (!acceleration || !accelerationIncludingGravity) {
-      return state;
-    }
-    const gravity = sub(accelerationIncludingGravity, acceleration);
-    const gravityNorm = norm(gravity);
-    if (gravityNorm < MIN_GRAVITY_MPS2) {
-      return state;
-    }
-    const down = scale(gravity, 1 / gravityNorm);
+  // acceleration in m/s² without gravity; down is a unit vector.
+  function process(acceleration: Vec3, down: Vec3, atMs: number): CarFrameG {
     const basis = levelBasis(down);
     if (!basis) {
       return state;
@@ -134,10 +169,11 @@ export function createCarFrameG(opts?: {
     meanA2 += a2;
     meanCount++;
 
+    const a2Car = isMirrored ? -a2 : a2;
     const cos = Math.cos(mountYawRad);
     const sin = Math.sin(mountYawRad);
-    const longitudinal = a1 * cos + a2 * sin;
-    const lateral = -a1 * sin + a2 * cos;
+    const longitudinal = a1 * cos + a2Car * sin;
+    const lateral = -a1 * sin + a2Car * cos;
 
     const dtMs = lastAtMs === null ? tauMs : Math.min(500, Math.max(1, atMs - lastAtMs));
     lastAtMs = atMs;
@@ -155,24 +191,115 @@ export function createCarFrameG(opts?: {
     return state;
   }
 
+  function ingest(acceleration: Vec3 | null, accelerationIncludingGravity: Vec3 | null, atMs: number): CarFrameG {
+    if (!acceleration || !accelerationIncludingGravity) {
+      return state;
+    }
+    const gravity = sub(accelerationIncludingGravity, acceleration);
+    const gravityNorm = norm(gravity);
+    if (gravityNorm < MIN_GRAVITY_MPS2) {
+      return state;
+    }
+    return process(acceleration, scale(gravity, 1 / gravityNorm), atMs);
+  }
+
+  // gForce in G, gravity included, in the device's own axes.
+  function ingestDevice(gForce: Vec3, atMs: number): CarFrameG {
+    const specificForce = scale(gForce, STANDARD_GRAVITY);
+    intervalForce = {
+      x: intervalForce.x + specificForce.x,
+      y: intervalForce.y + specificForce.y,
+      z: intervalForce.z + specificForce.z,
+    };
+    intervalCount++;
+    if (!deviceGravity) {
+      return state;
+    }
+    const gravityNorm = norm(deviceGravity);
+    if (gravityNorm < MIN_GRAVITY_MPS2) {
+      return state;
+    }
+    // Specific force reads +1 G upward at rest, so the stored gravity points
+    // up; a box with the opposite convention is handled as a mirror.
+    return process(sub(specificForce, deviceGravity), scale(deviceGravity, -1 / gravityNorm), atMs);
+  }
+
   function resetMean() {
     meanA1 = 0;
     meanA2 = 0;
     meanCount = 0;
   }
 
+  function takeIntervalMean(): Vec3 | null {
+    const mean = intervalCount > 0 ? scale(intervalForce, 1 / intervalCount) : null;
+    intervalForce = { x: 0, y: 0, z: 0 };
+    intervalCount = 0;
+    return mean;
+  }
+
+  function commitGravity(mean: Vec3 | null, durationMs: number) {
+    if (!mean) {
+      return;
+    }
+    const meanG = norm(mean) / STANDARD_GRAVITY;
+    if (meanG < MIN_DEVICE_GRAVITY_G || meanG > MAX_DEVICE_GRAVITY_G) {
+      return;
+    }
+    if (!deviceGravity) {
+      deviceGravity = mean;
+      return;
+    }
+    const alpha = 1 - Math.exp(-Math.max(0, durationMs) / DEVICE_GRAVITY_TAU_MS);
+    deviceGravity = {
+      x: deviceGravity.x + alpha * (mean.x - deviceGravity.x),
+      y: deviceGravity.y + alpha * (mean.y - deviceGravity.y),
+      z: deviceGravity.z + alpha * (mean.z - deviceGravity.z),
+    };
+  }
+
+  // Readings while parked are held back one window and committed only once
+  // the following window shows the car still parked, so the first instant
+  // of pulling away never counts as gravity.
+  function observeParked(sample: Pick<TelemetrySample, 'recordedAt' | 'speedMps'>) {
+    if (sample.speedMps === null || sample.speedMps >= STATIONARY_SPEED_MPS) {
+      takeIntervalMean();
+      pendingParked = null;
+      parkedWindowStartMs = null;
+      return;
+    }
+    if (parkedWindowStartMs === null) {
+      takeIntervalMean();
+      parkedWindowStartMs = sample.recordedAt;
+      return;
+    }
+    const durationMs = sample.recordedAt - parkedWindowStartMs;
+    if (durationMs < PARKED_WINDOW_MS) {
+      return;
+    }
+    if (pendingParked) {
+      commitGravity(pendingParked.mean, pendingParked.durationMs);
+    }
+    const mean = takeIntervalMean();
+    pendingParked = mean ? { mean, durationMs } : null;
+    parkedWindowStartMs = sample.recordedAt;
+  }
+
   function observeGps(sample: Pick<TelemetrySample, 'recordedAt' | 'speedMps' | 'headingDeg'>) {
     if (sample.speedMps === null || sample.headingDeg === null || sample.speedMps < MIN_GPS_SPEED_MPS) {
+      observeParked(sample);
       previousGps = null;
       resetMean();
       return;
     }
+    pendingParked = null;
+    parkedWindowStartMs = null;
     const current = {
       speedMps: sample.speedMps,
       headingRad: (sample.headingDeg * Math.PI) / 180,
       atMs: sample.recordedAt,
     };
     if (!previousGps) {
+      takeIntervalMean();
       previousGps = current;
       resetMean();
       return;
@@ -182,6 +309,7 @@ export function createCarFrameG(opts?: {
       return;
     }
     if (dtS > MAX_OBSERVATION_DT_S) {
+      takeIntervalMean();
       previousGps = current;
       resetMean();
       return;
@@ -191,26 +319,23 @@ export function createCarFrameG(opts?: {
     const rightMps2 =
       ((current.speedMps + previousGps.speedMps) / 2) * (wrapAngle(current.headingRad - previousGps.headingRad) / dtS);
     const gpsMagnitude = Math.hypot(forwardMps2, rightMps2);
+    const intervalMean = takeIntervalMean();
+    if (gpsMagnitude < STEADY_ACCEL_MPS2) {
+      commitGravity(intervalMean, dtS * 1000);
+    }
     const imuA1 = meanCount > 0 ? meanA1 / meanCount : 0;
     const imuA2 = meanCount > 0 ? meanA2 / meanCount : 0;
     const imuMagnitude = Math.hypot(imuA1, imuA2);
 
     if (gpsMagnitude >= minGpsAccel && imuMagnitude >= minImuAccel) {
-      const observed = wrapAngle(Math.atan2(imuA2, imuA1) - Math.atan2(rightMps2, forwardMps2));
-      evidenceX += gpsMagnitude * Math.cos(observed);
-      evidenceY += gpsMagnitude * Math.sin(observed);
-      evidenceWeight += gpsMagnitude;
+      const gpsAngle = Math.atan2(rightMps2, forwardMps2);
+      addEvidence(normal, wrapAngle(Math.atan2(imuA2, imuA1) - gpsAngle), gpsMagnitude);
+      addEvidence(mirrored, wrapAngle(Math.atan2(-imuA2, imuA1) - gpsAngle), gpsMagnitude);
       observations++;
-      if (evidenceWeight > EVIDENCE_CAP) {
-        const shrink = EVIDENCE_CAP / evidenceWeight;
-        evidenceX *= shrink;
-        evidenceY *= shrink;
-        evidenceWeight = EVIDENCE_CAP;
-      }
-      mountYawRad = Math.atan2(evidenceY, evidenceX);
-      aligned =
-        observations >= minObservations &&
-        Math.hypot(evidenceX, evidenceY) / evidenceWeight >= MIN_CONSISTENCY;
+      isMirrored = !handednessKnown && consistency(mirrored) > consistency(normal) + 0.05;
+      const chosen = isMirrored ? mirrored : normal;
+      mountYawRad = Math.atan2(chosen.y, chosen.x);
+      aligned = observations >= minObservations && consistency(chosen) >= MIN_CONSISTENCY;
     }
 
     previousGps = current;
@@ -219,6 +344,7 @@ export function createCarFrameG(opts?: {
 
   return {
     ingest,
+    ingestDevice,
     observeGps,
     getState: () => state,
   };

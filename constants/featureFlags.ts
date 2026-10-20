@@ -8,8 +8,8 @@ export const EXTERNAL_GPS_ENABLED: boolean = true;
 // Phase 2a IMU capture (docs/kalman/phase-2-imu-fusion.md): records raw phone
 // DeviceMotion samples at ~50 Hz into imu_samples during recording sessions,
 // for offline fusion benching. The landscape G meter reads the same live
-// stream (telemetry/car-frame-g.ts) and disappears with this flag; nothing
-// else consumes the stored rows. ON for the Phase 2b capture campaign
+// stream (telemetry/car-frame-g.ts); with this flag off it only shows G from
+// a connected RaceBox or Qstarz. Nothing else consumes the stored rows. ON for the Phase 2b capture campaign
 // (street-drive validation, then Tsukuba): expect roughly 10 MB of rows per
 // 30 recorded minutes and an unmeasured battery cost — measuring it is part
 // of the campaign.

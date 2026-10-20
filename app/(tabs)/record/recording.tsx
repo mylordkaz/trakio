@@ -115,6 +115,7 @@ const EMPTY_LIVE_DELTA: LiveDeltaState = {
   referenceSectorSplitsMs: [],
 };
 const EMPTY_G: CarFrameG = { longitudinalG: 0, lateralG: 0, magnitudeG: 0, aligned: false };
+const DEVICE_G_STALE_MS = 1000;
 
 export default function RecordingScreen() {
   const t = useT();
@@ -154,8 +155,11 @@ export default function RecordingScreen() {
   const liveDeltaRef = useRef<LiveDeltaState>(EMPTY_LIVE_DELTA);
   const [liveDelta, setLiveDelta] = useState<LiveDeltaState>(EMPTY_LIVE_DELTA);
   const carFrameGRef = useRef<ReturnType<typeof createCarFrameG> | null>(null);
+  const deviceGRef = useRef<ReturnType<typeof createCarFrameG> | null>(null);
+  const lastDeviceGAtMsRef = useRef(0);
   const [gReading, setGReading] = useState<CarFrameG>(EMPTY_G);
   const lastGReadingMsRef = useRef(0);
+  const publishGRef = useRef<((reading: CarFrameG) => void) | null>(null);
   const lateralSv = useSharedValue(0);
   const longitudinalSv = useSharedValue(0);
   const hasStoppedRef = useRef(false);
@@ -341,7 +345,22 @@ export default function RecordingScreen() {
       setLiveDelta(EMPTY_LIVE_DELTA);
       const carFrameG = createCarFrameG();
       carFrameGRef.current = carFrameG;
+      // RaceBox and Qstarz deliver their own accelerometer with every fix;
+      // their axis conventions are not documented well enough to assume.
+      deviceGRef.current = createCarFrameG({ handedness: 'unknown' });
+      lastDeviceGAtMsRef.current = 0;
       setGReading(EMPTY_G);
+
+      const publishG = (reading: CarFrameG) => {
+        lateralSv.value = reading.lateralG;
+        longitudinalSv.value = reading.longitudinalG;
+        const now = Date.now();
+        if (isMounted && now - lastGReadingMsRef.current >= TELEMETRY_DISPLAY_REFRESH_MS) {
+          lastGReadingMsRef.current = now;
+          setGReading(reading);
+        }
+      };
+      publishGRef.current = publishG;
 
       if (IMU_CAPTURE_ENABLED && startedSnapshot.sessionId) {
         const imuCapture = createImuCapture(db, startedSnapshot.sessionId, (measurement, recordedAt) => {
@@ -350,11 +369,9 @@ export default function RecordingScreen() {
             measurement.accelerationIncludingGravity ?? null,
             recordedAt
           );
-          lateralSv.value = reading.lateralG;
-          longitudinalSv.value = reading.longitudinalG;
-          if (isMounted && recordedAt - lastGReadingMsRef.current >= TELEMETRY_DISPLAY_REFRESH_MS) {
-            lastGReadingMsRef.current = recordedAt;
-            setGReading(reading);
+          // A connected device's G takes over the meter while it is flowing.
+          if (Date.now() - lastDeviceGAtMsRef.current > DEVICE_G_STALE_MS) {
+            publishG(reading);
           }
         });
         imuCaptureRef.current = imuCapture;
@@ -386,6 +403,23 @@ export default function RecordingScreen() {
             const acceptedSample = result.snapshot.latestAcceptedSample;
             if (result.accepted && acceptedSample) {
               carFrameGRef.current?.observeGps(acceptedSample);
+              const deviceSample = acceptedSample as ExtendedTelemetrySample;
+              const deviceG = deviceGRef.current;
+              if (
+                deviceG &&
+                deviceSample.source !== 'gps' &&
+                typeof deviceSample.gForceX === 'number' &&
+                typeof deviceSample.gForceY === 'number' &&
+                typeof deviceSample.gForceZ === 'number'
+              ) {
+                deviceG.observeGps(deviceSample);
+                const reading = deviceG.ingestDevice(
+                  { x: deviceSample.gForceX, y: deviceSample.gForceY, z: deviceSample.gForceZ },
+                  deviceSample.recordedAt
+                );
+                lastDeviceGAtMsRef.current = Date.now();
+                publishGRef.current?.(reading);
+              }
               const liveReference = liveReferenceRef.current;
               if (liveReference) {
                 liveDeltaRef.current = liveReference.onAccepted({

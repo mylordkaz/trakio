@@ -151,3 +151,102 @@ describe('createCarFrameG', () => {
     expect(state).toEqual({ longitudinalG: 0, lateralG: 0, magnitudeG: 0, aligned: false });
   });
 });
+
+// External devices deliver specific force in G with gravity included
+// (+1 G up at rest for RaceBox), in the box's own axes, with each GPS fix.
+const DEVICE_DT_MS = 40; // 25 Hz
+
+function driveDevice(
+  g: ReturnType<typeof createCarFrameG>,
+  mount: Mount,
+  clock: { tMs: number; speedMps: number; headingRad: number },
+  seconds: number,
+  forwardMps2: number,
+  yawRateRadS: number,
+  transform: (v: Vec3) => Vec3 = (v) => v,
+) {
+  for (let i = 0; i < (seconds * 1000) / DEVICE_DT_MS; i++) {
+    const dtS = DEVICE_DT_MS / 1000;
+    clock.tMs += DEVICE_DT_MS;
+    clock.speedMps = Math.max(0, clock.speedMps + forwardMps2 * dtS);
+    clock.headingRad += yawRateRadS * dtS;
+    const rows = rotationRows({ ...mount, yawDeg: mount.yawDeg - (clock.headingRad * 180) / Math.PI });
+    const world = carToWorld(clock.headingRad, forwardMps2, clock.speedMps * yawRateRadS);
+    const specificForce = toDevice(rows, { x: world.x, y: world.y, z: world.z + G });
+    g.observeGps({ recordedAt: clock.tMs, speedMps: clock.speedMps, headingDeg: (clock.headingRad * 180) / Math.PI });
+    g.ingestDevice(transform({ x: specificForce.x / G, y: specificForce.y / G, z: specificForce.z / G }), clock.tMs);
+  }
+}
+
+const BOX: Mount = { yawDeg: 140, pitchDeg: 8, rollDeg: -5 };
+
+function lapStart(g: ReturnType<typeof createCarFrameG>, mount: Mount, transform?: (v: Vec3) => Vec3) {
+  const clock = { tMs: 0, speedMps: 0, headingRad: 0.4 };
+  driveDevice(g, mount, clock, 2, 0, 0, transform); // parked: gravity learned here
+  driveDevice(g, mount, clock, 6, 4, 0, transform); // launch
+  driveDevice(g, mount, clock, 2, 0, 0, transform); // steady straight
+  driveDevice(g, mount, clock, 2, -6, 0, transform); // brake
+  driveDevice(g, mount, clock, 3, 0, 0.12, transform); // right-hander
+  driveDevice(g, mount, clock, 3, 0, -0.12, transform); // left-hander
+  return clock;
+}
+
+describe('createCarFrameG with an external device', () => {
+  it('shows nothing until it has seen the car at rest or steady', () => {
+    const g = createCarFrameG({ handedness: 'unknown' });
+    const clock = { tMs: 0, speedMps: 20, headingRad: 0 };
+    driveDevice(g, BOX, clock, 1, 3, 0);
+    expect(g.getState()).toEqual({ longitudinalG: 0, lateralG: 0, magnitudeG: 0, aligned: false });
+  });
+
+  it('aligns a box mounted at an arbitrary angle and reads braking and cornering', () => {
+    const g = createCarFrameG({ handedness: 'unknown' });
+    const clock = lapStart(g, BOX);
+    expect(g.getState().aligned).toBe(true);
+
+    driveDevice(g, BOX, clock, 1.5, -7, 0);
+    expect(g.getState().longitudinalG).toBeCloseTo(-7 / G, 1);
+    expect(Math.abs(g.getState().lateralG)).toBeLessThan(0.05);
+
+    clock.speedMps = 20;
+    driveDevice(g, BOX, clock, 2, 0, 0.2); // 4 m/s² to the right
+    expect(g.getState().lateralG).toBeCloseTo(4 / G, 1);
+    expect(Math.abs(g.getState().longitudinalG)).toBeLessThan(0.05);
+  });
+
+  it('learns gravity from a steady straight when recording starts on the move', () => {
+    const g = createCarFrameG({ handedness: 'unknown' });
+    const clock = { tMs: 0, speedMps: 30, headingRad: 2 };
+    driveDevice(g, BOX, clock, 3, 0, 0); // steady straight, no stop at all
+    driveDevice(g, BOX, clock, 2, -6, 0);
+    driveDevice(g, BOX, clock, 3, 0, 0.12);
+    driveDevice(g, BOX, clock, 2, 3, -0.1);
+    expect(g.getState().aligned).toBe(true);
+    clock.speedMps = 25;
+    driveDevice(g, BOX, clock, 2, 0, -0.2); // 5 m/s² to the left
+    expect(g.getState().lateralG).toBeCloseTo(-5 / G, 1);
+  });
+
+  it('keeps gravity stable through a long sustained corner', () => {
+    const g = createCarFrameG({ handedness: 'unknown' });
+    const clock = lapStart(g, BOX);
+    clock.speedMps = 25;
+    driveDevice(g, BOX, clock, 10, 0, 0.3); // 7.5 m/s² for ten seconds
+    const state = g.getState();
+    expect(state.lateralG).toBeCloseTo(7.5 / G, 1);
+    expect(Math.abs(state.longitudinalG)).toBeLessThan(0.05);
+  });
+
+  it('resolves a mirrored axis convention after the first corners', () => {
+    const g = createCarFrameG({ handedness: 'unknown' });
+    const mirror = (v: Vec3) => ({ x: -v.x, y: -v.y, z: -v.z });
+    const clock = lapStart(g, BOX, mirror);
+    expect(g.getState().aligned).toBe(true);
+
+    clock.speedMps = 20;
+    driveDevice(g, BOX, clock, 2, 0, 0.2, mirror);
+    expect(g.getState().lateralG).toBeCloseTo(4 / G, 1);
+    driveDevice(g, BOX, clock, 1.5, -7, 0, mirror);
+    expect(g.getState().longitudinalG).toBeCloseTo(-7 / G, 1);
+  });
+});
