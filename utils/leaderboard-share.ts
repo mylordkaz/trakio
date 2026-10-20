@@ -2,8 +2,11 @@ import type { TrackLeaderboardShareState } from '@/db';
 
 export function shouldOfferLeaderboardShare(
   state: TrackLeaderboardShareState,
+  sessionBestLapMs: number | null,
 ): boolean {
-  if (state.userBestLapMs === null) {
+  // Offered only by the session that set the track best, so the time shown
+  // in the offer is the time this session just drove.
+  if (state.userBestLapMs === null || sessionBestLapMs !== state.userBestLapMs) {
     return false;
   }
 

@@ -12,6 +12,7 @@ import Card from '@/components/Card';
 import EditableSessionTitle from '@/components/EditableSessionTitle';
 import LapBreakdown from '@/components/LapBreakdown';
 import ProgressBar from '@/components/ProgressBar';
+import SessionCompleteDialog from '@/components/SessionCompleteDialog';
 import SessionStoryCard from '@/components/share/SessionStoryCard';
 import XPostCard from '@/components/share/XPostCard';
 import ShareSheetModal from '@/components/share/ShareSheetModal';
@@ -25,6 +26,7 @@ import {
   getRejectedGpsPointsForSession,
   deleteSessionNote,
   getSessionById,
+  getTrackBestLapMsExcludingSession,
   getTrackLeaderboardShareState,
   setSharedLeaderboardTime,
   updateSessionCar,
@@ -41,7 +43,9 @@ import { exportSessionTimeSheetCsv, exportSessionTimeSheetPdf } from '@/services
 import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useLeaderboardShare } from '@/hooks/useLeaderboardShare';
 import { useShareSession } from '@/hooks/useShareSession';
-import { shouldShowSessionShareButton } from '@/utils/leaderboard-share';
+import { maybeRequestAppReview } from '@/services/app-review';
+import { shouldOfferLeaderboardShare, shouldShowSessionShareButton } from '@/utils/leaderboard-share';
+import { getSessionOutcome } from '@/utils/session-complete';
 import { useEntitlements } from '@/contexts/EntitlementContext';
 import { RAW_DATA_EXPORT_ENABLED } from '@/constants/featureFlags';
 import { formatLapTime, formatGapSeconds, formatDateTime, formatDuration, formatSpeed } from '@/utils/format';
@@ -131,7 +135,7 @@ export default function SessionDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const db = useSQLiteContext();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, completed } = useLocalSearchParams<{ id: string; completed?: string }>();
   const gradientColors = useHeaderGradient('violet');
   const { colorScheme } = useColorScheme();
   const { locale } = useMenu();
@@ -140,6 +144,11 @@ export default function SessionDetailScreen() {
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const [shareState, setShareState] = useState<TrackLeaderboardShareState | null>(null);
   const [isSharedNow, setIsSharedNow] = useState(false);
+  // Set only on arrival from a just-ended recording: the user's best on this
+  // track before the session, which decides what the completion dialog says.
+  const [completion, setCompletion] = useState<{ previousTrackBestLapMs: number | null } | null>(null);
+  // Read once: closing the dialog clears the param, which must not reload.
+  const isArrivalFromRecordingRef = useRef(completed === '1');
   const [isLoading, setIsLoading] = useState(true);
   const [loadErrorKey, setLoadErrorKey] = useState<string | null>(null);
   // The key is stored, not the message: a translated string held in
@@ -159,6 +168,37 @@ export default function SessionDetailScreen() {
   const share = useShareSession(sessionDetail);
   const { hasProAccess } = useEntitlements();
   const leaderboardShare = useLeaderboardShare(sessionDetail?.track.id);
+
+  const loadShareState = useCallback(async (nextSessionDetail: SessionDetail) => {
+    try {
+      const trackId = nextSessionDetail.track.id;
+      let nextShareState = await getTrackLeaderboardShareState(db, trackId);
+      if (
+        nextShareState.sharedLapTimeMs === null &&
+        shouldShowSessionShareButton(nextShareState, getBestLapMs(nextSessionDetail))
+      ) {
+        // A pre-tracking (1.3.1) share may exist only on the server; adopt
+        // it before showing a reshare button.
+        try {
+          const publisherId = await getOrCreatePublisherId();
+          const entries = await listLeaderboardEntries(trackId, publisherId);
+          const ownEntry = entries.find((entry) => entry.isCurrentUser);
+          if (ownEntry) {
+            await setSharedLeaderboardTime(db, trackId, ownEntry.lapTimeMs);
+            nextShareState = {
+              ...nextShareState,
+              sharedLapTimeMs: ownEntry.lapTimeMs,
+            };
+          }
+        } catch {
+          // Offline — the button may show; a share is a harmless upsert.
+        }
+      }
+      setShareState(nextShareState);
+    } catch {
+      // The share button is optional; session detail renders regardless.
+    }
+  }, [db]);
 
   const loadSession = useCallback(async () => {
     if (!id) {
@@ -182,41 +222,26 @@ export default function SessionDetailScreen() {
         await getRejectedGpsPointsForSession(db, nextSessionDetail.session.id).catch(() => [])
       );
       setCarText(nextSessionDetail.session.car ?? '');
-      try {
-        const trackId = nextSessionDetail.track.id;
-        let nextShareState = await getTrackLeaderboardShareState(db, trackId);
-        if (
-          nextShareState.sharedLapTimeMs === null &&
-          shouldShowSessionShareButton(nextShareState, getBestLapMs(nextSessionDetail))
-        ) {
-          // A pre-tracking (1.3.1) share may exist only on the server; adopt
-          // it before showing a reshare button.
-          try {
-            const publisherId = await getOrCreatePublisherId();
-            const entries = await listLeaderboardEntries(trackId, publisherId);
-            const ownEntry = entries.find((entry) => entry.isCurrentUser);
-            if (ownEntry) {
-              await setSharedLeaderboardTime(db, trackId, ownEntry.lapTimeMs);
-              nextShareState = {
-                ...nextShareState,
-                sharedLapTimeMs: ownEntry.lapTimeMs,
-              };
-            }
-          } catch {
-            // Offline — the button may show; a share is a harmless upsert.
-          }
-        }
-        setShareState(nextShareState);
-      } catch {
-        // The share button is optional; session detail renders regardless.
+      if (isArrivalFromRecordingRef.current) {
+        isArrivalFromRecordingRef.current = false;
+        setCompletion({
+          previousTrackBestLapMs: await getTrackBestLapMsExcludingSession(
+            db,
+            nextSessionDetail.track.id,
+            nextSessionDetail.session.id
+          ),
+        });
       }
       setLoadErrorKey(null);
+      // Share eligibility may wait on the leaderboard server; the session and
+      // its completion dialog render without it.
+      void loadShareState(nextSessionDetail);
     } catch {
       setLoadErrorKey('sessions.unableToLoadSession');
     } finally {
       setIsLoading(false);
     }
-  }, [db, id]);
+  }, [db, id, loadShareState]);
 
   useEffect(() => {
     void loadSession();
@@ -358,6 +383,19 @@ export default function SessionDetailScreen() {
     const shared = await leaderboardShare.share(shareState.userBestLapMs);
     if (shared) {
       setIsSharedNow(true);
+    }
+  }
+
+  const offerShareOnCompletion =
+    shareState !== null && shouldOfferLeaderboardShare(shareState, bestLapMs);
+
+  function handleCloseCompletion() {
+    setCompletion(null);
+    router.setParams({ completed: undefined });
+    // The share offer and the App Store review dialog must not stack on one
+    // visit; the review request retries on a later session.
+    if (sessionDetail && !offerShareOnCompletion) {
+      void maybeRequestAppReview(db, sessionDetail.session);
     }
   }
 
@@ -989,6 +1027,24 @@ export default function SessionDetailScreen() {
           </View>
         ) : null}
       </ScrollView>
+
+      {completion && sessionDetail && displayTrackTitle ? (
+        <SessionCompleteDialog
+          trackId={sessionDetail.track.id}
+          trackTitle={displayTrackTitle}
+          outcome={getSessionOutcome(bestLapMs, completion.previousTrackBestLapMs)}
+          bestLapMs={bestLapMs}
+          isBestLapEstimated={bestLap?.lapTimeMs === bestLapMs && bestLap?.isTimingEstimated === 1}
+          improvementMs={
+            bestLapMs !== null && completion.previousTrackBestLapMs !== null
+              ? completion.previousTrackBestLapMs - bestLapMs
+              : null
+          }
+          offerShare={offerShareOnCompletion}
+          onShared={() => setIsSharedNow(true)}
+          onClose={handleCloseCompletion}
+        />
+      ) : null}
 
       <ShareSheetModal
         visible={share.isShareSheetVisible}

@@ -1,17 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, AppState, View, Text, ScrollView, Pressable } from 'react-native';
+import { AppState, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useKeepAwake } from 'expo-keep-awake';
 import * as Haptics from 'expo-haptics';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import { useSharedValue } from 'react-native-reanimated';
 import { useT, type TranslateFn } from '@/hooks/useT';
-import Card from '@/components/Card';
-import LapRow from '@/components/LapRow';
-import ProgressBar from '@/components/ProgressBar';
 import ProLimitModal from '@/components/ProLimitModal';
 import { createSessionRecorder, getOrCreateDefaultUserProfile, getTrackById } from '@/db';
 import { useColorScheme } from '@/hooks/useColorScheme';
@@ -19,6 +15,10 @@ import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { requestForegroundLocationPermission } from '@/telemetry/location';
 import { createConnectionLifecycle } from '@/telemetry/sources/connection-lifecycle';
 import { createImuCapture } from '@/telemetry/imu-capture';
+import { createLiveReference, deriveSectorCards, deriveSectorStatuses, type LiveDeltaState } from '@/telemetry/live-reference';
+import { createCarFrameG, type CarFrameG } from '@/telemetry/car-frame-g';
+import LandscapeDashboard from '@/components/recording/landscape/LandscapeDashboard';
+import PortraitDashboard from '@/components/recording/portrait/PortraitDashboard';
 import { IMU_CAPTURE_ENABLED } from '@/constants/featureFlags';
 import { useExternalGps } from '@/contexts/ExternalGpsContext';
 import { useEntitlements } from '@/contexts/EntitlementContext';
@@ -27,7 +27,7 @@ import { createSessionRuntime } from '@/telemetry/session-runtime';
 import type { TrackDetail } from '@/db';
 import type { TelemetrySample, ExtendedTelemetrySample } from '@/telemetry/types';
 import type { ActiveSourceInfo } from '@/telemetry/sources/types';
-import { formatLapTime, formatDurationMs as formatDuration, formatSpeed } from '@/utils/format';
+import { formatDurationMs as formatDuration } from '@/utils/format';
 import {
   FREE_SESSION_LIMIT,
   getSessionQuota,
@@ -35,31 +35,6 @@ import {
 } from '@/services/session-quota';
 import { useMenu } from '@/contexts/MenuContext';
 import { getTrackDisplayTitle, localizeTrack } from '@/utils/track-localization';
-
-function formatSectorTime(elapsedMs: number | null) {
-  if (elapsedMs === null) {
-    return '--.---';
-  }
-
-  const totalSeconds = Math.max(0, elapsedMs / 1000);
-  return totalSeconds.toFixed(3).padStart(6, '0');
-}
-
-function getGpsSignalPercent(accuracyM: number | null) {
-  if (accuracyM === null) {
-    return 0;
-  }
-
-  if (accuracyM <= 5) {
-    return 100;
-  }
-
-  if (accuracyM >= 50) {
-    return 10;
-  }
-
-  return Math.max(10, Math.min(100, Math.round(100 - ((accuracyM - 5) / 45) * 90)));
-}
 
 function getGpsAccuracyLabel(accuracyM: number | null, t: TranslateFn) {
   if (accuracyM === null) {
@@ -103,13 +78,21 @@ function getBrakePercent(
 }
 
 const TELEMETRY_DISPLAY_REFRESH_MS = 100;
+const EMPTY_LIVE_DELTA: LiveDeltaState = {
+  deltaMs: null,
+  stale: false,
+  referenceLapNumber: null,
+  referenceLapTimeMs: null,
+  referenceSectorSplitsMs: [],
+};
+const EMPTY_G: CarFrameG = { longitudinalG: 0, lateralG: 0, magnitudeG: 0, aligned: false };
+const DEVICE_G_STALE_MS = 1000;
 
 export default function RecordingScreen() {
   const t = useT();
   useKeepAwake();
   const router = useRouter();
   const db = useSQLiteContext();
-  const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const params = useLocalSearchParams<{ trackId?: string; sessionName?: string; condition?: string; temperatureC?: string }>();
@@ -136,8 +119,20 @@ export default function RecordingScreen() {
   const runtimeRef = useRef<ReturnType<typeof createSessionRuntime> | null>(null);
   const lifecycleRef = useRef<ReturnType<typeof createConnectionLifecycle> | null>(null);
   const imuCaptureRef = useRef<ReturnType<typeof createImuCapture> | null>(null);
+  // Live reference and G state live here, not in the dashboard, so rotating
+  // to portrait keeps the reference lap and the learned mount yaw.
+  const liveReferenceRef = useRef<ReturnType<typeof createLiveReference> | null>(null);
+  const liveDeltaRef = useRef<LiveDeltaState>(EMPTY_LIVE_DELTA);
+  const [liveDelta, setLiveDelta] = useState<LiveDeltaState>(EMPTY_LIVE_DELTA);
+  const carFrameGRef = useRef<ReturnType<typeof createCarFrameG> | null>(null);
+  const deviceGRef = useRef<ReturnType<typeof createCarFrameG> | null>(null);
+  const lastDeviceGAtMsRef = useRef(0);
+  const [gReading, setGReading] = useState<CarFrameG>(EMPTY_G);
+  const lastGReadingMsRef = useRef(0);
+  const publishGRef = useRef<((reading: CarFrameG) => void) | null>(null);
+  const lateralSv = useSharedValue(0);
+  const longitudinalSv = useSharedValue(0);
   const hasStoppedRef = useRef(false);
-  const pulseOpacity = useRef(new Animated.Value(1)).current;
   const previousAcceptedSampleRef = useRef<TelemetrySample | null>(null);
   const lastRenderMsRef = useRef(0);
   const lastRenderedStatusRef = useRef<string | null>(null);
@@ -161,7 +156,18 @@ export default function RecordingScreen() {
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
     void ScreenOrientation.unlockAsync();
+    void ScreenOrientation.getOrientationAsync()
+      .then((orientation) => {
+        if (isMounted) {
+          setIsLandscape(
+            orientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
+            orientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT
+          );
+        }
+      })
+      .catch(() => undefined);
 
     const subscription = ScreenOrientation.addOrientationChangeListener((event) => {
       const orientation = event.orientationInfo.orientation;
@@ -172,6 +178,7 @@ export default function RecordingScreen() {
     });
 
     return () => {
+      isMounted = false;
       ScreenOrientation.removeOrientationChangeListener(subscription);
       void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     };
@@ -179,10 +186,14 @@ export default function RecordingScreen() {
 
   useEffect(() => {
     if (pendingSessionId !== null && !isLandscape) {
-      router.replace({
-        pathname: '/(tabs)/record/post-session',
-        params: { id: pendingSessionId },
-      });
+      // The Record tab returns to its start screen, ready for the next session.
+      router.dismissAll();
+      if (pendingSessionId) {
+        router.navigate({
+          pathname: '/(tabs)/sessions/detail',
+          params: { id: pendingSessionId, completed: '1' },
+        }, { withAnchor: true });
+      }
     }
   }, [pendingSessionId, isLandscape, router]);
 
@@ -300,8 +311,42 @@ export default function RecordingScreen() {
 
       setRuntimeSnapshot(startedSnapshot);
 
+      liveReferenceRef.current = createLiveReference({
+        sectorLineCount: track.sectorCount > 0 ? track.sectorCount - 1 : 0,
+      });
+      liveDeltaRef.current = EMPTY_LIVE_DELTA;
+      setLiveDelta(EMPTY_LIVE_DELTA);
+      const carFrameG = createCarFrameG();
+      carFrameGRef.current = carFrameG;
+      // RaceBox and Qstarz deliver their own accelerometer with every fix;
+      // their axis conventions are not documented well enough to assume.
+      deviceGRef.current = createCarFrameG({ handedness: 'unknown' });
+      lastDeviceGAtMsRef.current = 0;
+      setGReading(EMPTY_G);
+
+      const publishG = (reading: CarFrameG) => {
+        lateralSv.value = reading.lateralG;
+        longitudinalSv.value = reading.longitudinalG;
+        const now = Date.now();
+        if (isMounted && now - lastGReadingMsRef.current >= TELEMETRY_DISPLAY_REFRESH_MS) {
+          lastGReadingMsRef.current = now;
+          setGReading(reading);
+        }
+      };
+      publishGRef.current = publishG;
+
       if (IMU_CAPTURE_ENABLED && startedSnapshot.sessionId) {
-        const imuCapture = createImuCapture(db, startedSnapshot.sessionId);
+        const imuCapture = createImuCapture(db, startedSnapshot.sessionId, (measurement, recordedAt) => {
+          const reading = carFrameG.ingest(
+            measurement.acceleration ?? null,
+            measurement.accelerationIncludingGravity ?? null,
+            recordedAt
+          );
+          // A connected device's G takes over the meter while it is flowing.
+          if (Date.now() - lastDeviceGAtMsRef.current > DEVICE_G_STALE_MS) {
+            publishG(reading);
+          }
+        });
         imuCaptureRef.current = imuCapture;
         // Best-effort: capture never blocks or fails the recording flow.
         void imuCapture.start();
@@ -326,6 +371,38 @@ export default function RecordingScreen() {
               return;
             }
 
+            // Display-only consumers see every accepted sample; they run after
+            // the runtime has returned and never feed back into timing.
+            const acceptedSample = result.snapshot.latestAcceptedSample;
+            if (result.accepted && acceptedSample) {
+              carFrameGRef.current?.observeGps(acceptedSample);
+              const deviceSample = acceptedSample as ExtendedTelemetrySample;
+              const deviceG = deviceGRef.current;
+              if (
+                deviceG &&
+                deviceSample.source !== 'gps' &&
+                typeof deviceSample.gForceX === 'number' &&
+                typeof deviceSample.gForceY === 'number' &&
+                typeof deviceSample.gForceZ === 'number'
+              ) {
+                deviceG.observeGps(deviceSample);
+                const reading = deviceG.ingestDevice(
+                  { x: deviceSample.gForceX, y: deviceSample.gForceY, z: deviceSample.gForceZ },
+                  deviceSample.recordedAt
+                );
+                lastDeviceGAtMsRef.current = Date.now();
+                publishGRef.current?.(reading);
+              }
+              const liveReference = liveReferenceRef.current;
+              if (liveReference) {
+                liveDeltaRef.current = liveReference.onAccepted({
+                  sample: acceptedSample,
+                  events: result.events,
+                  completedLaps: result.snapshot.completedLaps,
+                });
+              }
+            }
+
             // The runtime persists every sample; only the on-screen snapshot is
             // coalesced. Flush immediately on a lap/sector/status change,
             // otherwise cap the refresh so 25 Hz doesn't drive 25 renders/sec.
@@ -338,6 +415,7 @@ export default function RecordingScreen() {
               lastRenderMsRef.current = now;
               lastRenderedStatusRef.current = result.snapshot.status;
               setRuntimeSnapshot(result.snapshot);
+              setLiveDelta(liveDeltaRef.current);
             }
           }).catch(() => {
             if (!isMounted) {
@@ -387,7 +465,7 @@ export default function RecordingScreen() {
         void activeRuntime.stop().catch(() => undefined);
       }
     };
-  }, [db, params.sessionName, params.condition, params.temperatureC, router, track]);
+  }, [db, params.sessionName, params.condition, params.temperatureC, router, track, lateralSv, longitudinalSv]);
 
   useEffect(() => {
     const sessionStartedAtMs = runtimeSnapshot?.sessionStartedAtMs;
@@ -396,38 +474,16 @@ export default function RecordingScreen() {
       return;
     }
 
+    // Landscape has its own lap clock; the screen only needs the tick for
+    // GPS staleness there.
     const intervalId = setInterval(() => {
       setNowMs(Date.now());
-    }, 50);
+    }, isLandscape ? 1000 : 50);
 
     return () => {
       clearInterval(intervalId);
     };
-  }, [runtimeSnapshot?.sessionEndedAtMs, runtimeSnapshot?.sessionStartedAtMs]);
-
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseOpacity, {
-          toValue: 0.45,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseOpacity, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-
-    animation.start();
-
-    return () => {
-      animation.stop();
-      pulseOpacity.setValue(1);
-    };
-  }, [pulseOpacity]);
+  }, [isLandscape, runtimeSnapshot?.sessionEndedAtMs, runtimeSnapshot?.sessionStartedAtMs]);
 
   useEffect(() => {
     const currentSample = runtimeSnapshot?.latestAcceptedSample ?? null;
@@ -443,14 +499,16 @@ export default function RecordingScreen() {
   }, [runtimeSnapshot?.latestAcceptedSample]);
 
   const sectorCount = track?.sectorCount ?? 0;
+  const sectorStatuses = deriveSectorStatuses({
+    sectorCount,
+    isLapInProgress: runtimeSnapshot?.status === 'lap_in_progress',
+    lastCrossedSectorSeq: runtimeSnapshot?.lastCrossedSectorSeq ?? null,
+    currentLapSectorSplitsMs: runtimeSnapshot?.currentLapSectorSplitsMs ?? {},
+    referenceSectorSplitsMs: liveDelta.referenceSectorSplitsMs,
+  });
   const sessionDurationMs =
     runtimeSnapshot?.sessionStartedAtMs !== null && runtimeSnapshot?.sessionStartedAtMs !== undefined
       ? (runtimeSnapshot.sessionEndedAtMs ?? nowMs) - runtimeSnapshot.sessionStartedAtMs
-      : null;
-  const currentElapsedMs =
-    runtimeSnapshot?.status === 'lap_in_progress' &&
-    runtimeSnapshot.currentLapStartedWallClockMs !== null
-      ? Math.max(0, nowMs - runtimeSnapshot.currentLapStartedWallClockMs)
       : null;
   const currentLapLabel =
     runtimeSnapshot?.status === 'lap_in_progress'
@@ -465,16 +523,6 @@ export default function RecordingScreen() {
     runtimeSnapshot.currentSectorStartedWallClockMs !== null
       ? Math.max(0, nowMs - runtimeSnapshot.currentSectorStartedWallClockMs)
       : null;
-  const recentLaps = (runtimeSnapshot?.completedLaps ?? []).map((lap) => ({
-    lap: lap.lapNumber,
-    time: `${lap.isEstimated ? '≈' : ''}${formatLapTime(lap.lapTimeMs)}`,
-    delta: lap.isExcluded
-      ? 'PIT'
-      : lap.isBest || lap.deltaToBestMs === null
-        ? 'Best'
-        : `+${(lap.deltaToBestMs / 1000).toFixed(3)}`,
-  }));
-
   // Until the lifecycle reports, the intended device is shown while it
   // connects; afterwards the active source is the truth — a fallback to phone
   // GPS must not keep displaying the device name.
@@ -504,21 +552,35 @@ export default function RecordingScreen() {
       : wasInterrupted
         ? t('recording.recordingInterrupted')
         : null;
-  const telemetryStatus = isGpsLost
-    ? { text: t('telemetry.gpsLost'), className: 'text-sm text-red-400' }
+  const gpsAccuracy: { label: string; state: 'good' | 'degraded' | 'lost' | 'none' } = isGpsLost
+    ? { label: t('telemetry.gpsLost'), state: 'lost' }
     : isGpsDegraded
-      ? { text: t('telemetry.gpsDegradedShort'), className: 'text-sm text-amber-400' }
+      ? { label: t('telemetry.gpsDegradedShort'), state: 'degraded' }
       : latestSample
-        ? { text: getGpsAccuracyLabel(latestSample.accuracyM, t), className: 'text-sm text-emerald-400' }
-        : { text: t('common.tbd'), className: 'text-sm text-zinc-500 dark:text-zinc-400' };
+        ? { label: getGpsAccuracyLabel(latestSample.accuracyM, t), state: 'good' }
+        : { label: t('telemetry.searching'), state: 'none' };
   const currentSpeedKph =
     latestSample?.speedMps !== null && latestSample?.speedMps !== undefined
       ? latestSample.speedMps * 3.6
       : null;
-  const speedPercent =
-    currentSpeedKph !== null && runtimeSnapshot?.maxSpeedKph
-      ? (currentSpeedKph / Math.max(runtimeSnapshot.maxSpeedKph, 1)) * 100
-      : 0;
+
+  const deltaDimmed = isGpsLost || liveDelta.stale || (runtimeSnapshot?.pitInMarked ?? false);
+  const sectorCards = deriveSectorCards({
+    statuses: sectorStatuses,
+    currentLapSectorSplitsMs: runtimeSnapshot?.currentLapSectorSplitsMs ?? {},
+    referenceSectorSplitsMs: liveDelta.referenceSectorSplitsMs,
+    activeSectorElapsedMs: currentSectorElapsedMs,
+    liveDeltaMs: deltaDimmed ? null : liveDelta.deltaMs,
+  });
+  const completedLaps = runtimeSnapshot?.completedLaps ?? [];
+  const lastLapEstimated = completedLaps[completedLaps.length - 1]?.isEstimated ?? false;
+  const bestLapEstimated = completedLaps.find((lap) => lap.isBest)?.isEstimated ?? false;
+
+  function handlePitIn() {
+    void runtimeRef.current?.markPitIn().then((snapshot) => {
+      setRuntimeSnapshot(snapshot);
+    }).catch(() => undefined);
+  }
 
   async function handleEndSession() {
     if (isEndingSession) return;
@@ -544,12 +606,10 @@ export default function RecordingScreen() {
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
       setPendingSessionId(sessionId);
     } catch {
-      // Avoid stranding on dark curtain — navigate directly as fallback
-      router.replace('/(tabs)/record/post-session');
+      // Avoid stranding on the dark curtain.
+      router.dismissAll();
     }
   }
-
-  const lastLap = recentLaps.length > 0 ? recentLaps[recentLaps.length - 1] : null;
 
   if (isEndingSession) {
     return <View className="flex-1 bg-zinc-950" />;
@@ -558,326 +618,68 @@ export default function RecordingScreen() {
   return (
     <View className="flex-1 bg-zinc-950">
     {isLandscape ? (
-      <View
-        className="flex-1"
-        style={{ paddingLeft: insets.left + 16, paddingRight: insets.right + 16, paddingTop: insets.top + 8, paddingBottom: insets.bottom + 8 }}
-      >
-        {/* REC badge */}
-        <Animated.View style={{ opacity: pulseOpacity }} className="absolute top-2 right-4 z-10" >
-          <View className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-4 py-1.5 border border-red-400/20"
-            style={{ right: insets.right + 8, top: insets.top }}
-          >
-            <View className="h-3 w-3 rounded-full bg-red-400" />
-            <Text className="text-sm text-red-400">{t('session.recording')}</Text>
-          </View>
-        </Animated.View>
-
-        {/* Upper section: Last Lap / Best Lap */}
-        <View className="flex-row flex-1">
-          <View className="flex-1 items-center justify-center">
-            <Text className="text-sm text-zinc-500 mb-1">{t('session.lastLap')}</Text>
-            <Text className="text-4xl font-bold text-white">
-              {lastLap ? lastLap.time : '--:--.---'}
-            </Text>
-          </View>
-          <View style={{ width: 1 }} className="bg-white/10 my-3" />
-          <View className="flex-1 items-center justify-center">
-            <Text className="text-sm text-zinc-500 mb-1">{t('session.bestLap')}</Text>
-            <Text className="text-4xl font-bold text-emerald-400">
-              {formatLapTime(runtimeSnapshot?.bestLapMs ?? null)}
-            </Text>
-          </View>
-        </View>
-
-        {/* Middle section: Current Lap Time */}
-        <View className="flex-[2] items-center justify-center">
-          <Text className="text-sm text-zinc-500 mb-2">{t('recording.currentLap')}</Text>
-          {runtimeSnapshot?.status === 'lap_in_progress' ? (
-            <Text style={{ fontSize: 120, lineHeight: 128 }} className="font-bold text-white tabular-nums tracking-tight">
-              {formatLapTime(currentElapsedMs)}
-            </Text>
-          ) : (
-            <Animated.Text style={{ fontSize: 32, lineHeight: 40, opacity: pulseOpacity }} className="font-medium text-zinc-500">
-              {t('recording.waitingForStartLine')}
-            </Animated.Text>
-          )}
-        </View>
-
-        {warningMessage ? (
-          <View
-            className={`absolute z-10 rounded-full px-4 py-1.5 border ${
-              isGpsLost
-                ? 'bg-red-500/15 border-red-400/30'
-                : 'bg-amber-500/15 border-amber-400/30'
-            }`}
-            style={{ left: insets.left + 8, top: insets.top }}
-          >
-            <Text className={`text-sm ${isGpsLost ? 'text-red-400' : 'text-amber-400'}`}>
-              {warningMessage}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* Lower section: Lap count / End button */}
-        <View className="flex-row items-end justify-between flex-1">
-          <View className="rounded-2xl bg-white/5 border border-white/10 items-center justify-center px-6 py-4">
-            <Text className="text-sm text-zinc-500 mb-1">{t('sessions.laps')}</Text>
-            <Text className="text-4xl font-bold text-white">{currentLapLabel}</Text>
-          </View>
-          <Pressable
-            onPress={() => { void handleEndSession(); }}
-            className="rounded-full bg-red-500 items-center justify-center"
-            style={{ width: 72, height: 72 }}
-          >
-            <Text className="text-sm font-semibold text-white">{t('session.stop')}</Text>
-          </Pressable>
-        </View>
-      </View>
-    ) : (
-      <View className="flex-1 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
-      {/* Fixed top: header + current lap + buttons */}
-      <LinearGradient
-        colors={gradientColors}
-        locations={[0, 0.5, 1]}
-        style={{
-          paddingTop: insets.top + 20,
-          paddingHorizontal: 20,
-          paddingBottom: 16,
+      <LandscapeDashboard
+        lapLabel={currentLapLabel}
+        bestLapMs={runtimeSnapshot?.bestLapMs ?? null}
+        lastLapMs={runtimeSnapshot?.lastLapMs ?? null}
+        bestLapEstimated={bestLapEstimated}
+        lastLapEstimated={lastLapEstimated}
+        lapStartedWallClockMs={
+          runtimeSnapshot?.status === 'lap_in_progress' ? runtimeSnapshot.currentLapStartedWallClockMs : null
+        }
+        sectorStatuses={sectorStatuses}
+        liveDelta={liveDelta}
+        deltaDimmed={deltaDimmed}
+        gReading={gReading}
+        lateralSv={lateralSv}
+        longitudinalSv={longitudinalSv}
+        pitInMarked={runtimeSnapshot?.pitInMarked ?? false}
+        warning={warningMessage ? { message: warningMessage, severe: isGpsLost } : null}
+        onPitIn={handlePitIn}
+        onEnd={() => {
+          void handleEndSession();
         }}
-      >
-        {/* Header */}
-        <View className="flex-row items-start justify-between mb-3">
-          <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-            {track ? getTrackDisplayTitle(track, locale) : t('circuits.loadingTrack')}
-          </Text>
-          <Animated.View style={{ opacity: pulseOpacity }}>
-            <View className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-3 py-1.5 border border-red-400/20">
-              <View className="h-2.5 w-2.5 rounded-full bg-red-400" />
-              <Text className="text-sm text-red-400">{t('session.recording')}</Text>
-            </View>
-          </Animated.View>
-        </View>
-
-        {/* Title + REC badge */}
-        <View className="flex-row items-start justify-between mb-4">
-          <View className="flex-1 mr-3">
-            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('recording.sessionRecording')}</Text>
-            <Text className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
-              {params.sessionName ??
-                displayTrack?.layoutName ??
-                t('recording.sessionRecording')}
-            </Text>
-          </View>
-          <Text className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mt-0.5 pr-1">
-            {formatDuration(sessionDurationMs)}
-          </Text>
-        </View>
-
-        {isLoadingTrack ? (
-          <View className="mb-4 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 px-3 py-3">
-            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('circuits.loadingTrack')}</Text>
-          </View>
-        ) : null}
-
-        {loadError ? (
-          <View className="mb-4 rounded-2xl bg-red-500/10 border border-red-500/20 px-3 py-3">
-            <Text className="text-sm text-red-700 dark:text-red-200">{loadError}</Text>
-          </View>
-        ) : null}
-
-        {warningMessage ? (
-          <View
-            className={`mb-4 rounded-2xl px-3 py-3 border ${
-              isGpsLost
-                ? 'bg-red-500/10 border-red-500/20'
-                : 'bg-amber-500/10 border-amber-500/20'
-            }`}
-          >
-            <Text
-              className={`text-sm ${
-                isGpsLost ? 'text-red-700 dark:text-red-200' : 'text-amber-700 dark:text-amber-200'
-              }`}
-            >
-              {warningMessage}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* Current lap card */}
-        <View className="rounded-3xl bg-white/80 dark:bg-black/40 border border-zinc-200 dark:border-white/10 p-4">
-          <View className="flex-row items-center justify-between mb-2">
-            <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('session.currentLap')}</Text>
-            <Text className="text-sm text-zinc-500 dark:text-zinc-400">
-              {t('session.lapCount', { count: currentLapLabel })}
-            </Text>
-          </View>
-          {runtimeSnapshot?.status === 'lap_in_progress' ? (
-            <Text
-              className="text-zinc-900 dark:text-white mb-3 text-center"
-              style={{ fontSize: 56, lineHeight: 56, fontWeight: '600', fontVariant: ['tabular-nums'] }}
-            >
-              {formatLapTime(currentElapsedMs)}
-            </Text>
-          ) : (
-            <Animated.Text
-              className="text-zinc-500 dark:text-zinc-400 mb-3 text-center"
-              style={{ fontSize: 24, lineHeight: 32, fontWeight: '500', opacity: pulseOpacity }}
-            >
-              {t('recording.waitingForStartLine')}
-            </Animated.Text>
-          )}
-          <View className="flex-row gap-2">
-            {Array.from({ length: sectorCount }, (_, index) => {
-              const isActive =
-                runtimeSnapshot?.status === 'lap_in_progress' &&
-                (runtimeSnapshot.lastCrossedSectorSeq ?? 0) + 1 === index + 1;
-
-              return (
-              <View
-                key={`sector-${index + 1}`}
-                className={`flex-1 rounded-2xl p-3 border ${
-                  isActive ? 'bg-red-500/10 border-red-400/30' : 'bg-zinc-100 dark:bg-white/5 border-zinc-200 dark:border-white/10'
-                }`}
-              >
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{`S${index + 1}`}</Text>
-                <Text className="text-lg font-medium text-zinc-900 dark:text-white">
-                  {isActive
-                    ? formatSectorTime(currentSectorElapsedMs)
-                    : formatSectorTime(runtimeSnapshot?.currentLapSectorSplitsMs[index] ?? null)}
-                </Text>
-              </View>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Pit In + End buttons */}
-        <View className="flex-row gap-3 mt-4">
-          <Pressable
-            onPress={() => {
-              void runtimeRef.current?.markPitIn().then((snapshot) => {
-                setRuntimeSnapshot(snapshot);
-              }).catch(() => undefined);
-            }}
-            disabled={runtimeSnapshot?.pitInMarked ?? false}
-            className={`flex-1 rounded-2xl border py-3.5 items-center ${
-              runtimeSnapshot?.pitInMarked
-                ? 'border-amber-400/40 bg-amber-500/10'
-                : 'border-zinc-200 dark:border-white/10 bg-zinc-100 dark:bg-white/5'
-            }`}
-          >
-            <Text
-              className={`text-sm font-medium ${
-                runtimeSnapshot?.pitInMarked ? 'text-amber-600 dark:text-amber-300' : 'text-zinc-900 dark:text-white'
-              }`}
-            >
-              {runtimeSnapshot?.pitInMarked ? t('session.pitInMarked') : t('session.markPitIn')}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              void handleEndSession();
-            }}
-            className="flex-1 rounded-2xl bg-red-500 py-3.5 items-center"
-          >
-            <Text className="text-sm font-semibold text-white">{t('session.end')}</Text>
-          </Pressable>
-        </View>
-      </LinearGradient>
-
-      {/* Scrollable content below */}
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: 40 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <View className="px-5 py-4 gap-4">
-          {/* Stats row */}
-          <View className="flex-row gap-3">
-            {[
-              [t('session.bestLap'), formatLapTime(runtimeSnapshot?.bestLapMs ?? null)],
-              [t('session.topSpeed'), formatSpeed(runtimeSnapshot?.maxSpeedKph ?? null, t('common.tbd'))],
-              [t('session.duration'), formatDuration(sessionDurationMs)],
-            ].map(([l, v]) => (
-              <View key={l} className="flex-1 rounded-2xl bg-zinc-100 dark:bg-white/5 border border-zinc-200 dark:border-white/10 p-3">
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{l}</Text>
-                <Text className="text-lg font-semibold text-zinc-900 dark:text-white">{v}</Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Live Telemetry */}
-          <Card>
-            <View className="flex-row items-center justify-between mb-3">
-              <View>
-                <Text className="text-sm font-medium text-zinc-900 dark:text-white">{t('telemetry.title')}</Text>
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {externalSourceName
-                    ? t('telemetry.subtitleDevice', { name: externalSourceName })
-                    : t('telemetry.subtitle')}
-                </Text>
-              </View>
-              <Text className={telemetryStatus.className}>{telemetryStatus.text}</Text>
-            </View>
-            <View className="gap-3">
-              <ProgressBar
-                label={t('telemetry.gpsSource')}
-                value={externalSourceName ?? t('telemetry.phoneGps')}
-                color="bg-emerald-400"
-              />
-              <ProgressBar
-                label={t('telemetry.speed')}
-                value={formatSpeed(currentSpeedKph, t('common.tbd'))}
-                percent={speedPercent}
-              />
-              <ProgressBar
-                label={t('telemetry.brake')}
-                value={`${brakePercent}%`}
-              />
-              <ProgressBar
-                label={t('telemetry.gpsSignal')}
-                value={getGpsAccuracyLabel(latestSample?.accuracyM ?? null, t)}
-                percent={getGpsSignalPercent(latestSample?.accuracyM ?? null)}
-                color="bg-emerald-400"
-              />
-              {(() => {
-                const ext = runtimeSnapshot?.latestAcceptedSample as ExtendedTelemetrySample | undefined;
-                if (!ext?.satelliteCount) return null;
-                return (
-                  <>
-                    <ProgressBar
-                      label={t('telemetry.satellites')}
-                      value={`${ext.satelliteCount}`}
-                      color="bg-sky-400"
-                    />
-                    {ext.batteryLevel != null && (
-                      <ProgressBar
-                        label={t('telemetry.deviceBattery')}
-                        value={`${ext.batteryLevel}%`}
-                        color="bg-amber-400"
-                      />
-                    )}
-                  </>
-                );
-              })()}
-            </View>
-          </Card>
-
-          {/* Recent Laps */}
-          <Card>
-            <Text className="text-sm font-medium text-zinc-900 dark:text-white mb-3">{t('recording.lapTimes')}</Text>
-            {recentLaps.length > 0 ? (
-              <View className="gap-2">
-                {recentLaps.map((item) => (
-                  <LapRow key={item.lap} item={item} />
-                ))}
-              </View>
-            ) : (
-              <Text className="text-sm text-zinc-500 dark:text-zinc-400">{t('sessions.noLapDataYet')}</Text>
-            )}
-          </Card>
-        </View>
-      </ScrollView>
-    </View>
+      />
+    ) : (
+      <PortraitDashboard
+        tone={isDark ? 'dark' : 'light'}
+        gradientColors={gradientColors}
+        trackTitle={track ? getTrackDisplayTitle(track, locale) : t('circuits.loadingTrack')}
+        sessionName={params.sessionName ?? displayTrack?.layoutName ?? t('recording.sessionRecording')}
+        durationLabel={formatDuration(sessionDurationMs)}
+        banner={
+          loadError
+            ? { message: loadError, tone: 'red' }
+            : warningMessage
+              ? { message: warningMessage, tone: isGpsLost ? 'red' : 'amber' }
+              : isLoadingTrack
+                ? { message: t('circuits.loadingTrack'), tone: 'neutral' }
+                : null
+        }
+        lapLabel={currentLapLabel}
+        bestLapMs={runtimeSnapshot?.bestLapMs ?? null}
+        lastLapMs={runtimeSnapshot?.lastLapMs ?? null}
+        bestLapEstimated={bestLapEstimated}
+        lastLapEstimated={lastLapEstimated}
+        lapStartedWallClockMs={
+          runtimeSnapshot?.status === 'lap_in_progress' ? runtimeSnapshot.currentLapStartedWallClockMs : null
+        }
+        liveDelta={liveDelta}
+        deltaDimmed={deltaDimmed}
+        sectorCards={sectorCards}
+        gReading={gReading}
+        lateralSv={lateralSv}
+        longitudinalSv={longitudinalSv}
+        sourceLabel={externalSourceName ?? 'GPS'}
+        accuracy={gpsAccuracy}
+        speedKph={currentSpeedKph}
+        brakePercent={brakePercent}
+        pitInMarked={runtimeSnapshot?.pitInMarked ?? false}
+        onPitIn={handlePitIn}
+        onEnd={() => {
+          void handleEndSession();
+        }}
+      />
     )}
       <ProLimitModal
         visible={limitQuota !== null}

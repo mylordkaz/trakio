@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { SESSION_TEST_SEEDS } from '@/db/test-seeds';
 import {
+  getTrackBestLapMsExcludingSession,
   getTrackLeaderboardShareState,
   recordLeaderboardOffer,
   recordLeaderboardShare,
@@ -38,6 +39,24 @@ describe('track leaderboard share state', () => {
     expect(bestQuery).toContain('l.is_in_lap = 0');
     expect(bestParams).toEqual([
       'tsukuba2000',
+      ...SESSION_TEST_SEEDS.map((seed) => seed.session.id),
+    ]);
+  });
+
+  it('reads the track best from every other session, seeds excluded', async () => {
+    const { db, getFirstAsync } = createDbMock();
+    getFirstAsync.mockResolvedValueOnce({ best_ms: 72100 });
+
+    await expect(
+      getTrackBestLapMsExcludingSession(db, 'tsukuba2000', 'session-1'),
+    ).resolves.toBe(72100);
+
+    const [query, ...params] = getFirstAsync.mock.calls[0];
+    expect(query).toContain('s.id <> ?');
+    expect(query).toContain('NOT IN');
+    expect(params).toEqual([
+      'tsukuba2000',
+      'session-1',
       ...SESSION_TEST_SEEDS.map((seed) => seed.session.id),
     ]);
   });

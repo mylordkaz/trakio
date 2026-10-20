@@ -535,6 +535,31 @@ export async function getTrackLeaderboardShareState(
   };
 }
 
+// The user's best on the track from every other session: null means the
+// session holds the first timed lap the user drove there.
+export async function getTrackBestLapMsExcludingSession(
+  db: SQLiteDatabase,
+  trackId: string,
+  sessionId: string
+): Promise<number | null> {
+  const row = await db.getFirstAsync<{ best_ms: number | null }>(
+    `SELECT MIN(l.lap_time_ms) AS best_ms
+     FROM laps l
+     INNER JOIN sessions s ON s.id = l.session_id
+     WHERE s.track_id = ?
+       AND s.id <> ?
+       AND l.lap_time_ms IS NOT NULL
+       AND l.is_invalid = 0
+       AND l.is_out_lap = 0
+       AND l.is_in_lap = 0
+       ${USER_SESSION_FILTER};`,
+    trackId,
+    sessionId,
+    ...SEEDED_SESSION_IDS
+  );
+  return row?.best_ms ?? null;
+}
+
 export async function recordLeaderboardShare(
   db: SQLiteDatabase,
   trackId: string,

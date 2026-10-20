@@ -3,14 +3,14 @@ import {
   shouldShowSessionShareButton,
 } from '@/utils/leaderboard-share';
 
-describe('post-session share offer', () => {
+describe('session complete share offer', () => {
   it('never offers without a user-driven best lap', () => {
     expect(
       shouldOfferLeaderboardShare({
         userBestLapMs: null,
         sharedLapTimeMs: null,
         offeredLapTimeMs: null,
-      }),
+      }, null),
     ).toBe(false);
   });
 
@@ -20,7 +20,7 @@ describe('post-session share offer', () => {
         userBestLapMs: 62000,
         sharedLapTimeMs: null,
         offeredLapTimeMs: null,
-      }),
+      }, 62000),
     ).toBe(true);
 
     expect(
@@ -28,7 +28,7 @@ describe('post-session share offer', () => {
         userBestLapMs: 62000,
         sharedLapTimeMs: null,
         offeredLapTimeMs: 62000,
-      }),
+      }, 62000),
     ).toBe(false);
   });
 
@@ -36,10 +36,10 @@ describe('post-session share offer', () => {
     const declinedAt62 = { sharedLapTimeMs: null, offeredLapTimeMs: 62000 };
 
     expect(
-      shouldOfferLeaderboardShare({ userBestLapMs: 62500, ...declinedAt62 }),
+      shouldOfferLeaderboardShare({ userBestLapMs: 62500, ...declinedAt62 }, 62500),
     ).toBe(false);
     expect(
-      shouldOfferLeaderboardShare({ userBestLapMs: 61800, ...declinedAt62 }),
+      shouldOfferLeaderboardShare({ userBestLapMs: 61800, ...declinedAt62 }, 61800),
     ).toBe(true);
   });
 
@@ -49,7 +49,7 @@ describe('post-session share offer', () => {
         userBestLapMs: 62000,
         sharedLapTimeMs: 62000,
         offeredLapTimeMs: null,
-      }),
+      }, 62000),
     ).toBe(false);
 
     expect(
@@ -57,8 +57,23 @@ describe('post-session share offer', () => {
         userBestLapMs: 61800,
         sharedLapTimeMs: 62000,
         offeredLapTimeMs: null,
-      }),
+      }, 61800),
     ).toBe(true);
+  });
+
+  it('offers only from the session that holds the track best', () => {
+    expect(
+      shouldOfferLeaderboardShare(
+        { userBestLapMs: 62000, sharedLapTimeMs: null, offeredLapTimeMs: null },
+        65000,
+      ),
+    ).toBe(false);
+    expect(
+      shouldOfferLeaderboardShare(
+        { userBestLapMs: 62000, sharedLapTimeMs: null, offeredLapTimeMs: null },
+        null,
+      ),
+    ).toBe(false);
   });
 
   it('re-offers a shared track only on improvement', () => {
@@ -67,7 +82,7 @@ describe('post-session share offer', () => {
         userBestLapMs: 61800,
         sharedLapTimeMs: 62000,
         offeredLapTimeMs: 62000,
-      }),
+      }, 61800),
     ).toBe(true);
   });
 });

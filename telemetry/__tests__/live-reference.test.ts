@@ -1,0 +1,424 @@
+import { createLiveReference, deriveSectorCards, deriveSectorStatuses } from '@/telemetry/live-reference';
+import type { LiveDeltaState, LiveReferenceInput } from '@/telemetry/live-reference';
+import type { TelemetryDetectionEvent, TelemetrySample } from '@/telemetry/types';
+
+// A 1600 m square circuit driven at constant speed. The start/finish line
+// sits at distance 0 on the perimeter, sector lines at 500 m and 1000 m.
+
+const LAT0 = 36.15;
+const LNG0 = 139.92;
+const M_LAT = 111320;
+const M_LNG = Math.cos((LAT0 * Math.PI) / 180) * M_LAT;
+const SIDE_M = 400;
+const PERIMETER_M = 4 * SIDE_M;
+const SECTOR_LINES_M = [500, 1000];
+
+function perimeterXY(sM: number): { x: number; y: number } {
+  const s = ((sM % PERIMETER_M) + PERIMETER_M) % PERIMETER_M;
+  const side = Math.floor(s / SIDE_M);
+  const along = s - side * SIDE_M;
+  switch (side) {
+    case 0: return { x: along, y: 0 };
+    case 1: return { x: SIDE_M, y: along };
+    case 2: return { x: SIDE_M - along, y: SIDE_M };
+    default: return { x: 0, y: SIDE_M - along };
+  }
+}
+
+function headingAt(sM: number): number {
+  const s = ((sM % PERIMETER_M) + PERIMETER_M) % PERIMETER_M;
+  return [90, 0, 270, 180][Math.floor(s / SIDE_M)];
+}
+
+function toLatLng(xy: { x: number; y: number }) {
+  return { lat: LAT0 + xy.y / M_LAT, lng: LNG0 + xy.x / M_LNG };
+}
+
+function sampleAt(sM: number, tMs: number, offsetM = 0): TelemetrySample {
+  const xy = perimeterXY(sM);
+  const { lat, lng } = toLatLng({ x: xy.x, y: xy.y + offsetM });
+  return {
+    recordedAt: 1_700_000_000_000 + tMs,
+    elapsedMs: tMs,
+    lat,
+    lng,
+    speedMps: 20,
+    accuracyM: 4,
+    headingDeg: headingAt(sM),
+    altitudeM: 0,
+    source: 'gps',
+  };
+}
+
+function eventAt(type: TelemetryDetectionEvent['type'], seq: number, sM: number, tMs: number): TelemetryDetectionEvent {
+  const { lat, lng } = toLatLng(perimeterXY(sM));
+  return {
+    type,
+    timingLineId: `${type}-${seq}`,
+    seq,
+    sampleRecordedAt: 1_700_000_000_000 + tMs,
+    sampleElapsedMs: tMs,
+    sampleLat: lat,
+    sampleLng: lng,
+    quality: 'good',
+  };
+}
+
+type Lap = { lapNumber: number; lapTimeMs: number; isBest: boolean; isExcluded: boolean };
+
+/**
+ * Drives one lap at `speedMps` from the start/finish crossing at `startMs`,
+ * emitting sector and start/finish events exactly where the lines are, and
+ * feeding `completedLaps` as the runtime would after the closing crossing.
+ * Returns the state after every sample so tests can inspect the delta trace.
+ */
+function driveLap(
+  ref: ReturnType<typeof createLiveReference>,
+  laps: Lap[],
+  args: { lapNumber: number; speedMps: number; startMs: number; excluded?: boolean; skipSectorSeq?: number; opening?: boolean },
+): { states: LiveDeltaState[]; endMs: number } {
+  const states: LiveDeltaState[] = [];
+  const lapTimeMs = Math.round((PERIMETER_M / args.speedMps) * 1000);
+  const endMs = args.startMs + lapTimeMs;
+  const bestSoFar = laps.filter((lap) => !lap.isExcluded).reduce<number | null>((best, lap) => (best === null ? lap.lapTimeMs : Math.min(best, lap.lapTimeMs)), null);
+
+  let pendingEvents: TelemetryDetectionEvent[] = args.opening ? [eventAt('start_finish_crossed', 0, 0, args.startMs)] : [];
+  let completed: Lap[] = laps.slice();
+
+  for (let tMs = args.startMs + 1000; ; tMs += 1000) {
+    const sM = ((tMs - args.startMs) / 1000) * args.speedMps;
+    const prevSM = sM - args.speedMps;
+    for (const [index, lineM] of SECTOR_LINES_M.entries()) {
+      const seq = index + 1;
+      if (prevSM < lineM && sM >= lineM && seq !== args.skipSectorSeq) {
+        pendingEvents.push(eventAt('sector_crossed', seq, lineM, args.startMs + (lineM / args.speedMps) * 1000));
+      }
+    }
+    if (sM >= PERIMETER_M) {
+      const isBest = !args.excluded && (bestSoFar === null || lapTimeMs < bestSoFar);
+      const closed: Lap = { lapNumber: args.lapNumber, lapTimeMs, isBest, isExcluded: Boolean(args.excluded) };
+      completed = [...laps.map((lap) => ({ ...lap, isBest: !lap.isExcluded && !isBest && lap.lapTimeMs === bestSoFar })), closed];
+      pendingEvents.push(eventAt('start_finish_crossed', 0, 0, endMs));
+      states.push(ref.onAccepted({ sample: sampleAt(sM, tMs), events: pendingEvents, completedLaps: completed }));
+      laps.splice(0, laps.length, ...completed);
+      return { states, endMs };
+    }
+    states.push(ref.onAccepted({ sample: sampleAt(sM, tMs), events: pendingEvents, completedLaps: completed }));
+    pendingEvents = [];
+  }
+}
+
+function input(sample: TelemetrySample, events: TelemetryDetectionEvent[] = [], completedLaps: Lap[] = []): LiveReferenceInput {
+  return { sample, events, completedLaps };
+}
+
+describe('createLiveReference', () => {
+  it('promotes the first completed best lap and captures its sector splits', () => {
+    const ref = createLiveReference({ sectorLineCount: 2 });
+    const laps: Lap[] = [];
+    const lap1 = driveLap(ref, laps, { lapNumber: 1, speedMps: 20, startMs: 0, opening: true });
+    const state = lap1.states[lap1.states.length - 1];
+
+    expect(lap1.states.slice(0, -1).every((s) => s.deltaMs === null)).toBe(true);
+    expect(state.referenceLapNumber).toBe(1);
+    expect(state.referenceLapTimeMs).toBe(80_000);
+    expect(state.referenceSectorSplitsMs).toEqual([25_000, 25_000, 30_000]);
+  });
+
+  it('tracks a faster lap with a negative, monotonically decreasing delta that lands on the lap-time difference', () => {
+    const ref = createLiveReference({ sectorLineCount: 2 });
+    const laps: Lap[] = [];
+    const lap1 = driveLap(ref, laps, { lapNumber: 1, speedMps: 20, startMs: 0, opening: true });
+    const lap2 = driveLap(ref, laps, { lapNumber: 2, speedMps: 22, startMs: lap1.endMs });
+    const deltas = lap2.states.slice(0, -1).map((s) => s.deltaMs);
+
+    expect(deltas.every((d) => d !== null && d < 0)).toBe(true);
+    for (let i = 1; i < deltas.length; i++) {
+      expect(deltas[i]!).toBeLessThanOrEqual(deltas[i - 1]! + 1);
+    }
+    const expectedAtLine = Math.round((PERIMETER_M / 22) * 1000) - 80_000;
+    expect(Math.abs(deltas[deltas.length - 1]! - expectedAtLine)).toBeLessThan(200);
+    expect(lap2.states.every((s) => !s.stale)).toBe(true);
+    // Lap 2 is the new best, so it becomes the reference at the line.
+    expect(lap2.states[lap2.states.length - 1].referenceLapNumber).toBe(2);
+  });
+
+  it('never promotes an excluded lap, even when it is the fastest', () => {
+    const ref = createLiveReference({ sectorLineCount: 2 });
+    const laps: Lap[] = [];
+    const lap1 = driveLap(ref, laps, { lapNumber: 1, speedMps: 20, startMs: 0, opening: true, excluded: true });
+    expect(lap1.states[lap1.states.length - 1].referenceLapNumber).toBeNull();
+
+    const lap2 = driveLap(ref, laps, { lapNumber: 2, speedMps: 18, startMs: lap1.endMs });
+    expect(lap2.states.slice(0, -1).every((s) => s.deltaMs === null)).toBe(true);
+    expect(lap2.states[lap2.states.length - 1].referenceLapNumber).toBe(2);
+  });
+
+  it('keeps the reference when a slower lap completes', () => {
+    const ref = createLiveReference({ sectorLineCount: 2 });
+    const laps: Lap[] = [];
+    const lap1 = driveLap(ref, laps, { lapNumber: 1, speedMps: 20, startMs: 0, opening: true });
+    const lap2 = driveLap(ref, laps, { lapNumber: 2, speedMps: 18, startMs: lap1.endMs });
+    const last = lap2.states[lap2.states.length - 1];
+    expect(last.referenceLapNumber).toBe(1);
+    expect(lap2.states.slice(0, -1).every((s) => s.deltaMs !== null && s.deltaMs > 0)).toBe(true);
+  });
+
+  it('leaves a skipped sector split null and still times the closing sector', () => {
+    const ref = createLiveReference({ sectorLineCount: 2 });
+    const laps: Lap[] = [];
+    const lap1 = driveLap(ref, laps, { lapNumber: 1, speedMps: 20, startMs: 0, opening: true, skipSectorSeq: 1 });
+    expect(lap1.states[lap1.states.length - 1].referenceSectorSplitsMs).toEqual([null, null, 30_000]);
+  });
+
+  it('marks an off-line sample stale and holds the last delta', () => {
+    const ref = createLiveReference({ sectorLineCount: 2 });
+    const laps: Lap[] = [];
+    const lap1 = driveLap(ref, laps, { lapNumber: 1, speedMps: 20, startMs: 0, opening: true });
+    const t0 = lap1.endMs;
+    const onLine = ref.onAccepted(input(sampleAt(20, t0 + 1000)));
+    const offLine = ref.onAccepted(input(sampleAt(40, t0 + 2000, 40)));
+    const backOn = ref.onAccepted(input(sampleAt(60, t0 + 3000)));
+
+    expect(onLine.stale).toBe(false);
+    expect(offLine.stale).toBe(true);
+    expect(offLine.deltaMs).toBe(onLine.deltaMs);
+    expect(backOn.stale).toBe(false);
+  });
+
+  it('recovers after a long GPS gap by searching the whole reference', () => {
+    const ref = createLiveReference({ sectorLineCount: 2 });
+    const laps: Lap[] = [];
+    const lap1 = driveLap(ref, laps, { lapNumber: 1, speedMps: 20, startMs: 0, opening: true });
+    const t0 = lap1.endMs;
+    ref.onAccepted(input(sampleAt(20, t0 + 1000)));
+    // 30 s hole at 20 m/s: 600 m further along, well past the 300 m window.
+    const afterGap = ref.onAccepted(input(sampleAt(620, t0 + 31_000)));
+    expect(afterGap.stale).toBe(false);
+    expect(afterGap.deltaMs).toBeCloseTo(0, -2);
+  });
+
+  it('discards an abandoned point-to-point run and promotes on finish', () => {
+    const ref = createLiveReference({ sectorLineCount: 0 });
+    const laps: Lap[] = [];
+    ref.onAccepted(input(sampleAt(0, 0), [eventAt('start_crossed', 0, 0, 0)]));
+    ref.onAccepted(input(sampleAt(20, 1000)));
+    // Second start without a finish: the first run is gone, a new one opens.
+    const restarted = ref.onAccepted(input(sampleAt(40, 2000), [eventAt('start_crossed', 0, 40, 2000)]));
+    expect(restarted.deltaMs).toBeNull();
+
+    laps.push({ lapNumber: 2, lapTimeMs: 48_000, isBest: true, isExcluded: false });
+    const finished = ref.onAccepted(input(sampleAt(1000, 50_000), [eventAt('finish_crossed', 0, 1000, 50_000)], laps));
+    expect(finished.referenceLapNumber).toBe(2);
+    expect(finished.referenceSectorSplitsMs).toEqual([]);
+    // Armed between runs: no buffer, no delta.
+    expect(ref.onAccepted(input(sampleAt(1020, 51_000))).deltaMs).toBeNull();
+  });
+});
+
+describe('deriveSectorStatuses', () => {
+  it('returns nothing for a track without sector lines', () => {
+    expect(deriveSectorStatuses({ sectorCount: 0, isLapInProgress: true, lastCrossedSectorSeq: null, currentLapSectorSplitsMs: {}, referenceSectorSplitsMs: [] })).toEqual([]);
+  });
+
+  it('colours completed sectors against the reference and highlights the active one', () => {
+    expect(deriveSectorStatuses({
+      sectorCount: 3,
+      isLapInProgress: true,
+      lastCrossedSectorSeq: 2,
+      currentLapSectorSplitsMs: { 0: 24_000, 1: 26_000 },
+      referenceSectorSplitsMs: [25_000, 25_000, 30_000],
+    })).toEqual(['faster', 'slower', 'active']);
+  });
+
+  it('shows neutral without a reference and pending outside a lap', () => {
+    expect(deriveSectorStatuses({
+      sectorCount: 3,
+      isLapInProgress: true,
+      lastCrossedSectorSeq: 1,
+      currentLapSectorSplitsMs: { 0: 24_000 },
+      referenceSectorSplitsMs: [null, null, null],
+    })).toEqual(['neutral', 'active', 'pending']);
+    expect(deriveSectorStatuses({
+      sectorCount: 2,
+      isLapInProgress: false,
+      lastCrossedSectorSeq: null,
+      currentLapSectorSplitsMs: {},
+      referenceSectorSplitsMs: [],
+    })).toEqual(['pending', 'pending']);
+  });
+});
+
+describe('deriveSectorCards', () => {
+  it('shows completed sectors as deltas and the active one as the delta gained inside it', () => {
+    const cards = deriveSectorCards({
+      statuses: ['faster', 'active', 'pending'],
+      currentLapSectorSplitsMs: { 0: 24_688 },
+      referenceSectorSplitsMs: [25_000, 20_000, 30_000],
+      activeSectorElapsedMs: 10_000,
+      liveDeltaMs: -200,
+    });
+    expect(cards[0]).toEqual({ status: 'faster', valueMs: -312, isDelta: true, progress: 1 });
+    expect(cards[1]).toEqual({ status: 'active', valueMs: 112, isDelta: true, progress: 0.5 });
+    expect(cards[2]).toEqual({ status: 'pending', valueMs: null, isDelta: false, progress: 0 });
+  });
+
+  it('falls back to times without a reference', () => {
+    const cards = deriveSectorCards({
+      statuses: ['neutral', 'active'],
+      currentLapSectorSplitsMs: { 0: 24_000 },
+      referenceSectorSplitsMs: [null, null],
+      activeSectorElapsedMs: 3_000,
+      liveDeltaMs: null,
+    });
+    expect(cards[0]).toEqual({ status: 'neutral', valueMs: 24_000, isDelta: false, progress: 1 });
+    expect(cards[1]).toEqual({ status: 'active', valueMs: 3_000, isDelta: false, progress: 0 });
+  });
+
+  it('shows the running time when an earlier sector has no reference split', () => {
+    const cards = deriveSectorCards({
+      statuses: ['neutral', 'active'],
+      currentLapSectorSplitsMs: { 0: 24_000 },
+      referenceSectorSplitsMs: [null, 20_000],
+      activeSectorElapsedMs: 5_000,
+      liveDeltaMs: 300,
+    });
+    expect(cards[1]).toEqual({ status: 'active', valueMs: 5_000, isDelta: false, progress: 0.25 });
+  });
+});
+
+describe('createLiveReference regressions', () => {
+  it('times the final sector of a later reference lap on the session timeline', () => {
+    const ref = createLiveReference({ sectorLineCount: 2 });
+    const laps: Lap[] = [];
+    const lap1 = driveLap(ref, laps, { lapNumber: 1, speedMps: 20, startMs: 0, opening: true });
+    const lap2 = driveLap(ref, laps, { lapNumber: 2, speedMps: 25, startMs: lap1.endMs });
+    const state = lap2.states[lap2.states.length - 1];
+
+    expect(state.referenceLapNumber).toBe(2);
+    expect(state.referenceSectorSplitsMs).toEqual([20_000, 20_000, 24_000]);
+    const total = (state.referenceSectorSplitsMs as number[]).reduce((sum, ms) => sum + ms, 0);
+    expect(total).toBe(state.referenceLapTimeMs);
+  });
+
+  it('stays on its own leg when a return straight is nearer', () => {
+    // Paperclip: out along y = 0, a 10 m-radius hairpin, back along y = 20.
+    const STRAIGHT_M = 600;
+    const RADIUS_M = 10;
+    const ARC_M = Math.PI * RADIUS_M;
+    const LOOP_M = 2 * STRAIGHT_M + 2 * ARC_M;
+    const at = (sM: number) => {
+      const s = ((sM % LOOP_M) + LOOP_M) % LOOP_M;
+      if (s < STRAIGHT_M) return { x: s, y: 0 };
+      if (s < STRAIGHT_M + ARC_M) {
+        const a = (s - STRAIGHT_M) / RADIUS_M;
+        return { x: STRAIGHT_M + RADIUS_M * Math.sin(a), y: RADIUS_M - RADIUS_M * Math.cos(a) };
+      }
+      if (s < 2 * STRAIGHT_M + ARC_M) return { x: STRAIGHT_M - (s - STRAIGHT_M - ARC_M), y: 2 * RADIUS_M };
+      const a = (s - 2 * STRAIGHT_M - ARC_M) / RADIUS_M;
+      return { x: -RADIUS_M * Math.sin(a), y: RADIUS_M + RADIUS_M * Math.cos(a) };
+    };
+    const sample = (xy: { x: number; y: number }, tMs: number): TelemetrySample => ({
+      ...sampleAt(0, tMs),
+      lat: LAT0 + xy.y / M_LAT,
+      lng: LNG0 + xy.x / M_LNG,
+    });
+    const crossing = (tMs: number): TelemetryDetectionEvent => ({
+      ...eventAt('start_finish_crossed', 0, 0, tMs),
+      sampleLat: LAT0,
+      sampleLng: LNG0,
+    });
+
+    const ref = createLiveReference({ sectorLineCount: 0 });
+    const lapMs = Math.round((LOOP_M / 20) * 1000);
+    ref.onAccepted(input(sample(at(0), 0), [crossing(0)]));
+    for (let t = 1000; t < lapMs; t += 1000) {
+      ref.onAccepted(input(sample(at((t / 1000) * 20), t)));
+    }
+    const laps: Lap[] = [{ lapNumber: 1, lapTimeMs: lapMs, isBest: true, isExcluded: false }];
+    ref.onAccepted(input(sample(at(0), lapMs), [crossing(lapMs)], laps));
+
+    // Lap 2 at the same pace; at x = 500 the fix drifts 12 m toward the
+    // return straight, which is then 8 m away against 12 m for its own leg.
+    let state = ref.getState();
+    for (let s = 20; s <= 480; s += 20) {
+      state = ref.onAccepted(input(sample(at(s), lapMs + s * 50), [], laps));
+    }
+    state = ref.onAccepted(input(sample({ x: 500, y: 12 }, lapMs + 25_000), [], laps));
+    expect(state.stale).toBe(false);
+    expect(Math.abs(state.deltaMs!)).toBeLessThan(500);
+  });
+});
+
+describe('createLiveReference gap recovery', () => {
+  // Out along y = 0, back along y = 10, 820 m at 20 m/s. After an 11 s GPS
+  // gap in which the car slowed and covered only 40 m, the return straight is
+  // as close as the car's own leg and implies a smaller jump.
+  const at = (s: number) =>
+    s <= 400 ? { x: s, y: 0 } : s <= 410 ? { x: 400, y: s - 400 } : s <= 810 ? { x: 810 - s, y: 10 } : { x: 0, y: 820 - s };
+  const sample = (xy: { x: number; y: number }, tMs: number, headingDeg: number | null): TelemetrySample => ({
+    ...sampleAt(0, tMs),
+    lat: LAT0 + xy.y / M_LAT,
+    lng: LNG0 + xy.x / M_LNG,
+    headingDeg,
+  });
+  const crossing = (tMs: number): TelemetryDetectionEvent => ({
+    ...eventAt('start_finish_crossed', 0, 0, tMs),
+    sampleLat: LAT0,
+    sampleLng: LNG0,
+  });
+
+  it.each([
+    ['with a GPS course', 90],
+    ['without a GPS course', null],
+  ])('keeps a slowdown during a GPS gap on the car\'s own leg %s', (_label, headingDeg) => {
+    const ref = createLiveReference({ sectorLineCount: 0 });
+    ref.onAccepted(input(sample(at(0), 0, headingDeg), [crossing(0)]));
+    for (let s = 20; s < 820; s += 20) {
+      ref.onAccepted(input(sample(at(s), s * 50, headingDeg)));
+    }
+    const laps: Lap[] = [{ lapNumber: 1, lapTimeMs: 41_000, isBest: true, isExcluded: false }];
+    ref.onAccepted(input(sample(at(0), 41_000, headingDeg), [crossing(41_000)], laps));
+    for (let s = 20; s <= 260; s += 20) {
+      ref.onAccepted(input(sample(at(s), 41_000 + s * 50, headingDeg), [], laps));
+    }
+
+    const afterGap = ref.onAccepted(input(sample(at(300), 65_000, headingDeg), [], laps));
+    expect(afterGap.stale).toBe(false);
+    expect(afterGap.deltaMs).toBeCloseTo(9000, 0);
+    const next = ref.onAccepted(input(sample(at(320), 66_000, headingDeg), [], laps));
+    expect(next.deltaMs).toBeCloseTo(9000, 0);
+  });
+});
+
+describe('deriveSectorCards regressions', () => {
+  it('shows the running time when an earlier sector was missed', () => {
+    // S1 line missed, S2 crossed: S3 must not claim the whole-lap delta.
+    const cards = deriveSectorCards({
+      statuses: deriveSectorStatuses({
+        sectorCount: 3,
+        isLapInProgress: true,
+        lastCrossedSectorSeq: 2,
+        currentLapSectorSplitsMs: { 1: 20_100 },
+        referenceSectorSplitsMs: [25_000, 20_000, 30_000],
+      }),
+      currentLapSectorSplitsMs: { 1: 20_100 },
+      referenceSectorSplitsMs: [25_000, 20_000, 30_000],
+      activeSectorElapsedMs: 12_000,
+      liveDeltaMs: 900,
+    });
+    expect(cards.map((card) => card.status)).toEqual(['pending', 'slower', 'active']);
+    expect(cards[2]).toEqual({ status: 'active', valueMs: 12_000, isDelta: false, progress: 0.4 });
+  });
+
+  it('shows the running time when the live delta is not current', () => {
+    const cards = deriveSectorCards({
+      statuses: ['faster', 'active'],
+      currentLapSectorSplitsMs: { 0: 24_000 },
+      referenceSectorSplitsMs: [25_000, 20_000],
+      activeSectorElapsedMs: 4_000,
+      liveDeltaMs: null,
+    });
+    expect(cards[1]).toEqual({ status: 'active', valueMs: 4_000, isDelta: false, progress: 0.2 });
+  });
+});
