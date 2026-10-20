@@ -1,4 +1,4 @@
-import { createLiveReference, deriveSectorStatuses } from '@/telemetry/live-reference';
+import { createLiveReference, deriveSectorCards, deriveSectorStatuses } from '@/telemetry/live-reference';
 import type { LiveDeltaState, LiveReferenceInput } from '@/telemetry/live-reference';
 import type { TelemetryDetectionEvent, TelemetrySample } from '@/telemetry/types';
 
@@ -241,5 +241,43 @@ describe('deriveSectorStatuses', () => {
       currentLapSectorSplitsMs: {},
       referenceSectorSplitsMs: [],
     })).toEqual(['pending', 'pending']);
+  });
+});
+
+describe('deriveSectorCards', () => {
+  it('shows completed sectors as deltas and the active one as the delta gained inside it', () => {
+    const cards = deriveSectorCards({
+      statuses: ['faster', 'active', 'pending'],
+      currentLapSectorSplitsMs: { 0: 24_688 },
+      referenceSectorSplitsMs: [25_000, 20_000, 30_000],
+      activeSectorElapsedMs: 10_000,
+      liveDeltaMs: -200,
+    });
+    expect(cards[0]).toEqual({ status: 'faster', valueMs: -312, isDelta: true, progress: 1 });
+    expect(cards[1]).toEqual({ status: 'active', valueMs: 112, isDelta: true, progress: 0.5 });
+    expect(cards[2]).toEqual({ status: 'pending', valueMs: null, isDelta: false, progress: 0 });
+  });
+
+  it('falls back to times without a reference', () => {
+    const cards = deriveSectorCards({
+      statuses: ['neutral', 'active'],
+      currentLapSectorSplitsMs: { 0: 24_000 },
+      referenceSectorSplitsMs: [null, null],
+      activeSectorElapsedMs: 3_000,
+      liveDeltaMs: null,
+    });
+    expect(cards[0]).toEqual({ status: 'neutral', valueMs: 24_000, isDelta: false, progress: 1 });
+    expect(cards[1]).toEqual({ status: 'active', valueMs: 3_000, isDelta: false, progress: 0 });
+  });
+
+  it('shows the running time when an earlier sector has no reference split', () => {
+    const cards = deriveSectorCards({
+      statuses: ['neutral', 'active'],
+      currentLapSectorSplitsMs: { 0: 24_000 },
+      referenceSectorSplitsMs: [null, 20_000],
+      activeSectorElapsedMs: 5_000,
+      liveDeltaMs: 300,
+    });
+    expect(cards[1]).toEqual({ status: 'active', valueMs: 5_000, isDelta: false, progress: 0.25 });
   });
 });

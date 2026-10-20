@@ -273,3 +273,54 @@ export function deriveSectorStatuses(args: {
     return index === activeIndex ? 'active' : 'pending';
   });
 }
+
+export type SectorCard = {
+  status: SectorStatus;
+  // Milliseconds to show; `isDelta` says whether it is a gain/loss against
+  // the reference or a plain sector time. Null renders as dashes.
+  valueMs: number | null;
+  isDelta: boolean;
+  // 0..1 share of the reference sector covered; 1 once completed.
+  progress: number;
+};
+
+// Portrait sector cards. A completed sector shows its gain or loss against
+// the reference sector, or its time when there is no reference. The active
+// sector shows the delta gained or lost inside it so far (live delta minus
+// what the completed sectors already account for) when every earlier sector
+// has a reference, otherwise its running time.
+export function deriveSectorCards(args: {
+  statuses: SectorStatus[];
+  currentLapSectorSplitsMs: Record<number, number>;
+  referenceSectorSplitsMs: (number | null)[];
+  activeSectorElapsedMs: number | null;
+  liveDeltaMs: number | null;
+}): SectorCard[] {
+  let completedDeltaMs: number | null = 0;
+  return args.statuses.map((status, index) => {
+    const split = args.currentLapSectorSplitsMs[index];
+    const ref = args.referenceSectorSplitsMs[index] ?? null;
+
+    if (split !== undefined) {
+      if (ref === null) {
+        completedDeltaMs = null;
+        return { status, valueMs: split, isDelta: false, progress: 1 };
+      }
+      if (completedDeltaMs !== null) {
+        completedDeltaMs += split - ref;
+      }
+      return { status, valueMs: split - ref, isDelta: true, progress: 1 };
+    }
+
+    if (status === 'active') {
+      const elapsed = args.activeSectorElapsedMs;
+      const progress = elapsed !== null && ref !== null && ref > 0 ? Math.min(1, elapsed / ref) : 0;
+      if (args.liveDeltaMs !== null && completedDeltaMs !== null && ref !== null) {
+        return { status, valueMs: args.liveDeltaMs - completedDeltaMs, isDelta: true, progress };
+      }
+      return { status, valueMs: elapsed, isDelta: false, progress };
+    }
+
+    return { status, valueMs: null, isDelta: false, progress: 0 };
+  });
+}

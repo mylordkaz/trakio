@@ -6,21 +6,21 @@ const COLORS: Record<SectorStatus, string> = {
   slower: '#f87171',
   active: '#fbbf24',
   neutral: '#d4d4d8',
-  pending: '#52525b',
+  pending: '#3f3f46',
 };
 
-export default function SectorIndicators({ statuses }: { statuses: SectorStatus[] }) {
+export default function SectorIndicators({ statuses, barHeight }: { statuses: SectorStatus[]; barHeight: number }) {
   if (statuses.length === 0) {
     return null;
   }
   return (
-    <View className="gap-4">
+    <View style={{ gap: 10 }}>
       {statuses.map((status, index) => (
-        <View key={index} className="flex-row items-center gap-3">
-          <Text className="w-7 text-base text-zinc-500" style={{ fontVariant: ['tabular-nums'] }}>
+        <View key={index} className="flex-row items-center" style={{ gap: 10 }}>
+          <Text className="text-sm text-zinc-500" style={{ width: 22, fontVariant: ['tabular-nums'] }}>
             S{index + 1}
           </Text>
-          <View style={{ width: 10, height: 44, borderRadius: 5, backgroundColor: COLORS[status] }} />
+          <View style={{ width: 8, height: barHeight, borderRadius: 4, backgroundColor: COLORS[status] }} />
         </View>
       ))}
     </View>

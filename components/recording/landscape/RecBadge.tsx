@@ -14,18 +14,32 @@ type Props = {
   onEnd: () => void;
 };
 
-// Tapping the badge reveals Pit In and End for a few seconds so the
-// dashboard stays clean while driving and a stray touch cannot stop a session.
-export default function RecBadge({ label, pitInLabel, pitInDoneLabel, endLabel, pitInMarked, onPitIn, onEnd }: Props) {
-  const [controlsVisible, setControlsVisible] = useState(false);
-  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+// Pulsing REC pill shared by both orientations.
+export function RecPill({ label }: { label: string }) {
   const pulse = useSharedValue(1);
   const pulseStyle = useAnimatedStyle(() => ({ opacity: pulse.value }));
 
   useEffect(() => {
-    pulse.value = withRepeat(withTiming(0.45, { duration: 1000, easing: Easing.inOut(Easing.ease) }), -1, true);
+    pulse.value = withRepeat(withTiming(0.5, { duration: 1000, easing: Easing.inOut(Easing.ease) }), -1, true);
     return () => cancelAnimation(pulse);
   }, [pulse]);
+
+  return (
+    <Animated.View
+      style={pulseStyle}
+      className="flex-row items-center rounded-full bg-red-500/10 px-3.5 py-1.5 border border-red-500/40"
+    >
+      <View className="h-2.5 w-2.5 rounded-full bg-red-500 mr-2" />
+      <Text className="text-sm font-semibold text-red-400">{label}</Text>
+    </Animated.View>
+  );
+}
+
+// Tapping the badge reveals Pit In and End above it for a few seconds, so the
+// dashboard stays clean while driving and a stray touch cannot stop a session.
+export default function RecBadge({ label, pitInLabel, pitInDoneLabel, endLabel, pitInMarked, onPitIn, onEnd }: Props) {
+  const [controlsVisible, setControlsVisible] = useState(false);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!controlsVisible) {
@@ -40,34 +54,28 @@ export default function RecBadge({ label, pitInLabel, pitInDoneLabel, endLabel, 
   }, [controlsVisible]);
 
   return (
-    <View className="flex-row items-center gap-3">
+    <View>
       {controlsVisible ? (
-        <>
+        <View className="absolute right-0 items-end" style={{ bottom: 44, gap: 8, width: 160 }}>
           <Pressable
             onPress={() => {
               setControlsVisible(false);
               onPitIn();
             }}
             disabled={pitInMarked}
-            className={`rounded-full px-5 py-2.5 border ${pitInMarked ? 'bg-amber-500/10 border-amber-400/20' : 'bg-amber-500/15 border-amber-400/30'}`}
+            className={`rounded-full px-5 py-2 border ${pitInMarked ? 'bg-zinc-900 border-amber-400/20' : 'bg-zinc-900 border-amber-400/40'}`}
           >
-            <Text className={`text-base font-semibold ${pitInMarked ? 'text-amber-400/50' : 'text-amber-400'}`}>
+            <Text className={`text-sm font-semibold ${pitInMarked ? 'text-amber-400/50' : 'text-amber-400'}`}>
               {pitInMarked ? pitInDoneLabel : pitInLabel}
             </Text>
           </Pressable>
-          <Pressable onPress={onEnd} className="rounded-full bg-red-500 px-5 py-2.5">
-            <Text className="text-base font-semibold text-white">{endLabel}</Text>
+          <Pressable onPress={onEnd} className="rounded-full bg-red-500 px-5 py-2">
+            <Text className="text-sm font-semibold text-white">{endLabel}</Text>
           </Pressable>
-        </>
+        </View>
       ) : null}
       <Pressable onPress={() => setControlsVisible((visible) => !visible)} hitSlop={12}>
-        <Animated.View
-          style={pulseStyle}
-          className="flex-row items-center gap-2 rounded-full bg-red-500/15 px-4 py-2 border border-red-400/20"
-        >
-          <View className="h-3 w-3 rounded-full bg-red-400" />
-          <Text className="text-base font-semibold text-red-400">{label}</Text>
-        </Animated.View>
+        <RecPill label={label} />
       </Pressable>
     </View>
   );
