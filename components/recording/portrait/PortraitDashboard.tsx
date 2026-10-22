@@ -245,7 +245,10 @@ export default function PortraitDashboard(props: Props) {
                   <GReadout valueG={props.gReading.longitudinalG} label="LONG" tone={props.tone} />
                 </View>
               ) : (
-                <Text className="text-xs text-zinc-500 dark:text-zinc-400">{t('recording.gAligning')}</Text>
+                <View style={{ gap: 14 }}>
+                  <GReadout valueG={props.gReading.magnitudeG} label="TOTAL" tone={props.tone} />
+                  <Text className="text-xs text-zinc-500 dark:text-zinc-400">{t('recording.gAligning')}</Text>
+                </View>
               )}
             </View>
             <View className="bg-zinc-200 dark:bg-white/10 mx-4" style={{ width: 1, alignSelf: 'stretch' }} />

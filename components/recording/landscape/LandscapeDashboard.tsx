@@ -151,7 +151,11 @@ export default function LandscapeDashboard(props: Props) {
                 longitudinalSv={props.longitudinalSv}
               />
               <View style={{ position: 'absolute', left: meterSize + 8, top: -4 }}>
-                <GReadout valueG={props.gReading.lateralG} label="LAT" />
+                {props.gReading.aligned ? (
+                  <GReadout valueG={props.gReading.lateralG} label="LAT" />
+                ) : (
+                  <GReadout valueG={props.gReading.magnitudeG} label="TOTAL" />
+                )}
               </View>
             </View>
             {props.gReading.aligned ? (

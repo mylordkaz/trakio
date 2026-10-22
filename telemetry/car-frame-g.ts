@@ -28,8 +28,22 @@ import type { TelemetrySample } from '@/telemetry/types';
 // weighted by magnitude, converges after a brake and a corner. Heading rate
 // fixes the lateral sign; when the sensor's handedness is not known, both
 // hypotheses are scored and the consistent one wins once corners are seen.
+//
+// A phone in a fixed cradle sits at the same tilt every session. The mount
+// learned in one session is reused in the next when the tilt measured over
+// the first second matches the saved tilt, so the meter aligns before the
+// car moves. GPS evidence keeps running: it takes over once it aligns on its
+// own, and evidence pointing more than 45° away from the saved mount
+// discards it.
 
 export type Vec3 = { x: number; y: number; z: number };
+
+export type PhoneMount = {
+  // Unit gravity direction in device axes, averaged over the first second.
+  down: Vec3;
+  forwardHint: Vec3;
+  mountYawRad: number;
+};
 
 export type CarFrameG = {
   // Positive = accelerating.
@@ -58,6 +72,15 @@ const MIN_HANDEDNESS_MARGIN = 0.1;
 // the sensor and would otherwise outweigh every genuine observation.
 const MAX_MAGNITUDE_RATIO = 2;
 const EVIDENCE_CAP = 50;
+const MOUNT_TILT_WINDOW_MS = 1000;
+const MAX_MOUNT_TILT_DIFF_RAD = (3 * Math.PI) / 180;
+const MAX_MOUNT_CONTRADICTION_RAD = Math.PI / 4;
+// The level basis needs an axis well away from vertical.
+const MAX_SAVED_HINT_DOT = 0.9;
+// GPS fixes reach this module up to a few seconds after they were measured;
+// level-frame readings are kept this long so each fix is compared with the
+// readings from its own measurement window.
+const LEVEL_HISTORY_MS = 5000;
 const FORWARD_HINTS: Vec3[] = [
   { x: 0, y: 0, z: -1 },
   { x: 0, y: 1, z: 0 },
@@ -116,6 +139,8 @@ export function createCarFrameG(opts?: {
   // Phone axes are right-handed by platform contract; external boxes are not
   // documented well enough to assume it.
   handedness?: 'known' | 'unknown';
+  // Phone only: the mount learned in an earlier session.
+  savedMount?: PhoneMount | null;
 }) {
   const tauMs = opts?.smoothingTauMs ?? 150;
   const minGpsAccel = opts?.minGpsAccelMps2 ?? 1.5;
@@ -124,9 +149,7 @@ export function createCarFrameG(opts?: {
   const handednessKnown = (opts?.handedness ?? 'known') === 'known';
 
   let forwardHint: Vec3 | null = null;
-  let meanA1 = 0;
-  let meanA2 = 0;
-  let meanCount = 0;
+  const levelHistory: { a1: number; a2: number; atMs: number }[] = [];
   const normal: Evidence = { x: 0, y: 0, weight: 0 };
   const mirrored: Evidence = { x: 0, y: 0, weight: 0 };
   let observations = 0;
@@ -134,6 +157,12 @@ export function createCarFrameG(opts?: {
   let isMirrored = false;
   let handednessResolved = handednessKnown;
   let aligned = false;
+  const savedMount = handednessKnown ? opts?.savedMount ?? null : null;
+  let isSavedMountActive = false;
+  let isSavedMountRejected = false;
+  let tiltStartMs: number | null = null;
+  let tiltSum: Vec3 = { x: 0, y: 0, z: 0 };
+  let sessionDown: Vec3 | null = null;
   let previousGps: { speedMps: number; headingRad: number; atMs: number } | null = null;
   let parkedWindowStartMs: number | null = null;
   let pendingParked: { mean: Vec3; durationMs: number } | null = null;
@@ -148,9 +177,15 @@ export function createCarFrameG(opts?: {
 
   function levelBasis(down: Vec3): { e1: Vec3; e2: Vec3 } | null {
     if (!forwardHint) {
-      forwardHint = FORWARD_HINTS.reduce((best, hint) =>
-        Math.abs(dot(hint, down)) < Math.abs(dot(best, down)) ? hint : best
-      );
+      // A saved mount's yaw is only meaningful in the basis it was learned
+      // in, so that axis is kept whenever it is usable; a fresh choice can
+      // flip between two equally horizontal axes on a tiny tilt change.
+      forwardHint =
+        savedMount && Math.abs(dot(savedMount.forwardHint, down)) < MAX_SAVED_HINT_DOT
+          ? savedMount.forwardHint
+          : FORWARD_HINTS.reduce((best, hint) =>
+              Math.abs(dot(hint, down)) < Math.abs(dot(best, down)) ? hint : best
+            );
     }
     const projected = sub(forwardHint, scale(down, dot(forwardHint, down)));
     const length = norm(projected);
@@ -159,6 +194,29 @@ export function createCarFrameG(opts?: {
     }
     const e1 = scale(projected, 1 / length);
     return { e1, e2: cross(down, e1) };
+  }
+
+  function measureTilt(down: Vec3, atMs: number) {
+    if (sessionDown) {
+      return;
+    }
+    tiltStartMs ??= atMs;
+    tiltSum = { x: tiltSum.x + down.x, y: tiltSum.y + down.y, z: tiltSum.z + down.z };
+    if (atMs - tiltStartMs < MOUNT_TILT_WINDOW_MS) {
+      return;
+    }
+    sessionDown = scale(tiltSum, 1 / norm(tiltSum));
+    if (
+      savedMount &&
+      !aligned &&
+      forwardHint &&
+      dot(forwardHint, savedMount.forwardHint) === 1 &&
+      Math.acos(Math.min(1, dot(sessionDown, savedMount.down))) <= MAX_MOUNT_TILT_DIFF_RAD
+    ) {
+      mountYawRad = savedMount.mountYawRad;
+      isSavedMountActive = true;
+      aligned = true;
+    }
   }
 
   // acceleration in m/s² without gravity; down is a unit vector.
@@ -171,9 +229,10 @@ export function createCarFrameG(opts?: {
     const horizontal = sub(acceleration, scale(down, dot(acceleration, down)));
     const a1 = dot(horizontal, basis.e1);
     const a2 = dot(horizontal, basis.e2);
-    meanA1 += a1;
-    meanA2 += a2;
-    meanCount++;
+    levelHistory.push({ a1, a2, atMs });
+    while (levelHistory.length > 0 && levelHistory[0].atMs < atMs - LEVEL_HISTORY_MS) {
+      levelHistory.shift();
+    }
 
     const a2Car = isMirrored ? -a2 : a2;
     const cos = Math.cos(mountYawRad);
@@ -206,7 +265,10 @@ export function createCarFrameG(opts?: {
     if (gravityNorm < MIN_GRAVITY_MPS2) {
       return state;
     }
-    return process(acceleration, scale(gravity, 1 / gravityNorm), atMs);
+    const down = scale(gravity, 1 / gravityNorm);
+    const reading = process(acceleration, down, atMs);
+    measureTilt(down, atMs);
+    return reading;
   }
 
   // gForce in G, gravity included, in the device's own axes.
@@ -230,10 +292,21 @@ export function createCarFrameG(opts?: {
     return process(sub(specificForce, deviceGravity), scale(deviceGravity, -1 / gravityNorm), atMs);
   }
 
-  function resetMean() {
-    meanA1 = 0;
-    meanA2 = 0;
-    meanCount = 0;
+  // Mean level-frame acceleration over [fromMs, toMs): a device reading
+  // stamped with a fix is ingested after that fix is observed, so it belongs
+  // to the window the fix opens.
+  function levelMean(fromMs: number, toMs: number) {
+    let a1 = 0;
+    let a2 = 0;
+    let count = 0;
+    for (const reading of levelHistory) {
+      if (reading.atMs >= fromMs && reading.atMs < toMs) {
+        a1 += reading.a1;
+        a2 += reading.a2;
+        count++;
+      }
+    }
+    return count > 0 ? { a1: a1 / count, a2: a2 / count } : { a1: 0, a2: 0 };
   }
 
   function takeIntervalMean(): Vec3 | null {
@@ -294,7 +367,6 @@ export function createCarFrameG(opts?: {
     if (sample.speedMps === null || sample.headingDeg === null || sample.speedMps < MIN_GPS_SPEED_MPS) {
       observeParked(sample);
       previousGps = null;
-      resetMean();
       return;
     }
     pendingParked = null;
@@ -307,7 +379,6 @@ export function createCarFrameG(opts?: {
     if (!previousGps) {
       takeIntervalMean();
       previousGps = current;
-      resetMean();
       return;
     }
     const dtS = (current.atMs - previousGps.atMs) / 1000;
@@ -317,7 +388,6 @@ export function createCarFrameG(opts?: {
     if (dtS > MAX_OBSERVATION_DT_S) {
       takeIntervalMean();
       previousGps = current;
-      resetMean();
       return;
     }
 
@@ -329,8 +399,7 @@ export function createCarFrameG(opts?: {
     if (gpsMagnitude < STEADY_ACCEL_MPS2) {
       commitGravity(intervalMean, dtS * 1000);
     }
-    const imuA1 = meanCount > 0 ? meanA1 / meanCount : 0;
-    const imuA2 = meanCount > 0 ? meanA2 / meanCount : 0;
+    const { a1: imuA1, a2: imuA2 } = levelMean(previousGps.atMs, current.atMs);
     const imuMagnitude = Math.hypot(imuA1, imuA2);
 
     const magnitudesAgree =
@@ -353,12 +422,27 @@ export function createCarFrameG(opts?: {
         }
       }
       const chosen = isMirrored ? mirrored : normal;
-      mountYawRad = Math.atan2(chosen.y, chosen.x);
-      aligned = handednessResolved && observations >= minObservations && consistency(chosen) >= MIN_CONSISTENCY;
+      const learnedYawRad = Math.atan2(chosen.y, chosen.x);
+      const learnedAligned =
+        handednessResolved && observations >= minObservations && consistency(chosen) >= MIN_CONSISTENCY;
+      if (isSavedMountActive && !learnedAligned) {
+        if (Math.abs(wrapAngle(learnedYawRad - mountYawRad)) > MAX_MOUNT_CONTRADICTION_RAD) {
+          isSavedMountActive = false;
+          isSavedMountRejected = true;
+          mountYawRad = learnedYawRad;
+          aligned = false;
+        }
+      } else {
+        isSavedMountActive = false;
+        mountYawRad = learnedYawRad;
+        aligned = learnedAligned;
+      }
+      if (!aligned && state.aligned) {
+        state = { ...state, longitudinalG: 0, lateralG: 0, aligned: false };
+      }
     }
 
     previousGps = current;
-    resetMean();
   }
 
   return {
@@ -366,5 +450,13 @@ export function createCarFrameG(opts?: {
     ingestDevice,
     observeGps,
     getState: () => state,
+    // The mount to save for the next session, once the meter is aligned.
+    getMount: (): PhoneMount | null =>
+      handednessKnown && aligned && sessionDown && forwardHint
+        ? { down: sessionDown, forwardHint, mountYawRad }
+        : null,
+    // True once driving contradicted the saved mount, which must then not be
+    // offered to the next session.
+    isSavedMountRejected: () => isSavedMountRejected,
   };
 }

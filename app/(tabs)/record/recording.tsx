@@ -15,6 +15,7 @@ import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { requestForegroundLocationPermission } from '@/telemetry/location';
 import { createConnectionLifecycle } from '@/telemetry/sources/connection-lifecycle';
 import { createImuCapture } from '@/telemetry/imu-capture';
+import { clearPhoneMount, loadPhoneMount, savePhoneMount } from '@/services/phone-mount';
 import { createLiveReference, deriveSectorCards, deriveSectorStatuses, type LiveDeltaState } from '@/telemetry/live-reference';
 import { createCarFrameG, type CarFrameG } from '@/telemetry/car-frame-g';
 import LandscapeDashboard from '@/components/recording/landscape/LandscapeDashboard';
@@ -304,6 +305,7 @@ export default function RecordingScreen() {
 
       runtimeRef.current = runtime;
 
+      const savedPhoneMount = await loadPhoneMount();
       const startedSnapshot = await runtime.start();
       if (!isMounted) {
         return;
@@ -316,7 +318,7 @@ export default function RecordingScreen() {
       });
       liveDeltaRef.current = EMPTY_LIVE_DELTA;
       setLiveDelta(EMPTY_LIVE_DELTA);
-      const carFrameG = createCarFrameG();
+      const carFrameG = createCarFrameG({ savedMount: savedPhoneMount });
       carFrameGRef.current = carFrameG;
       // RaceBox and Qstarz deliver their own accelerometer with every fix;
       // their axis conventions are not documented well enough to assume.
@@ -459,6 +461,14 @@ export default function RecordingScreen() {
       lifecycleRef.current = null;
       void imuCaptureRef.current?.stop().catch(() => undefined);
       imuCaptureRef.current = null;
+
+      const carFrameG = carFrameGRef.current;
+      const mount = carFrameG?.getMount();
+      if (mount) {
+        void savePhoneMount(mount);
+      } else if (carFrameG?.isSavedMountRejected()) {
+        void clearPhoneMount();
+      }
 
       const activeRuntime = runtimeRef.current;
       if (activeRuntime && !hasStoppedRef.current) {
