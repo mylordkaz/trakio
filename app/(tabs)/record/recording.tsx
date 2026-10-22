@@ -596,29 +596,32 @@ export default function RecordingScreen() {
     if (isEndingSession) return;
     setIsEndingSession(true);
 
-    try {
-      // Stop telemetry
-      const activeRuntime = runtimeRef.current;
-      void lifecycleRef.current?.stop();
-      lifecycleRef.current = null;
-      void imuCaptureRef.current?.stop().catch(() => undefined);
-      imuCaptureRef.current = null;
+    // Stop telemetry
+    const activeRuntime = runtimeRef.current;
+    void lifecycleRef.current?.stop();
+    lifecycleRef.current = null;
+    void imuCaptureRef.current?.stop().catch(() => undefined);
+    imuCaptureRef.current = null;
 
-      let sessionId = '';
+    let sessionId = '';
+    try {
       if (activeRuntime && !hasStoppedRef.current) {
         hasStoppedRef.current = true;
         const snapshot = await activeRuntime.stop();
         setRuntimeSnapshot(snapshot);
         sessionId = snapshot.sessionId ?? '';
       }
-
-      // Lock portrait — navigation fires reactively via useEffect when portrait is confirmed
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-      setPendingSessionId(sessionId);
     } catch {
-      // Avoid stranding on the dark curtain.
-      router.dismissAll();
+      // The session row exists from the start; the screen still leaves.
+      sessionId = runtimeSnapshot?.sessionId ?? '';
     }
+
+    // The session screen is portrait-only. A failed lock or a missed
+    // orientation event must never keep the user from their session, so
+    // navigation follows the lock attempt rather than the listener.
+    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
+    setIsLandscape(false);
+    setPendingSessionId(sessionId);
   }
 
   if (isEndingSession) {

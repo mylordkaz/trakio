@@ -570,15 +570,17 @@ export async function recordLeaderboardShare(
      SET leaderboard_lap_time_ms = ?,
          leaderboard_offered_lap_time_ms = ?,
          updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?;`,
+     WHERE id = ?
+       AND (leaderboard_lap_time_ms IS NULL OR leaderboard_lap_time_ms >= ?);`,
     lapTimeMs,
     lapTimeMs,
-    trackId
+    trackId,
+    lapTimeMs
   );
 }
 
-// Syncs the locally known board time from a fetched server entry. The offered
-// watermark is left untouched so recorded declines keep suppressing the card.
+// Only adopts a first or faster server time. Check atomically in SQLite so a
+// delayed response cannot overwrite a faster share confirmed in the meantime.
 export async function setSharedLeaderboardTime(
   db: SQLiteDatabase,
   trackId: string,
@@ -588,24 +590,11 @@ export async function setSharedLeaderboardTime(
     `UPDATE tracks
      SET leaderboard_lap_time_ms = ?,
          updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?;`,
+     WHERE id = ?
+       AND (leaderboard_lap_time_ms IS NULL OR leaderboard_lap_time_ms > ?);`,
     lapTimeMs,
-    trackId
-  );
-}
-
-export async function recordLeaderboardOffer(
-  db: SQLiteDatabase,
-  trackId: string,
-  lapTimeMs: number
-): Promise<void> {
-  await db.runAsync(
-    `UPDATE tracks
-     SET leaderboard_offered_lap_time_ms = ?,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?;`,
-    lapTimeMs,
-    trackId
+    trackId,
+    lapTimeMs
   );
 }
 

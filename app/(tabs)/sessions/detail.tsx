@@ -44,8 +44,8 @@ import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { useLeaderboardShare } from '@/hooks/useLeaderboardShare';
 import { useShareSession } from '@/hooks/useShareSession';
 import { maybeRequestAppReview } from '@/services/app-review';
-import { shouldOfferLeaderboardShare, shouldShowSessionShareButton } from '@/utils/leaderboard-share';
-import { getSessionOutcome } from '@/utils/session-complete';
+import { shouldShowSessionShareButton } from '@/utils/leaderboard-share';
+import { getSessionOutcome, shouldOfferShareOnCompletion } from '@/utils/session-complete';
 import { useEntitlements } from '@/contexts/EntitlementContext';
 import { RAW_DATA_EXPORT_ENABLED } from '@/constants/featureFlags';
 import { formatLapTime, formatGapSeconds, formatDateTime, formatDuration, formatSpeed } from '@/utils/format';
@@ -144,9 +144,13 @@ export default function SessionDetailScreen() {
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const [shareState, setShareState] = useState<TrackLeaderboardShareState | null>(null);
   const [isSharedNow, setIsSharedNow] = useState(false);
-  // Set only on arrival from a just-ended recording: the user's best on this
-  // track before the session, which decides what the completion dialog says.
-  const [completion, setCompletion] = useState<{ previousTrackBestLapMs: number | null } | null>(null);
+  // Set only on arrival from a just-ended recording, from local data only so
+  // the dialog never waits on the network: the user's best on this track
+  // before the session, and the time already on the leaderboard.
+  const [completion, setCompletion] = useState<{
+    previousTrackBestLapMs: number | null;
+    sharedLapTimeMs: number | null;
+  } | null>(null);
   // Read once: closing the dialog clears the param, which must not reload.
   const isArrivalFromRecordingRef = useRef(completed === '1');
   const [isLoading, setIsLoading] = useState(true);
@@ -224,12 +228,14 @@ export default function SessionDetailScreen() {
       setCarText(nextSessionDetail.session.car ?? '');
       if (isArrivalFromRecordingRef.current) {
         isArrivalFromRecordingRef.current = false;
+        const trackId = nextSessionDetail.track.id;
         setCompletion({
           previousTrackBestLapMs: await getTrackBestLapMsExcludingSession(
             db,
-            nextSessionDetail.track.id,
+            trackId,
             nextSessionDetail.session.id
           ),
+          sharedLapTimeMs: (await getTrackLeaderboardShareState(db, trackId)).sharedLapTimeMs,
         });
       }
       setLoadErrorKey(null);
@@ -386,8 +392,13 @@ export default function SessionDetailScreen() {
     }
   }
 
+  const completionOutcome = completion
+    ? getSessionOutcome(bestLapMs, completion.previousTrackBestLapMs)
+    : null;
   const offerShareOnCompletion =
-    shareState !== null && shouldOfferLeaderboardShare(shareState, bestLapMs);
+    completion !== null &&
+    completionOutcome !== null &&
+    shouldOfferShareOnCompletion(completionOutcome, bestLapMs, completion.sharedLapTimeMs);
 
   function handleCloseCompletion() {
     setCompletion(null);
@@ -1028,11 +1039,11 @@ export default function SessionDetailScreen() {
         ) : null}
       </ScrollView>
 
-      {completion && sessionDetail && displayTrackTitle ? (
+      {completion && completionOutcome && sessionDetail && displayTrackTitle ? (
         <SessionCompleteDialog
           trackId={sessionDetail.track.id}
           trackTitle={displayTrackTitle}
-          outcome={getSessionOutcome(bestLapMs, completion.previousTrackBestLapMs)}
+          outcome={completionOutcome}
           bestLapMs={bestLapMs}
           isBestLapEstimated={bestLap?.lapTimeMs === bestLapMs && bestLap?.isTimingEstimated === 1}
           improvementMs={
