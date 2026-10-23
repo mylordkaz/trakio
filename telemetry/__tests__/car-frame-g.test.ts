@@ -118,6 +118,42 @@ describe('createCarFrameG', () => {
     expect(state.lateralG).toBeLessThan(-0.15);
   });
 
+  it('pairs each fix with its own window when fixes arrive late', () => {
+    // Fixes reach the app about a second after they were measured; by then
+    // the sensor has already seen the next second of driving.
+    const LATENCY_MS = 1000;
+    const g = createCarFrameG();
+    const pending: Parameters<typeof g.observeGps>[0][] = [];
+    const late = {
+      ...g,
+      ingest: (accel: Vec3 | null, withGravity: Vec3 | null, atMs: number) => {
+        while (pending.length > 0 && pending[0].recordedAt + LATENCY_MS <= atMs) {
+          g.observeGps(pending.shift()!);
+        }
+        return g.ingest(accel, withGravity, atMs);
+      },
+      observeGps: (fix: Parameters<typeof g.observeGps>[0]) => {
+        pending.push(fix);
+      },
+    };
+    const mount: Mount = { yawDeg: -85, pitchDeg: 10, rollDeg: -20 };
+    const clock = { tMs: 0, speedMps: 30, headingRad: 1 };
+
+    driveSecond(late, mount, clock, 0, 0);
+    for (let i = 0; i < 3; i++) {
+      driveSecond(late, mount, clock, -4, 0);
+      driveSecond(late, mount, clock, 0, 0.15);
+      driveSecond(late, mount, clock, 3, 0);
+      driveSecond(late, mount, clock, 0, -0.15);
+    }
+    driveSecond(late, mount, clock, -4, 0);
+    driveSecond(late, mount, clock, -4, 0);
+    const state = g.getState();
+    expect(state.aligned).toBe(true);
+    expect(state.longitudinalG).toBeLessThan(-0.3);
+    expect(Math.abs(state.lateralG)).toBeLessThan(0.05);
+  });
+
   it('exposes only the magnitude until aligned', () => {
     const g = createCarFrameG();
     const clock = { tMs: 0, speedMps: 10, headingRad: 0 };
@@ -263,5 +299,99 @@ describe('createCarFrameG with an external device', () => {
     expect(g.getState().lateralG).toBeCloseTo(4 / G, 1);
     driveDevice(g, BOX, clock, 1.5, -7, 0, mirror);
     expect(g.getState().longitudinalG).toBeCloseTo(-7 / G, 1);
+  });
+});
+
+describe('createCarFrameG with a saved phone mount', () => {
+  function learnMount(mount: Mount) {
+    const g = createCarFrameG();
+    const clock = { tMs: 0, speedMps: 20, headingRad: 0.5 };
+    driveSecond(g, mount, clock, 0, 0);
+    driveSecond(g, mount, clock, -4, 0);
+    driveSecond(g, mount, clock, 0, 0.25);
+    driveSecond(g, mount, clock, 3, 0);
+    driveSecond(g, mount, clock, 0, -0.25);
+    expect(g.getState().aligned).toBe(true);
+    return g.getMount()!;
+  }
+
+  function parkSecond(g: ReturnType<typeof createCarFrameG>, mount: Mount, clock: { tMs: number }) {
+    driveSecond(g, mount, { ...clock, speedMps: 0, headingRad: 0 }, 0, 0);
+    clock.tMs += 1000;
+  }
+
+  it('offers no mount before it has aligned', () => {
+    const g = createCarFrameG();
+    parkSecond(g, TILTED, { tMs: 0 });
+    expect(g.getMount()).toBeNull();
+  });
+
+  it('aligns while parked when the phone sits at the saved tilt, and reads braking correctly', () => {
+    const savedMount = learnMount(TILTED);
+    const g = createCarFrameG({ savedMount });
+    const clock = { tMs: 0 };
+
+    parkSecond(g, TILTED, clock);
+    parkSecond(g, TILTED, clock);
+    expect(g.getState().aligned).toBe(true);
+
+    const drive = { tMs: clock.tMs, speedMps: 20, headingRad: 2 };
+    driveSecond(g, TILTED, drive, -4, 0);
+    expect(g.getState().longitudinalG).toBeCloseTo(-4 / G, 1);
+    expect(Math.abs(g.getState().lateralG)).toBeLessThan(0.05);
+  });
+
+  it('reuses the mount when a tiny tilt change crosses the level-axis choice', () => {
+    // At this pitch and roll, device x and z are equally horizontal, so a
+    // 0.1° change flips which axis a fresh session would level against.
+    const boundaryPitchDeg = (Math.atan(0.5) * 180) / Math.PI;
+    const savedMount = learnMount({ yawDeg: 20, pitchDeg: boundaryPitchDeg - 0.05, rollDeg: 60 });
+    const mount: Mount = { yawDeg: 20, pitchDeg: boundaryPitchDeg + 0.05, rollDeg: 60 };
+    const g = createCarFrameG({ savedMount });
+    const clock = { tMs: 0 };
+
+    parkSecond(g, mount, clock);
+    parkSecond(g, mount, clock);
+    expect(g.getState().aligned).toBe(true);
+
+    const drive = { tMs: clock.tMs, speedMps: 20, headingRad: 2 };
+    driveSecond(g, mount, drive, -4, 0);
+    expect(g.getState().longitudinalG).toBeCloseTo(-4 / G, 1);
+    expect(Math.abs(g.getState().lateralG)).toBeLessThan(0.05);
+  });
+
+  it('ignores the saved mount when the phone sits at another tilt', () => {
+    const savedMount = learnMount(TILTED);
+    const g = createCarFrameG({ savedMount });
+    const clock = { tMs: 0 };
+
+    parkSecond(g, { ...TILTED, pitchDeg: TILTED.pitchDeg + 8 }, clock);
+    parkSecond(g, { ...TILTED, pitchDeg: TILTED.pitchDeg + 8 }, clock);
+    expect(g.getState().aligned).toBe(false);
+  });
+
+  it('discards a saved mount that the driving contradicts', () => {
+    // Same tilt, but the phone now faces another way in the car.
+    const savedMount = learnMount(TILTED);
+    const g = createCarFrameG({ savedMount: { ...savedMount, mountYawRad: savedMount.mountYawRad + Math.PI / 2 } });
+    const clock = { tMs: 0 };
+    parkSecond(g, TILTED, clock);
+    parkSecond(g, TILTED, clock);
+    expect(g.getState().aligned).toBe(true);
+
+    const drive = { tMs: clock.tMs, speedMps: 20, headingRad: 0 };
+    driveSecond(g, TILTED, drive, 0, 0);
+    driveSecond(g, TILTED, drive, -4, 0);
+    expect(g.getState().aligned).toBe(false);
+    expect(g.isSavedMountRejected()).toBe(true);
+  });
+
+  it('never applies a saved mount to an external device', () => {
+    const savedMount = learnMount(TILTED);
+    const g = createCarFrameG({ handedness: 'unknown', savedMount });
+    parkSecond(g, TILTED, { tMs: 0 });
+    parkSecond(g, TILTED, { tMs: 1000 });
+    expect(g.getState().aligned).toBe(false);
+    expect(g.getMount()).toBeNull();
   });
 });

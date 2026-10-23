@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
 import { useT } from '@/hooks/useT';
 import { useLeaderboardShare } from '@/hooks/useLeaderboardShare';
-import { recordLeaderboardOffer } from '@/db';
+import { setSharedLeaderboardTime } from '@/db';
 import { getOrCreatePublisherId } from '@/services/publisher-id';
 import { listLeaderboardEntries } from '@/services/leaderboard';
 import { formatLapTime } from '@/utils/format';
@@ -45,16 +45,7 @@ export default function SessionCompleteDialog({
   const { isSharing, share } = useLeaderboardShare(trackId);
   const [isShared, setIsShared] = useState(false);
   const [boardIsEmpty, setBoardIsEmpty] = useState(false);
-  const hasRecordedOfferRef = useRef(false);
   const isCelebration = outcome === 'firstAtTrack' || outcome === 'newBest';
-
-  useEffect(() => {
-    // Once shown, this best has been offered: the offer stays away until a
-    // strictly better lap exists, whatever the user does with it.
-    if (!offerShare || bestLapMs === null || hasRecordedOfferRef.current) return;
-    hasRecordedOfferRef.current = true;
-    void recordLeaderboardOffer(db, trackId, bestLapMs).catch(() => undefined);
-  }, [db, trackId, bestLapMs, offerShare]);
 
   useEffect(() => {
     if (!offerShare) return;
@@ -64,8 +55,18 @@ export default function SessionCompleteDialog({
       try {
         const publisherId = await getOrCreatePublisherId();
         const entries = await listLeaderboardEntries(trackId, publisherId);
-        if (isMounted) {
-          setBoardIsEmpty(entries.length === 0);
+        if (!isMounted) return;
+        setBoardIsEmpty(entries.length === 0);
+
+        // Pre-tracking shares (1.3.1) exist only on the server: adopt the
+        // user's entry locally, and when the board already has this time or
+        // a faster one, show it as live instead of asking to share.
+        const ownEntry = entries.find((entry) => entry.isCurrentUser);
+        if (ownEntry) {
+          void setSharedLeaderboardTime(db, trackId, ownEntry.lapTimeMs).catch(() => undefined);
+          if (bestLapMs !== null && ownEntry.lapTimeMs <= bestLapMs) {
+            setIsShared(true);
+          }
         }
       } catch {
         // Offline or board unavailable — keep the generic message.
@@ -77,7 +78,7 @@ export default function SessionCompleteDialog({
     return () => {
       isMounted = false;
     };
-  }, [offerShare, trackId]);
+  }, [bestLapMs, db, offerShare, trackId]);
 
   async function handleShare() {
     if (bestLapMs === null) return;

@@ -15,6 +15,7 @@ import { useHeaderGradient } from '@/hooks/useHeaderGradient';
 import { requestForegroundLocationPermission } from '@/telemetry/location';
 import { createConnectionLifecycle } from '@/telemetry/sources/connection-lifecycle';
 import { createImuCapture } from '@/telemetry/imu-capture';
+import { clearPhoneMount, loadPhoneMount, savePhoneMount } from '@/services/phone-mount';
 import { createLiveReference, deriveSectorCards, deriveSectorStatuses, type LiveDeltaState } from '@/telemetry/live-reference';
 import { createCarFrameG, type CarFrameG } from '@/telemetry/car-frame-g';
 import LandscapeDashboard from '@/components/recording/landscape/LandscapeDashboard';
@@ -304,6 +305,7 @@ export default function RecordingScreen() {
 
       runtimeRef.current = runtime;
 
+      const savedPhoneMount = await loadPhoneMount();
       const startedSnapshot = await runtime.start();
       if (!isMounted) {
         return;
@@ -316,7 +318,7 @@ export default function RecordingScreen() {
       });
       liveDeltaRef.current = EMPTY_LIVE_DELTA;
       setLiveDelta(EMPTY_LIVE_DELTA);
-      const carFrameG = createCarFrameG();
+      const carFrameG = createCarFrameG({ savedMount: savedPhoneMount });
       carFrameGRef.current = carFrameG;
       // RaceBox and Qstarz deliver their own accelerometer with every fix;
       // their axis conventions are not documented well enough to assume.
@@ -460,6 +462,14 @@ export default function RecordingScreen() {
       void imuCaptureRef.current?.stop().catch(() => undefined);
       imuCaptureRef.current = null;
 
+      const carFrameG = carFrameGRef.current;
+      const mount = carFrameG?.getMount();
+      if (mount) {
+        void savePhoneMount(mount);
+      } else if (carFrameG?.isSavedMountRejected()) {
+        void clearPhoneMount();
+      }
+
       const activeRuntime = runtimeRef.current;
       if (activeRuntime && !hasStoppedRef.current) {
         void activeRuntime.stop().catch(() => undefined);
@@ -586,29 +596,32 @@ export default function RecordingScreen() {
     if (isEndingSession) return;
     setIsEndingSession(true);
 
-    try {
-      // Stop telemetry
-      const activeRuntime = runtimeRef.current;
-      void lifecycleRef.current?.stop();
-      lifecycleRef.current = null;
-      void imuCaptureRef.current?.stop().catch(() => undefined);
-      imuCaptureRef.current = null;
+    // Stop telemetry
+    const activeRuntime = runtimeRef.current;
+    void lifecycleRef.current?.stop();
+    lifecycleRef.current = null;
+    void imuCaptureRef.current?.stop().catch(() => undefined);
+    imuCaptureRef.current = null;
 
-      let sessionId = '';
+    let sessionId = '';
+    try {
       if (activeRuntime && !hasStoppedRef.current) {
         hasStoppedRef.current = true;
         const snapshot = await activeRuntime.stop();
         setRuntimeSnapshot(snapshot);
         sessionId = snapshot.sessionId ?? '';
       }
-
-      // Lock portrait — navigation fires reactively via useEffect when portrait is confirmed
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-      setPendingSessionId(sessionId);
     } catch {
-      // Avoid stranding on the dark curtain.
-      router.dismissAll();
+      // The session row exists from the start; the screen still leaves.
+      sessionId = runtimeSnapshot?.sessionId ?? '';
     }
+
+    // The session screen is portrait-only. A failed lock or a missed
+    // orientation event must never keep the user from their session, so
+    // navigation follows the lock attempt rather than the listener.
+    await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
+    setIsLandscape(false);
+    setPendingSessionId(sessionId);
   }
 
   if (isEndingSession) {
