@@ -1,6 +1,7 @@
 import {
   classifyDevice,
   resolveRaceBoxModel,
+  resolveDragyModel,
   parseFirmwareRevision,
 } from '@/telemetry/sources/device-classifier';
 
@@ -22,11 +23,28 @@ describe('classifyDevice', () => {
     });
   });
 
+  it('classifies each Dragy product name', () => {
+    for (const name of ['DRG70-1A2B3C', 'DRG70 123456', 'DRGPR-000001', 'DRGLT000042']) {
+      expect(classifyDevice(name)).toEqual({ sourceType: 'dragy', protocol: 'dragy-ubx' });
+    }
+  });
+
   it('ignores unrelated devices', () => {
     expect(classifyDevice('Some Other Device')).toBeNull();
     expect(classifyDevice('RaceBoxMini')).toBeNull();
     expect(classifyDevice('QSTARZ')).toBeNull();
     expect(classifyDevice('QSTARZ3ABC0001')).toBeNull();
+    expect(classifyDevice('DRG')).toBeNull();
+    expect(classifyDevice('DRG71-000001')).toBeNull();
+    expect(classifyDevice('dragy')).toBeNull();
+  });
+});
+
+describe('resolveDragyModel', () => {
+  it('tells the Lite and Pro apart from the DRG70 by prefix', () => {
+    expect(resolveDragyModel('DRGLT000042')).toBe('drglt');
+    expect(resolveDragyModel('DRGPR-000001')).toBe('drgpr');
+    expect(resolveDragyModel('DRG70-1A2B3C')).toBe('drg70');
   });
 });
 

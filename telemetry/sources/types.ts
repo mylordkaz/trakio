@@ -20,7 +20,7 @@ export type ActiveSourceInfo = {
 
 export type DeviceClassification = {
   sourceType: TelemetrySampleSource;
-  protocol: 'racebox-binary' | 'qstarz-ble';
+  protocol: 'racebox-binary' | 'qstarz-ble' | 'dragy-ubx';
 };
 
 export type DiscoveredDevice = {

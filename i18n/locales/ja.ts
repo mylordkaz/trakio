@@ -350,6 +350,8 @@ export default {
     removeDevice: '解除',
     connecting: '接続中...',
     tapToSelect: 'デバイスをタップして選択',
+    dragyPerformanceModeHint:
+      'dragyアプリでパフォーマンスモードを有効にすると、4 GNSS・25 Hzで受信できます。無効の場合は10 Hzになります。',
     preferences: '設定',
     appearance: '外観',
     language: '言語',

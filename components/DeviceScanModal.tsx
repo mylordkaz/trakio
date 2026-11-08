@@ -9,6 +9,7 @@ import type { DeviceClassification, DiscoveredDevice } from '@/telemetry/sources
 const PROTOCOL_LABELS: Record<DeviceClassification['protocol'], string> = {
   'racebox-binary': 'RaceBox',
   'qstarz-ble': 'Qstarz',
+  'dragy-ubx': 'Dragy',
 };
 
 type DeviceScanModalProps = {

@@ -350,6 +350,8 @@ export default {
     removeDevice: 'Remove',
     connecting: 'Connecting...',
     tapToSelect: 'Tap a device to select it',
+    dragyPerformanceModeHint:
+      'Enable Performance Mode in the dragy app to stream at 25 Hz with four GNSS. Without it the Dragy sends 10 Hz.',
     preferences: 'Preferences',
     appearance: 'Appearance',
     language: 'Language',
