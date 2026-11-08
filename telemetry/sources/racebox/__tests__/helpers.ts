@@ -8,17 +8,4 @@ export const GOLDEN_DATA_PACKET_HEX =
   '000088a9dd002c010059fdff7100ce03' +
   '2fff5600fcff06db';
 
-export function hexToBytes(hex: string): Uint8Array {
-  const clean = hex.replace(/[^0-9a-fA-F]/g, '');
-  const bytes = new Uint8Array(clean.length / 2);
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
-  }
-  return bytes;
-}
-
-export function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
+export { hexToBytes, bytesToHex } from '@/telemetry/sources/ubx/__tests__/helpers';

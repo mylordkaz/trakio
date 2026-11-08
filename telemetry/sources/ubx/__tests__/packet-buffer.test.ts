@@ -1,5 +1,6 @@
-import { createPacketBuffer } from '@/telemetry/sources/racebox/packet-buffer';
-import { GOLDEN_DATA_PACKET_HEX, hexToBytes } from './helpers';
+import { createPacketBuffer } from '@/telemetry/sources/ubx/packet-buffer';
+import { GOLDEN_DATA_PACKET_HEX } from '@/telemetry/sources/racebox/__tests__/helpers';
+import { hexToBytes } from './helpers';
 
 const packet = hexToBytes(GOLDEN_DATA_PACKET_HEX);
 

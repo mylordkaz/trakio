@@ -1,5 +1,6 @@
 import type { ExtendedTelemetrySample, TelemetryElapsedMsResolver } from '@/telemetry/types';
 import { DATA_PAYLOAD_LENGTH } from '@/telemetry/sources/racebox/constants';
+import { utcFieldsToRecordedAt, normalizeHeading } from '@/telemetry/sources/ubx/nav-fields';
 
 export type RaceBoxRawData = {
   iTOW: number;
@@ -89,26 +90,6 @@ function hasInvalidCoords(raw: RaceBoxRawData): boolean {
   return (raw.latLonFlags & 0x01) === 1;
 }
 
-function buildRecordedAt(raw: RaceBoxRawData): number {
-  if ((raw.validityFlags & 0x07) !== 0x07) {
-    return Date.now();
-  }
-
-  const date = new Date(
-    Date.UTC(raw.year, raw.month - 1, raw.day, raw.hour, raw.minute, raw.second)
-  );
-  const ms = date.getTime() + raw.nanosecond / 1_000_000;
-  return Math.round(ms);
-}
-
-function normalizeHeading(raw: number): number | null {
-  const deg = raw / 1e5;
-  if (deg < 0 || deg >= 360) {
-    return null;
-  }
-  return deg;
-}
-
 export function rawDataToSample(
   raw: RaceBoxRawData,
   resolveElapsedMs: TelemetryElapsedMsResolver,
@@ -118,7 +99,7 @@ export function rawDataToSample(
     return null;
   }
 
-  const recordedAt = buildRecordedAt(raw);
+  const recordedAt = utcFieldsToRecordedAt(raw);
   const batteryOrVoltage = raw.batteryOrVoltage;
 
   return {

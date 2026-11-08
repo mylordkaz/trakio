@@ -3,7 +3,8 @@ import {
   SYNC_BYTE_2,
   HEADER_LENGTH,
   CHECKSUM_LENGTH,
-} from '@/telemetry/sources/racebox/constants';
+  MAX_PAYLOAD_LENGTH,
+} from '@/telemetry/sources/ubx/constants';
 
 export type PacketBufferCallbacks = {
   onPacket: (messageClass: number, messageId: number, payload: Uint8Array) => void;
@@ -68,7 +69,7 @@ export function createPacketBuffer(callbacks: PacketBufferCallbacks) {
 
       const payloadLength = buffer[4] | (buffer[5] << 8);
 
-      if (payloadLength > 504) {
+      if (payloadLength > MAX_PAYLOAD_LENGTH) {
         callbacks.onError?.(new Error(`Invalid payload length: ${payloadLength}`));
         buffer = buffer.slice(2);
         continue;

@@ -11,7 +11,7 @@ import {
   writeCharacteristic,
   readCharacteristicString,
 } from '@/telemetry/sources/ble-transport';
-import { createPacketBuffer } from '@/telemetry/sources/racebox/packet-buffer';
+import { createPacketBuffer } from '@/telemetry/sources/ubx/packet-buffer';
 import { decodeDataPayload, rawDataToSample } from '@/telemetry/sources/racebox/parser';
 import { encodeConfigQuery, encodeGnssConfig } from '@/telemetry/sources/racebox/packet-writer';
 import {

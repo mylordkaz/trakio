@@ -1,9 +1,6 @@
-import {
-  encodePacket,
-  encodeConfigQuery,
-  encodeGnssConfig,
-} from '@/telemetry/sources/racebox/packet-writer';
-import { createPacketBuffer } from '@/telemetry/sources/racebox/packet-buffer';
+import { encodePacket } from '@/telemetry/sources/ubx/packet-writer';
+import { encodeConfigQuery, encodeGnssConfig } from '@/telemetry/sources/racebox/packet-writer';
+import { createPacketBuffer } from '@/telemetry/sources/ubx/packet-buffer';
 import { bytesToHex } from './helpers';
 
 it('encodes the reference GNSS-config packet from the spec', () => {
