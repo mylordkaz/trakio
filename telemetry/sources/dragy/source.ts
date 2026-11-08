@@ -277,11 +277,6 @@ export function createDragySource(deviceId: string, deviceName: string): Telemet
         );
 
         await applyTrackConfig(device, linkLost);
-        // A reply and the disconnect can land in the same tick, letting the
-        // exchange finish normally; an earlier NAV frame must not then count as connected.
-        if (linkError) {
-          throw linkError;
-        }
 
         if (!streamSeen) {
           const probe = new Promise<never>((_, reject) => {
@@ -290,6 +285,12 @@ export function createDragySource(deviceId: string, deviceName: string): Telemet
             }, STREAM_PROBE_TIMEOUT_MS);
           });
           await Promise.race([streamSeenPromise, linkLost, probe]);
+        }
+
+        // A NAV frame and a disconnect (or stop()) can land in the same tick, so
+        // the races above may settle on the frame after the link is already gone.
+        if (linkError) {
+          throw linkError;
         }
 
         connected = true;

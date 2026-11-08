@@ -361,6 +361,48 @@ it('rejects when the link drops in the same burst as the last config reply', asy
   expect(disconnectDevice).toHaveBeenCalledWith('device');
 });
 
+it('rejects when the first NAV frame and the disconnect land in the same tick', async () => {
+  const transport = setupTransport(DRG70_READS);
+  const { callbacks, states } = collectCallbacks();
+  const source = createDragySource('device', 'DRG70-1A2B3C');
+
+  const startPromise = source.start(callbacks);
+  const rejection = expect(startPromise).rejects.toThrow(/disconnected/);
+  await flush();
+  transport.stream().onData(frameNak());
+  await flush();
+
+  const stream = transport.stream();
+  stream.onData(frameNavPvt());
+  stream.onDisconnect();
+  await rejection;
+
+  expect(states).toEqual(['connecting', 'disconnected']);
+  expect(source.getConnectionState()).toBe('disconnected');
+});
+
+it('stays stopped when stop() lands in the same tick as the first NAV frame', async () => {
+  const transport = setupTransport(DRG70_READS);
+  const { callbacks, states } = collectCallbacks();
+  const source = createDragySource('device', 'DRG70-1A2B3C');
+
+  const startPromise = source.start(callbacks);
+  const rejection = expect(startPromise).rejects.toThrow(/stopped/);
+  await flush();
+  transport.stream().onData(frameNak());
+  await flush();
+
+  transport.stream().onData(frameNavPvt());
+  const stopPromise = source.stop();
+  await rejection;
+  await stopPromise;
+
+  expect(states).toEqual(['connecting']);
+  expect(source.getConnectionState()).toBe('disconnected');
+  await advance(BATTERY_POLL_INTERVAL_MS);
+  expect(transport.readCount.get(DRAGY_BATTERY_CHARACTERISTIC_UUID)).toBe(1);
+});
+
 it('rejects when the link drops while a config write is in flight', async () => {
   const transport = setupTransport(DRG70_READS);
   let failWrite: (error: Error) => void = () => undefined;
