@@ -341,6 +341,90 @@ it('rejects at once when the link drops during configuration', async () => {
   expect(disconnectDevice).toHaveBeenCalledWith('device');
 });
 
+it('rejects when the link drops in the same burst as the last config reply', async () => {
+  const transport = setupTransport(DRG70_READS);
+  const { callbacks, states } = collectCallbacks();
+  const source = createDragySource('device', 'DRG70-1A2B3C');
+
+  const startPromise = source.start(callbacks);
+  const rejection = expect(startPromise).rejects.toThrow(/disconnected/);
+  await flush();
+
+  const stream = transport.stream();
+  stream.onData(frameNavPvt());
+  stream.onData(frameNak());
+  stream.onDisconnect();
+  await rejection;
+
+  expect(states).toEqual(['connecting', 'disconnected']);
+  expect(source.getConnectionState()).toBe('disconnected');
+  expect(disconnectDevice).toHaveBeenCalledWith('device');
+});
+
+it('rejects when the link drops while a config write is in flight', async () => {
+  const transport = setupTransport(DRG70_READS);
+  let failWrite: (error: Error) => void = () => undefined;
+  (writeCharacteristic as jest.Mock).mockImplementation(
+    async (_device, _service, uuid: string) => {
+      if (uuid === DRAGY_COMMAND_CHARACTERISTIC_UUID) {
+        await new Promise<void>((_, reject) => {
+          failWrite = reject;
+        });
+      }
+    }
+  );
+  const { callbacks, states } = collectCallbacks();
+  const source = createDragySource('device', 'DRG70-1A2B3C');
+
+  const startPromise = source.start(callbacks);
+  const rejection = expect(startPromise).rejects.toThrow(/disconnected/);
+  await flush();
+
+  transport.stream().onData(frameNavPvt());
+  transport.stream().onDisconnect();
+  await flush();
+  failWrite(new Error('write failed: device not connected'));
+  await rejection;
+
+  expect(states).toEqual(['connecting', 'disconnected']);
+  expect(source.getConnectionState()).toBe('disconnected');
+  expect(disconnectDevice).toHaveBeenCalledWith('device');
+});
+
+it('keeps a reply that arrives before the write response', async () => {
+  const transport = setupTransport(DRG70_READS);
+  const releases: (() => void)[] = [];
+  (writeCharacteristic as jest.Mock).mockImplementation(
+    async (_device, _service, uuid: string, bytes: Uint8Array) => {
+      transport.writes.push({ uuid, hex: bytesToHex(bytes) });
+      if (uuid === DRAGY_COMMAND_CHARACTERISTIC_UUID) {
+        await new Promise<void>((resolve) => {
+          releases.push(resolve);
+        });
+      }
+    }
+  );
+  const { callbacks } = collectCallbacks();
+  const source = createDragySource('device', 'DRG70-1A2B3C');
+
+  const startPromise = source.start(callbacks);
+  await flush();
+  expect(transport.commandWrites()).toEqual([DOC_PERFORMANCE_MODE_QUERY_HEX]);
+
+  // The device answers while the write-with-response is still outstanding.
+  transport.stream().onData(hexToBytes(DOC_PERFORMANCE_MODE_REPLY_HEX));
+  await flush();
+  releases.shift()!();
+  await flush();
+
+  expect(transport.commandWrites()).toEqual([
+    DOC_PERFORMANCE_MODE_QUERY_HEX,
+    DOC_FOUR_GNSS_CONFIG_HEX,
+  ]);
+
+  await source.stop();
+});
+
 it('reassembles a NAV-PVT frame split across notifications', async () => {
   const transport = setupTransport(DRG70_READS);
   const { callbacks, samples } = collectCallbacks();

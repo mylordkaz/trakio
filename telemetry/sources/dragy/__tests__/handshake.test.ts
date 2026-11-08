@@ -24,6 +24,10 @@ describe('isHandshakeConfirmed', () => {
     expect(isHandshakeConfirmed(response, Uint8Array.from([0xa5, 0x3c, 0x99, 0x24]))).toBe(true);
   });
 
+  it('accepts the echo with A & B before A ^ B, as the doc also writes it', () => {
+    expect(isHandshakeConfirmed(response, Uint8Array.from([0xa5, 0x3c, 0x24, 0x99]))).toBe(true);
+  });
+
   it('rejects a missing, short, or different read-back', () => {
     expect(isHandshakeConfirmed(response, null)).toBe(false);
     expect(isHandshakeConfirmed(response, Uint8Array.from([0xa5, 0x3c]))).toBe(false);

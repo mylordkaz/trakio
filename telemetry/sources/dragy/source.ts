@@ -56,7 +56,7 @@ export function createDragySource(deviceId: string, deviceName: string): Telemet
   let packetBuffer: ReturnType<typeof createPacketBuffer> | null = null;
   let batteryTimer: ReturnType<typeof setInterval> | null = null;
   let batteryLevel: number | null = null;
-  let pendingConfigReply: ((reply: ConfigReply) => void) | null = null;
+  let pendingConfigReply: ((reply: ConfigReply | null) => void) | null = null;
   // Rejects a pending start(); the lifecycle ignores 'disconnected' before switchover.
   let abortLink: ((error: Error) => void) | null = null;
 
@@ -120,8 +120,8 @@ export function createDragySource(deviceId: string, deviceName: string): Telemet
     }
   }
 
-  function awaitConfigReply(linkLost: Promise<never>): Promise<ConfigReply | null> {
-    const reply = new Promise<ConfigReply | null>((resolve) => {
+  function awaitConfigReply(): Promise<ConfigReply | null> {
+    return new Promise<ConfigReply | null>((resolve) => {
       const timeout = setTimeout(() => {
         pendingConfigReply = null;
         resolve(null);
@@ -133,10 +133,17 @@ export function createDragySource(deviceId: string, deviceName: string): Telemet
         resolve(value);
       };
     });
-    return Promise.race([linkLost, reply]);
   }
 
-  async function writeCommand(device: Device, packet: Uint8Array): Promise<boolean> {
+  // The waiter is registered before the write: the device can notify its reply
+  // before the write response reaches the phone.
+  async function sendCommand(
+    device: Device,
+    packet: Uint8Array,
+    linkLost: Promise<never>
+  ): Promise<{ sent: boolean; reply: ConfigReply | null }> {
+    const reply = awaitConfigReply();
+    let sent = true;
     try {
       await writeCharacteristic(
         device,
@@ -144,10 +151,11 @@ export function createDragySource(deviceId: string, deviceName: string): Telemet
         DRAGY_COMMAND_CHARACTERISTIC_UUID,
         packet
       );
-      return true;
     } catch {
-      return false;
+      sent = false;
+      pendingConfigReply?.(null);
     }
+    return { sent, reply: await Promise.race([linkLost, reply]) };
   }
 
   // Four-GNSS and the 25 Hz rate are only honoured in Performance Mode, which
@@ -155,42 +163,35 @@ export function createDragySource(deviceId: string, deviceName: string): Telemet
   // on every connection; the rate is only written when it differs. A device
   // outside Performance Mode streams at its default and is left untouched.
   async function applyTrackConfig(device: Device, linkLost: Promise<never>): Promise<void> {
-    if (!(await writeCommand(device, encodePerformanceModeQuery()))) {
-      return;
-    }
-    const modeReply = await awaitConfigReply(linkLost);
+    const mode = await sendCommand(device, encodePerformanceModeQuery(), linkLost);
     const performanceMode =
-      modeReply !== null &&
-      modeReply.messageClass === CFG_CLASS &&
-      modeReply.messageId === CFG_VALGET_ID &&
-      isPerformanceModeReply(modeReply.payload);
+      mode.reply !== null &&
+      mode.reply.messageClass === CFG_CLASS &&
+      mode.reply.messageId === CFG_VALGET_ID &&
+      isPerformanceModeReply(mode.reply.payload);
     if (!performanceMode) {
       return;
     }
 
-    if (!(await writeCommand(device, encodeFourGnssConfig()))) {
+    if (!(await sendCommand(device, encodeFourGnssConfig(), linkLost)).sent) {
       return;
     }
-    await awaitConfigReply(linkLost);
 
-    if (!(await writeCommand(device, encodeRateQuery()))) {
+    const rate = await sendCommand(device, encodeRateQuery(), linkLost);
+    if (!rate.sent) {
       return;
     }
-    const rateReply = await awaitConfigReply(linkLost);
     const currentPeriod =
-      rateReply !== null &&
-      rateReply.messageClass === CFG_CLASS &&
-      rateReply.messageId === CFG_VALGET_ID
-        ? decodeMeasurementPeriodReply(rateReply.payload)
+      rate.reply !== null &&
+      rate.reply.messageClass === CFG_CLASS &&
+      rate.reply.messageId === CFG_VALGET_ID
+        ? decodeMeasurementPeriodReply(rate.reply.payload)
         : null;
     if (currentPeriod === TARGET_MEAS_PERIOD_MS) {
       return;
     }
 
-    if (!(await writeCommand(device, encodeRateConfig(TARGET_MEAS_PERIOD_MS)))) {
-      return;
-    }
-    await awaitConfigReply(linkLost);
+    await sendCommand(device, encodeRateConfig(TARGET_MEAS_PERIOD_MS), linkLost);
   }
 
   return {
@@ -202,9 +203,13 @@ export function createDragySource(deviceId: string, deviceName: string): Telemet
 
       const device = await connectToDevice(deviceId);
 
+      let linkError: Error | null = null;
       let rejectLink: (error: Error) => void = () => undefined;
       const linkLost = new Promise<never>((_, reject) => {
-        rejectLink = reject;
+        rejectLink = (error) => {
+          linkError ??= error;
+          reject(error);
+        };
       });
       // Only awaited inside the races below; a late rejection must not surface as unhandled.
       linkLost.catch(() => undefined);
@@ -272,6 +277,11 @@ export function createDragySource(deviceId: string, deviceName: string): Telemet
         );
 
         await applyTrackConfig(device, linkLost);
+        // A reply and the disconnect can land in the same tick, letting the
+        // exchange finish normally; an earlier NAV frame must not then count as connected.
+        if (linkError) {
+          throw linkError;
+        }
 
         if (!streamSeen) {
           const probe = new Promise<never>((_, reject) => {

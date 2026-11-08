@@ -14,6 +14,8 @@ export function buildHandshakeResponse(challenge: Uint8Array): Uint8Array | null
 }
 
 // Success is the device echoing the response back on the same characteristic.
+// The vendor doc writes the echo as {A, B, A & B, A ^ B} while calling it the
+// same sequence, so either order of the last two bytes is accepted.
 export function isHandshakeConfirmed(
   response: Uint8Array,
   readback: Uint8Array | null
@@ -21,10 +23,10 @@ export function isHandshakeConfirmed(
   if (!readback || readback.length < HANDSHAKE_RESPONSE_LENGTH) {
     return false;
   }
-  for (let i = 0; i < HANDSHAKE_RESPONSE_LENGTH; i++) {
-    if (readback[i] !== response[i]) {
-      return false;
-    }
+  if (readback[0] !== response[0] || readback[1] !== response[1]) {
+    return false;
   }
-  return true;
+  const exactOrder = readback[2] === response[2] && readback[3] === response[3];
+  const swappedOrder = readback[2] === response[3] && readback[3] === response[2];
+  return exactOrder || swappedOrder;
 }
