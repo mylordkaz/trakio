@@ -1,6 +1,7 @@
 import type { DeviceClassification } from '@/telemetry/sources/types';
 
 export type RaceBoxModel = 'mini' | 'micro';
+export type DragyModel = 'drg70' | 'drgpr' | 'drglt';
 
 type DeviceRule = {
   namePrefix: string;
@@ -29,6 +30,20 @@ const DEVICE_RULES: DeviceRule[] = [
     // BL-818GT: QSTARZ2 + serial, no separator.
     namePrefix: 'QSTARZ2',
     classification: { sourceType: 'qstarz', protocol: 'qstarz-ble' },
+  },
+  {
+    namePrefix: 'DRG70',
+    classification: { sourceType: 'dragy', protocol: 'dragy-ubx' },
+  },
+  {
+    // Dragy Pro.
+    namePrefix: 'DRGPR',
+    classification: { sourceType: 'dragy', protocol: 'dragy-ubx' },
+  },
+  {
+    // Dragy Lite: no handshake characteristic.
+    namePrefix: 'DRGLT',
+    classification: { sourceType: 'dragy', protocol: 'dragy-ubx' },
   },
 ];
 
@@ -64,4 +79,15 @@ export function parseFirmwareRevision(
     return null;
   }
   return { major: Number(match[1]), minor: Number(match[2]) };
+}
+
+// Only the Lite skips the handshake, so the name prefix is all that matters.
+export function resolveDragyModel(deviceName: string): DragyModel {
+  if (deviceName.startsWith('DRGLT')) {
+    return 'drglt';
+  }
+  if (deviceName.startsWith('DRGPR')) {
+    return 'drgpr';
+  }
+  return 'drg70';
 }

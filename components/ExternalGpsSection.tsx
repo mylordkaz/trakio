@@ -19,15 +19,22 @@ export default function ExternalGpsSection() {
               {t('menu.externalGpsDevice')}
             </Text>
             {selectedDevice ? (
-              <View className="flex-row items-center mt-0.5">
-                <View
-                  className="h-2 w-2 rounded-full mr-1.5"
-                  style={{ backgroundColor: '#34d399' }}
-                />
-                <Text className="text-sm text-emerald-500 dark:text-emerald-400">
-                  {selectedDevice.name}
-                </Text>
-              </View>
+              <>
+                <View className="flex-row items-center mt-0.5">
+                  <View
+                    className="h-2 w-2 rounded-full mr-1.5"
+                    style={{ backgroundColor: '#34d399' }}
+                  />
+                  <Text className="text-sm text-emerald-500 dark:text-emerald-400">
+                    {selectedDevice.name}
+                  </Text>
+                </View>
+                {selectedDevice.classification.protocol === 'dragy-ubx' && (
+                  <Text className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                    {t('menu.dragyPerformanceModeHint')}
+                  </Text>
+                )}
+              </>
             ) : (
               <Text className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
                 {t('menu.noDevicePaired')}

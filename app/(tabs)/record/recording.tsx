@@ -322,6 +322,7 @@ export default function RecordingScreen() {
       carFrameGRef.current = carFrameG;
       // RaceBox and Qstarz deliver their own accelerometer with every fix;
       // their axis conventions are not documented well enough to assume.
+      // Dragy carries no IMU, so its sessions keep the phone meter above.
       deviceGRef.current = createCarFrameG({ handedness: 'unknown' });
       lastDeviceGAtMsRef.current = 0;
       setGReading(EMPTY_G);

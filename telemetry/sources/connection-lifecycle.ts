@@ -12,6 +12,7 @@ import {
 } from '@/telemetry/location';
 import { createRaceBoxSource } from '@/telemetry/sources/racebox/source';
 import { createQstarzSource } from '@/telemetry/sources/qstarz/source';
+import { createDragySource } from '@/telemetry/sources/dragy/source';
 import { createStreamWatchdog } from '@/telemetry/sources/stream-watchdog';
 
 // Devices stream at 10-25 Hz fix-or-not, so this much silence means a dead stream.
@@ -121,6 +122,9 @@ export function createConnectionLifecycle(config?: ConnectionLifecycleConfig) {
     }
     if (device.classification.protocol === 'qstarz-ble') {
       return createQstarzSource(device.id);
+    }
+    if (device.classification.protocol === 'dragy-ubx') {
+      return createDragySource(device.id, device.name);
     }
     return null;
   }

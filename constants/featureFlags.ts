@@ -2,7 +2,7 @@
 
 import Constants from 'expo-constants';
 
-// External GPS pairing (RaceBox, Qstarz); on-device validation is vendor-side only.
+// External GPS pairing (RaceBox, Qstarz, Dragy); on-device validation is vendor-side only.
 export const EXTERNAL_GPS_ENABLED: boolean = true;
 
 // Phase 2a IMU capture (docs/kalman/phase-2-imu-fusion.md): records raw phone

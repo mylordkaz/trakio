@@ -17,7 +17,7 @@ import type { TelemetrySample } from '@/telemetry/types';
 //   over that interval, so sustained braking or cornering never leaks into
 //   it. A
 //   box mounted at any angle, and either axis handedness, is resolved by the
-//   alignment below.
+//   alignment below. Dragy exposes no IMU, so the phone path drives its sessions.
 //
 // Projecting acceleration onto the plane normal to gravity gives a level
 // frame that co-rotates with the sensor, and therefore with the car it is
