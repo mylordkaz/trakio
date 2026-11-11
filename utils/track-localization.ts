@@ -109,6 +109,22 @@ const JAPANESE_TRACK_METADATA: Record<string, JapaneseTrackMetadata> = {
     name: '鈴鹿ツインサーキット',
     layoutName: 'Gコース',
   },
+  'hsr-kyushu-full': {
+    name: 'HSR九州',
+    layoutName: 'サーキットコース',
+  },
+  'nakayama-circuit': {
+    name: '中山サーキット',
+    layoutName: 'ロードコース',
+  },
+  'nihonkai-maze-circuit': {
+    name: '日本海間瀬サーキット',
+    layoutName: 'フルコース',
+  },
+  'yz-circuit-east': {
+    name: 'YZサーキット',
+    layoutName: '東コース',
+  },
 };
 
 const JAPANESE_COUNTRY_NAMES: Record<string, string> = {
@@ -130,6 +146,9 @@ const JAPANESE_LOCATION_NAMES: Record<string, string> = {
   Saitama: '埼玉県',
   Ōita: '大分県',
   Fukushima: '福島県',
+  Kumamoto: '熊本県',
+  Niigata: '新潟県',
+  Gifu: '岐阜県',
 };
 
 const JAPANESE_LAYOUT_NAMES: Record<string, string> = {
