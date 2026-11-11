@@ -4888,8 +4888,8 @@ export const TRACK_SEED_DRAFTS: TrackSeed[] = [
         name: "Sector 1",
         type: "sector",
         seq: 1,
-        a: { latitude: 35.43739158288921, longitude: 137.2459920282714 },
-        b: { latitude: 35.4373395581058, longitude: 137.24618902369315 },
+        a: { latitude: 35.437298009993036, longitude: 137.24600476748125 },
+        b: { latitude: 35.43729335219195, longitude: 137.24619799677657 },
       },
       {
         id: "yz-circuit-east:sector-2",
