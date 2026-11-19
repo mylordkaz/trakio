@@ -263,7 +263,6 @@ export default {
     greenStartFinish: '緑 = スタート / フィニッシュ',
     purpleFastestLine: '紫 = 最速ライン',
     gpsLine: 'GPSライン',
-    reconstructedLine: '復元ライン',
     allLaps: '全体',
     bestRun: 'ベストラン',
     theoreticalBest: '理論ベスト',

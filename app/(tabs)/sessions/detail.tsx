@@ -90,9 +90,7 @@ function getMapLatitudeDelta(lengthMeters: number | null) {
   return Math.min(Math.max(lengthMeters / 450000, 0.0015), 0.0055);
 }
 
-// A lighter amber than the measured line: the bridge reads as its
-// continuation, distinguishable up close.
-const BRIDGE_LINE_COLOR = '#fcd34d';
+const LINE_COLOR = '#f59e0b';
 
 // Bridges are derived on every load and never stored; the IMU timeline is
 // read only when the line has holes.
@@ -578,7 +576,7 @@ export default function SessionDetailScreen() {
                 >
                   {lapLineGroups.map((group) => {
                     const isVisible = activeLapId === null || group.lapId === activeLapId;
-                    const strokeColor = isVisible ? '#f59e0b' : 'transparent';
+                    const strokeColor = isVisible ? LINE_COLOR : 'transparent';
                     const strokeWidth = activeLapId !== null && isVisible ? 3.5 : 3;
 
                     return group.segments.map((segment, segmentIndex) => (
@@ -593,7 +591,7 @@ export default function SessionDetailScreen() {
                   })}
                   {bridgeLineGroups.map((group, index) => {
                     const isVisible = activeLapId === null || group.lapId === activeLapId;
-                    const strokeColor = isVisible ? BRIDGE_LINE_COLOR : 'transparent';
+                    const strokeColor = isVisible ? LINE_COLOR : 'transparent';
 
                     return (
                       <Polyline
@@ -692,19 +690,11 @@ export default function SessionDetailScreen() {
                 </Text>
               </View>
               <View className="flex-row items-center gap-1.5">
-                <View className="h-0.5 w-3 rounded-full" style={{ backgroundColor: '#f59e0b' }} />
+                <View className="h-0.5 w-3 rounded-full" style={{ backgroundColor: LINE_COLOR }} />
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
                   {t('sessions.gpsLine')}
                 </Text>
               </View>
-              {bridgeLineGroups.length > 0 ? (
-                <View className="flex-row items-center gap-1.5">
-                  <View className="h-0.5 w-3 rounded-full" style={{ backgroundColor: BRIDGE_LINE_COLOR }} />
-                  <Text className="text-xs text-zinc-500 dark:text-zinc-400">
-                    {t('sessions.reconstructedLine')}
-                  </Text>
-                </View>
-              ) : null}
             </View>
           </View>
         </LinearGradient>
