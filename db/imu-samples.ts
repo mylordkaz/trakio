@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-// Raw Phase 2a IMU capture rows (see telemetry/imu-capture.ts). Read only by
-// the session export; nothing in the app consumes them.
+// Raw Phase 2a IMU capture rows (see telemetry/imu-capture.ts). Read by the
+// session export and, yaw only, by the display's hole bridge.
 
 type DbImuSampleRow = {
   recorded_at: number;
@@ -33,6 +33,26 @@ export type ImuSampleExportRow = {
 // a 30-minute (~90k row) export from doubling in size on float digits.
 function round6(value: number | null): number | null {
   return value === null ? null : Math.round(value * 1e6) / 1e6;
+}
+
+export type ImuYawSample = {
+  recordedAt: number;
+  yawRad: number;
+};
+
+export async function getImuYawForSession(
+  db: SQLiteDatabase,
+  sessionId: string
+): Promise<ImuYawSample[]> {
+  const rows = await db.getAllAsync<{ recorded_at: number; rotation_alpha: number }>(
+    `SELECT recorded_at, rotation_alpha
+     FROM imu_samples
+     WHERE session_id = ? AND rotation_alpha IS NOT NULL
+     ORDER BY recorded_at ASC, rowid ASC;`,
+    sessionId
+  );
+
+  return rows.map((row) => ({ recordedAt: row.recorded_at, yawRad: row.rotation_alpha }));
 }
 
 export async function getImuSamplesForSession(

@@ -27,7 +27,7 @@ export type DisplayLineConfig = {
   microSegmentMinLengthM: number;
 };
 
-const DEFAULT_DISPLAY_LINE_CONFIG: DisplayLineConfig = {
+export const DEFAULT_DISPLAY_LINE_CONFIG: DisplayLineConfig = {
   maxAccuracyM: 15,
   maxGapMs: 3000,
   maxGapM: 120,
@@ -338,19 +338,24 @@ function densifySegment(points: XY[], subdivisions: number): XY[] {
   return result;
 }
 
-export function buildDisplayPolylines(
-  points: DisplayLinePoint[],
-  config: Partial<DisplayLineConfig> = {},
-  holeFillers: DisplayLinePoint[] = []
-): GeoPoint[][] {
-  const mergedConfig = { ...DEFAULT_DISPLAY_LINE_CONFIG, ...config };
+type TrustedSegments = {
+  segments: TimedXY[][];
+  lngScaleM: number;
+};
 
+// The trusted stream after hole bridging: what the line is drawn from, and
+// where its holes are.
+function buildTrustedSegments(
+  points: DisplayLinePoint[],
+  holeFillers: DisplayLinePoint[],
+  config: DisplayLineConfig
+): TrustedSegments | null {
   const usablePoints = points.filter(
-    (point) => point.accuracyM === null || point.accuracyM <= mergedConfig.maxAccuracyM
+    (point) => point.accuracyM === null || point.accuracyM <= config.maxAccuracyM
   );
 
   if (usablePoints.length < 2) {
-    return [];
+    return null;
   }
 
   let minLat = usablePoints[0].latitude;
@@ -362,18 +367,56 @@ export function buildDisplayPolylines(
   const lngScaleM = Math.cos(toRadians((minLat + maxLat) / 2)) * METERS_PER_DEG_LAT;
 
   const usableFillers: TimedXY[] = holeFillers
-    .filter((point) => point.accuracyM === null || point.accuracyM <= mergedConfig.maxAccuracyM)
+    .filter((point) => point.accuracyM === null || point.accuracyM <= config.maxAccuracyM)
     .map((point) => ({
       x: point.longitude * lngScaleM,
       y: point.latitude * METERS_PER_DEG_LAT,
       timeMs: Date.parse(point.recordedAt),
     }));
 
-  const segments = bridgeHoles(
-    splitIntoSegments(usablePoints, lngScaleM, mergedConfig),
-    usableFillers,
-    mergedConfig
-  )
+  return {
+    segments: bridgeHoles(splitIntoSegments(usablePoints, lngScaleM, config), usableFillers, config),
+    lngScaleM,
+  };
+}
+
+export type DisplayHole = {
+  // Times of the trusted fixes on either side of the hole.
+  fromMs: number;
+  toMs: number;
+};
+
+// The holes the line leaves open, under the same guards the line is drawn
+// with.
+export function findDisplayHoles(
+  points: DisplayLinePoint[],
+  config: Partial<DisplayLineConfig> = {},
+  holeFillers: DisplayLinePoint[] = []
+): DisplayHole[] {
+  const trusted = buildTrustedSegments(points, holeFillers, { ...DEFAULT_DISPLAY_LINE_CONFIG, ...config });
+  if (trusted === null) {
+    return [];
+  }
+
+  return trusted.segments.slice(1).map((segment, index) => {
+    const previous = trusted.segments[index];
+    return { fromMs: previous[previous.length - 1].timeMs, toMs: segment[0].timeMs };
+  });
+}
+
+export function buildDisplayPolylines(
+  points: DisplayLinePoint[],
+  config: Partial<DisplayLineConfig> = {},
+  holeFillers: DisplayLinePoint[] = []
+): GeoPoint[][] {
+  const mergedConfig = { ...DEFAULT_DISPLAY_LINE_CONFIG, ...config };
+  const trusted = buildTrustedSegments(points, holeFillers, mergedConfig);
+  if (trusted === null) {
+    return [];
+  }
+  const { lngScaleM } = trusted;
+
+  const segments = trusted.segments
     .map((segment) =>
       simplifySegment(
         smoothSegment(rejectSpikes(segment), mergedConfig.smoothingPasses),

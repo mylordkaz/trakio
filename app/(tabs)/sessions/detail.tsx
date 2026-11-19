@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Pla
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useSQLiteContext, type SQLiteDatabase } from 'expo-sqlite';
 import MapView, { Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { useT } from '@/hooks/useT';
@@ -23,6 +23,7 @@ import {
   addSessionNote,
   deleteSession,
   getImuSamplesForSession,
+  getImuYawForSession,
   getRejectedGpsPointsForSession,
   deleteSessionNote,
   getSessionById,
@@ -49,7 +50,8 @@ import { getSessionOutcome, shouldOfferShareOnCompletion } from '@/utils/session
 import { useEntitlements } from '@/contexts/EntitlementContext';
 import { RAW_DATA_EXPORT_ENABLED } from '@/constants/featureFlags';
 import { formatLapTime, formatGapSeconds, formatDateTime, formatDuration, formatSpeed } from '@/utils/format';
-import { buildDisplayPolylines, groupPointsIntoLapRuns } from '@/utils/displayLine';
+import { buildDisplayPolylines, findDisplayHoles, groupPointsIntoLapRuns } from '@/utils/displayLine';
+import { bridgeDisplayHoles, splitBridgesByLap, type HoleBridge } from '@/utils/holeBridge';
 import { getBestLapRacingLine } from '@/utils/racingLine';
 import {
   getBestLap,
@@ -86,6 +88,31 @@ function getMapLatitudeDelta(lengthMeters: number | null) {
   }
 
   return Math.min(Math.max(lengthMeters / 450000, 0.0015), 0.0055);
+}
+
+const BRIDGE_LINE_COLOR = '#38bdf8';
+
+// Bridges are derived on every load and never stored; the yaw timeline is
+// read only when the line has holes.
+async function loadHoleBridges(
+  db: SQLiteDatabase,
+  sessionDetail: SessionDetail,
+  quarantined: Awaited<ReturnType<typeof getRejectedGpsPointsForSession>>
+): Promise<HoleBridge[]> {
+  const holes = findDisplayHoles(sessionDetail.gpsPoints, {}, quarantined);
+  if (holes.length === 0) {
+    return [];
+  }
+  try {
+    return bridgeDisplayHoles({
+      holes,
+      fixes: [...sessionDetail.gpsPoints, ...quarantined],
+      yaw: await getImuYawForSession(db, sessionDetail.session.id),
+      outline: sessionDetail.track.path,
+    });
+  } catch {
+    return [];
+  }
 }
 
 function getMapRegion(sessionDetail: SessionDetail | null) {
@@ -169,6 +196,9 @@ export default function SessionDetailScreen() {
   const [quarantinedPoints, setQuarantinedPoints] = useState<
     Awaited<ReturnType<typeof getRejectedGpsPointsForSession>>
   >([]);
+  const [holeBridges, setHoleBridges] = useState<{ sessionId: string; bridges: HoleBridge[] } | null>(
+    null
+  );
   const share = useShareSession(sessionDetail);
   const { hasProAccess } = useEntitlements();
   const leaderboardShare = useLeaderboardShare(sessionDetail?.track.id);
@@ -222,8 +252,12 @@ export default function SessionDetailScreen() {
       }
 
       setSessionDetail(nextSessionDetail);
-      setQuarantinedPoints(
-        await getRejectedGpsPointsForSession(db, nextSessionDetail.session.id).catch(() => [])
+      const quarantined = await getRejectedGpsPointsForSession(db, nextSessionDetail.session.id).catch(
+        () => []
+      );
+      setQuarantinedPoints(quarantined);
+      void loadHoleBridges(db, nextSessionDetail, quarantined).then((bridges) =>
+        setHoleBridges({ sessionId: nextSessionDetail.session.id, bridges })
       );
       setCarText(nextSessionDetail.session.car ?? '');
       if (isArrivalFromRecordingRef.current) {
@@ -453,6 +487,12 @@ export default function SessionDetailScreen() {
       ),
     }));
   }, [sessionDetail, quarantinedPoints]);
+  const bridgeLineGroups = useMemo(() => {
+    if (!sessionDetail || holeBridges?.sessionId !== sessionDetail.session.id) {
+      return [];
+    }
+    return splitBridgesByLap(holeBridges.bridges, sessionDetail.laps);
+  }, [sessionDetail, holeBridges]);
   const lapIdsWithPoints = useMemo(() => {
     const lapIds = new Set<string>();
     for (const group of lapLineGroups) {
@@ -547,6 +587,21 @@ export default function SessionDetailScreen() {
                       />
                     ));
                   })}
+                  {bridgeLineGroups.map((group, index) => {
+                    const isVisible = activeLapId === null || group.lapId === activeLapId;
+
+                    // Dashes are rebuilt from strokeColor; the gradient prop
+                    // would replace them.
+                    return (
+                      <Polyline
+                        key={`bridge-${index}`}
+                        coordinates={group.points}
+                        strokeColor={isVisible ? BRIDGE_LINE_COLOR : 'transparent'}
+                        strokeWidth={activeLapId !== null && isVisible ? 3 : 2.5}
+                        lineDashPattern={[8, 6]}
+                      />
+                    );
+                  })}
                   {runBoundaryLines.map((line) => (
                     <Polyline
                       key={line.id}
@@ -639,6 +694,17 @@ export default function SessionDetailScreen() {
                   {t('sessions.gpsLine')}
                 </Text>
               </View>
+              {bridgeLineGroups.length > 0 ? (
+                <View className="flex-row items-center gap-1.5">
+                  <View
+                    className="w-3"
+                    style={{ borderTopWidth: 2, borderColor: BRIDGE_LINE_COLOR, borderStyle: 'dashed' }}
+                  />
+                  <Text className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {t('sessions.reconstructedLine')}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
         </LinearGradient>

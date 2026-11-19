@@ -263,6 +263,7 @@ export default {
     greenStartFinish: 'Green = start / finish',
     purpleFastestLine: 'Purple = fastest line',
     gpsLine: 'GPS Line',
+    reconstructedLine: 'Reconstructed',
     allLaps: 'All',
     bestRun: 'Best Run',
     theoreticalBest: 'Theoretical Best',
