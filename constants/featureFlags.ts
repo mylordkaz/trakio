@@ -31,9 +31,9 @@ export const CROSSING_RECOVERY_ENABLED: boolean = true;
 // at ~2 s. Rejected fixes are still quarantined for display/analysis.
 export const JUMP_REANCHOR_ENABLED: boolean = true;
 
-// Full raw telemetry is a development-only diagnostic path, not a
-// customer-facing Pro export. The extra flag cannot survive config evaluation
-// in production-classified builds, and EAS bundling classifies preview as
-// production (NODE_ENV), so in practice only dev clients ever enable it.
+// Full raw telemetry is a diagnostic path, not a customer-facing Pro export.
+// Dev clients always have it; a release build carries it only when built with
+// TRAKIO_RAW_DATA_EXPORT=true (see app.config.ts), and such a build must stay
+// on TestFlight.
 export const RAW_DATA_EXPORT_ENABLED: boolean =
   __DEV__ || Constants.expoConfig?.extra?.rawDataExportEnabled === true;

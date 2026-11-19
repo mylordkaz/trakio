@@ -56,8 +56,9 @@ export default (): ExpoConfig => {
   const requestedForceFree = process.env.TRAKIO_FORCE_FREE === 'true';
   const forceGrandfathered = !isProductionBuild && requestedForceGrandfathered;
   const forceFree = !isProductionBuild && requestedForceFree;
-  const rawDataExportEnabled =
-    !isProductionBuild && process.env.TRAKIO_RAW_DATA_EXPORT === 'true';
+  // Diagnostic builds opt in explicitly; the variable is never in .env, so a
+  // build carries the raw export only when the command line sets it.
+  const rawDataExportEnabled = process.env.TRAKIO_RAW_DATA_EXPORT === 'true';
 
   if (isProductionBuild) {
     if (isIosBuild) {
