@@ -90,7 +90,9 @@ function getMapLatitudeDelta(lengthMeters: number | null) {
   return Math.min(Math.max(lengthMeters / 450000, 0.0015), 0.0055);
 }
 
-const BRIDGE_LINE_COLOR = '#38bdf8';
+// A lighter amber than the measured line: the bridge reads as its
+// continuation, distinguishable up close.
+const BRIDGE_LINE_COLOR = '#fcd34d';
 
 // Bridges are derived on every load and never stored; the IMU timeline is
 // read only when the line has holes.
@@ -591,16 +593,15 @@ export default function SessionDetailScreen() {
                   })}
                   {bridgeLineGroups.map((group, index) => {
                     const isVisible = activeLapId === null || group.lapId === activeLapId;
+                    const strokeColor = isVisible ? BRIDGE_LINE_COLOR : 'transparent';
 
-                    // Dashes are rebuilt from strokeColor; the gradient prop
-                    // would replace them.
                     return (
                       <Polyline
                         key={`bridge-${index}`}
                         coordinates={group.points}
-                        strokeColor={isVisible ? BRIDGE_LINE_COLOR : 'transparent'}
-                        strokeWidth={activeLapId !== null && isVisible ? 3 : 2.5}
-                        lineDashPattern={[8, 6]}
+                        strokeColor={strokeColor}
+                        strokeColors={Platform.OS === 'ios' ? [strokeColor] : undefined}
+                        strokeWidth={activeLapId !== null && isVisible ? 3.5 : 3}
                       />
                     );
                   })}
@@ -698,10 +699,7 @@ export default function SessionDetailScreen() {
               </View>
               {bridgeLineGroups.length > 0 ? (
                 <View className="flex-row items-center gap-1.5">
-                  <View
-                    className="w-3"
-                    style={{ borderTopWidth: 2, borderColor: BRIDGE_LINE_COLOR, borderStyle: 'dashed' }}
-                  />
+                  <View className="h-0.5 w-3 rounded-full" style={{ backgroundColor: BRIDGE_LINE_COLOR }} />
                   <Text className="text-xs text-zinc-500 dark:text-zinc-400">
                     {t('sessions.reconstructedLine')}
                   </Text>

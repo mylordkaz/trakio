@@ -140,8 +140,8 @@ Measurements keep flowing through such a hole: the phone's yaw, two ways
 projected on the session's median gravity direction), and the Doppler speed
 on the degraded and quarantined fixes. `utils/holeBridge.ts` integrates
 heading from the yaw and distance from the speed, closes the path onto the
-trusted fixes on both sides, and the session map draws the result as a dashed
-line in its own colour under its own legend entry. Timing, storage and the
+trusted fixes on both sides, and the session map draws the result as a
+line in a lighter amber than the measured one, under its own legend entry. Timing, storage and the
 export never see it; it is recomputed on every open of the session.
 
 Clock parameters are measured on each session's own trusted fixes, from
