@@ -5,13 +5,17 @@ import {
   splitBridgesByLap,
   type BridgeFix,
   type HoleBridge,
-  type YawSample,
+  type ImuSample,
+  type TrackOutline,
 } from '@/utils/holeBridge';
 
 // A synthetic drive with the clock structure of a real phone capture: fixes
 // stamped 1 s after the instant they describe, reported speed describing the
-// instant 0.8 s before its fix, yaw stamped 0.9 s after its instant with the
-// W3C sign (counterclockwise positive) and an arbitrary zero.
+// instant 0.8 s before its fix, IMU samples stamped 0.9 s after their
+// instant. The fused yaw follows the W3C sign (counterclockwise positive)
+// with an arbitrary zero; the gyro rate is expressed in device axes for a
+// phone tilted 45° in its cradle, in expo-sensors order [alpha, beta,
+// gamma] = device [z, y, x].
 
 const T0 = Date.parse('2026-01-01T00:00:00.000Z');
 const LAT0 = 36.5;
@@ -19,9 +23,10 @@ const LNG0 = 140.2;
 const M_LAT = 111320;
 const M_LNG = M_LAT * Math.cos((LAT0 * Math.PI) / 180);
 const GPS_LATENCY_MS = 1000;
-const YAW_LATENCY_MS = 900;
+const IMU_LATENCY_MS = 900;
 const SPEED_LAG_MS = 800;
 const DURATION_S = 130;
+const GRAVITY_DEVICE: [number, number, number] = [-0.706 * 9.81, 0, -0.708 * 9.81];
 
 function speedAt(tauS: number) {
   return 30 + 10 * Math.sin((2 * Math.PI * tauS) / 20);
@@ -56,13 +61,16 @@ function truthAt(tauS: number): Truth {
   return TRUTH[Math.round(tauS * 100)];
 }
 
+function toGeo(x: number, y: number) {
+  return { latitude: LAT0 + y / M_LAT, longitude: LNG0 + x / M_LNG };
+}
+
 function fixAt(tauS: number, accuracyM: number): BridgeFix & { tauS: number } {
   const point = truthAt(tauS);
   return {
     tauS,
     recordedAt: new Date(T0 + tauS * 1000 + GPS_LATENCY_MS).toISOString(),
-    latitude: LAT0 + point.y / M_LAT,
-    longitude: LNG0 + point.x / M_LNG,
+    ...toGeo(point.x, point.y),
     speedMps: speedAt(Math.max(0, tauS - SPEED_LAG_MS / 1000)),
     accuracyM,
   };
@@ -76,17 +84,33 @@ function buildFixes(degraded: (tauS: number) => boolean) {
   return fixes;
 }
 
-function buildYaw(sign: 1 | -1, keep: (tauS: number) => boolean = () => true): YawSample[] {
-  const samples: YawSample[] = [];
+type SampleOptions = {
+  keep?: (tauS: number) => boolean;
+  // Extra heading (degrees) added to the fused yaw at an instant.
+  fusedError?: (tauS: number) => number;
+  // Extra rate (deg/s) added to the gyro at an instant.
+  gyroError?: (tauS: number) => number;
+};
+
+function buildSamples(options: SampleOptions = {}): ImuSample[] {
+  const samples: ImuSample[] = [];
+  const norm = Math.hypot(...GRAVITY_DEVICE);
+  const up = GRAVITY_DEVICE.map((c) => -c / norm);
   for (let step = 0; step <= DURATION_S * 50; step++) {
     const tauS = step / 50;
-    if (!keep(tauS)) {
+    if (options.keep && !options.keep(tauS)) {
       continue;
     }
-    const raw = (sign * truthAt(tauS).headingDeg * Math.PI) / 180 + 1.3;
+    const heading = truthAt(tauS).headingDeg + (options.fusedError?.(tauS) ?? 0);
+    const raw = (-heading * Math.PI) / 180 + 1.3;
+    // Clockwise heading change is a negative rotation about the up axis.
+    const rate = -(yawRateAt(tauS) + (options.gyroError?.(tauS) ?? 0));
+    const omega = up.map((c) => c * rate);
     samples.push({
-      recordedAt: T0 + tauS * 1000 + YAW_LATENCY_MS,
+      recordedAt: T0 + tauS * 1000 + IMU_LATENCY_MS,
       yawRad: Math.atan2(Math.sin(raw), Math.cos(raw)),
+      rotationRate: [omega[2], omega[1], omega[0]],
+      gravity: GRAVITY_DEVICE,
     });
   }
   return samples;
@@ -104,6 +128,34 @@ function bridgeErrorM(bridge: HoleBridge, fix: BridgeFix & { tauS: number }) {
 }
 
 const inHole = (tauS: number) => tauS >= 60 && tauS <= 80;
+
+// The true path, offset laterally by metres (positive = to the right of
+// travel), as a track outline.
+function shiftedOutline(offsetM: number, widthMeters: number | null = null): TrackOutline {
+  const path = [];
+  for (let tauS = 0; tauS <= DURATION_S; tauS += 0.5) {
+    const point = truthAt(tauS);
+    const rightX = Math.cos((point.headingDeg * Math.PI) / 180);
+    const rightY = -Math.sin((point.headingDeg * Math.PI) / 180);
+    path.push(toGeo(point.x + rightX * offsetM, point.y + rightY * offsetM));
+  }
+  return { path, widthMeters };
+}
+
+function distanceToPathM(point: { latitude: number; longitude: number }, outline: TrackOutline) {
+  const px = point.longitude * M_LNG;
+  const py = point.latitude * M_LAT;
+  let best = Infinity;
+  for (let i = 1; i < outline.path.length; i++) {
+    const ax = outline.path[i - 1].longitude * M_LNG;
+    const ay = outline.path[i - 1].latitude * M_LAT;
+    const dx = outline.path[i].longitude * M_LNG - ax;
+    const dy = outline.path[i].latitude * M_LAT - ay;
+    const u = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+    best = Math.min(best, Math.hypot(px - (ax + u * dx), py - (ay + u * dy)));
+  }
+  return best;
+}
 
 describe('findDisplayHoles', () => {
   it('reports the trusted fixes on either side of a gap the line leaves open', () => {
@@ -124,88 +176,129 @@ describe('findDisplayHoles', () => {
 });
 
 describe('calibrateImuTimeline', () => {
-  it('measures yaw sign, yaw clock offset and speed lag from the trusted fixes', () => {
+  it('measures sign and clock offset of both heading sources and the speed lag', () => {
     const fixes = buildFixes(() => false);
 
-    const calibration = calibrateImuTimeline(fixes, buildYaw(-1));
+    const calibration = calibrateImuTimeline(fixes, buildSamples());
 
     expect(calibration).not.toBeNull();
-    expect(calibration!.yawSign).toBe(-1);
-    expect(Math.abs(calibration!.yawOffsetMs - (YAW_LATENCY_MS - GPS_LATENCY_MS))).toBeLessThanOrEqual(50);
     expect(Math.abs(calibration!.speedLagMs - SPEED_LAG_MS)).toBeLessThanOrEqual(50);
-    expect(calibration!.r2).toBeGreaterThan(0.99);
-    expect(calibrateImuTimeline(fixes, buildYaw(1))!.yawSign).toBe(1);
+    for (const source of [calibration!.fusedYaw, calibration!.gyro]) {
+      expect(source).not.toBeNull();
+      expect(Math.abs(source!.offsetMs - (IMU_LATENCY_MS - GPS_LATENCY_MS))).toBeLessThanOrEqual(50);
+      expect(source!.r2).toBeGreaterThan(0.99);
+    }
+    expect(calibration!.fusedYaw!.sign).toBe(-1);
+    expect(calibration!.gyro!.sign).toBe(1);
   });
 
-  it('refuses a yaw stream that does not follow the course', () => {
+  it('drops a heading source that does not follow the course and refuses when both fail', () => {
     const fixes = buildFixes(() => false);
-    const noise = buildYaw(-1).map((sample, index) => ({ ...sample, yawRad: Math.sin(index * 7.1) }));
+    const noisyYaw = buildSamples().map((sample, index) => ({ ...sample, yawRad: Math.sin(index * 7.1) }));
+    const noisyBoth = noisyYaw.map((sample, index) => ({
+      ...sample,
+      rotationRate: [Math.sin(index * 3.3) * 20, 0, 0] as [number, number, number],
+    }));
 
-    expect(calibrateImuTimeline(fixes, noise)).toBeNull();
+    const calibration = calibrateImuTimeline(fixes, noisyYaw);
+    expect(calibration!.fusedYaw).toBeNull();
+    expect(calibration!.gyro).not.toBeNull();
+    expect(calibrateImuTimeline(fixes, noisyBoth)).toBeNull();
   });
 });
 
 describe('bridgeDisplayHoles', () => {
   it('reconstructs a 22 s hole onto the hidden path within a few metres', () => {
     const fixes = buildFixes(inHole);
-    const yaw = buildYaw(-1);
 
-    const bridges = bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, yaw });
+    const bridges = bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, samples: buildSamples() });
 
     expect(bridges).toHaveLength(1);
     const errors = fixes.filter((fix) => inHole(fix.tauS)).map((fix) => bridgeErrorM(bridges[0], fix));
     expect(Math.max(...errors)).toBeLessThan(3);
     expect(bridges[0].closureMissM).toBeLessThan(8);
+    expect(bridges[0].boundedShare).toBe(0);
     expect(bridges[0].points[0].timeMs).toBe(Date.parse(fixAt(59, 5).recordedAt));
     expect(bridges[0].points[bridges[0].points.length - 1].timeMs).toBe(Date.parse(fixAt(81, 5).recordedAt));
+  });
+
+  it('keeps the gyro when the fused yaw is pulled inside the hole', () => {
+    const fixes = buildFixes(inHole);
+    // A pull that builds up through the hole and stays, as a structure's
+    // magnetic field does to the fused yaw.
+    const samples = buildSamples({ fusedError: (tauS) => Math.min(1, Math.max(0, (tauS - 60) / 20)) * 12 });
+
+    const [bridge] = bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, samples });
+
+    expect(bridge.headingSource).toBe('gyro');
+    const errors = fixes.filter((fix) => inHole(fix.tauS)).map((fix) => bridgeErrorM(bridge, fix));
+    expect(Math.max(...errors)).toBeLessThan(3);
+  });
+
+  it('keeps the fused yaw when the gyro drifts inside the hole', () => {
+    const fixes = buildFixes(inHole);
+    const samples = buildSamples({ gyroError: (tauS) => (inHole(tauS) ? 0.6 : 0) });
+
+    const [bridge] = bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, samples });
+
+    expect(bridge.headingSource).toBe('fusedYaw');
+    const errors = fixes.filter((fix) => inHole(fix.tauS)).map((fix) => bridgeErrorM(bridge, fix));
+    expect(Math.max(...errors)).toBeLessThan(3);
   });
 
   it('leaves a silent hole open', () => {
     const fixes = buildFixes(inHole).filter((fix) => !inHole(fix.tauS));
 
-    expect(bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, yaw: buildYaw(-1) })).toEqual([]);
+    expect(bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, samples: buildSamples() })).toEqual([]);
   });
 
   it('leaves a hole longer than 45 s open', () => {
     const fixes = buildFixes((tauS) => tauS >= 40 && tauS <= 100);
 
-    expect(bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, yaw: buildYaw(-1) })).toEqual([]);
+    expect(bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, samples: buildSamples() })).toEqual([]);
   });
 
   it('leaves a hole open when the car stops inside it', () => {
-    const fixes = buildFixes(inHole).map((fix) =>
-      fix.tauS === 70 ? { ...fix, speedMps: 1 } : fix
-    );
+    const fixes = buildFixes(inHole).map((fix) => (fix.tauS === 70 ? { ...fix, speedMps: 1 } : fix));
 
-    expect(bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, yaw: buildYaw(-1) })).toEqual([]);
+    expect(bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, samples: buildSamples() })).toEqual([]);
   });
 
-  it('leaves a hole open when yaw is missing inside it', () => {
+  it('leaves a hole open when IMU samples are missing inside it', () => {
     const fixes = buildFixes(inHole);
-    const yaw = buildYaw(-1, (tauS) => tauS < 65 || tauS > 70);
+    const samples = buildSamples({ keep: (tauS) => tauS < 65 || tauS > 70 });
 
-    expect(bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, yaw })).toEqual([]);
+    expect(bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, samples })).toEqual([]);
   });
 
-  it('leaves a hole open when the bridge strays from the track outline', () => {
+  it('leaves a hole open when the bridge strays far from the track outline', () => {
     const fixes = buildFixes(inHole);
-    const outline = fixes.map((fix) => ({ latitude: fix.latitude + 300 / M_LAT, longitude: fix.longitude }));
 
-    expect(bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, yaw: buildYaw(-1), outline })).toEqual([]);
+    expect(
+      bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, samples: buildSamples(), outline: shiftedOutline(300) })
+    ).toEqual([]);
   });
 
-  it('keeps the bridge when it stays on the track outline', () => {
+  it('moves points beyond the ribbon edge onto it and leaves points inside alone', () => {
     const fixes = buildFixes(inHole);
-    const outline = fixes.map((fix) => ({ latitude: fix.latitude, longitude: fix.longitude }));
+    const holes = findDisplayHoles(fixes);
+    const outline = shiftedOutline(8);
 
-    expect(bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, yaw: buildYaw(-1), outline })).toHaveLength(1);
+    const [narrow] = bridgeDisplayHoles({ holes, fixes, samples: buildSamples(), outline });
+    const [wide] = bridgeDisplayHoles({ holes, fixes, samples: buildSamples(), outline: { ...outline, widthMeters: 20 } });
+
+    expect(narrow.boundedShare).toBeGreaterThan(0.9);
+    for (const point of narrow.points) {
+      expect(distanceToPathM(point, outline)).toBeLessThanOrEqual(6.2);
+    }
+    expect(wide.boundedShare).toBe(0);
   });
 });
 
 describe('splitBridgesByLap', () => {
   it('splits a bridge at the stored lap boundary and shares the boundary point', () => {
     const fixes = buildFixes(inHole);
-    const [bridge] = bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, yaw: buildYaw(-1) });
+    const [bridge] = bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, samples: buildSamples() });
     const boundaryAt = fixAt(70, 5).recordedAt;
 
     const groups = splitBridgesByLap(
@@ -223,7 +316,7 @@ describe('splitBridgesByLap', () => {
 
   it('assigns points outside every lap to no lap', () => {
     const fixes = buildFixes(inHole);
-    const [bridge] = bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, yaw: buildYaw(-1) });
+    const [bridge] = bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, samples: buildSamples() });
 
     const groups = splitBridgesByLap([bridge], [{ id: 'lap-1', startedAt: fixAt(100, 5).recordedAt, endedAt: null }]);
 

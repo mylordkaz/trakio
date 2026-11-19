@@ -135,47 +135,70 @@ climbs through 20–40 m (accepted, hidden by the 15 m display filter) to
 40–85 m (quarantined), then snaps back with a ~100 m jump. The trusted line
 has a 31 s / ~850 m hole there on every lap, with the sector line inside it.
 
-Two measurements keep flowing through such a hole: the OS-fused yaw
-(`imu_samples.rotation_alpha`) and the Doppler speed on the degraded and
-quarantined fixes. `utils/holeBridge.ts` integrates heading from the yaw and
-distance from the speed, closes the path onto the trusted fixes on both
-sides, and the session map draws the result as a dashed line in its own
-colour under its own legend entry. Timing, storage and the export never see
-it; it is recomputed on every open of the session.
+Measurements keep flowing through such a hole: the phone's yaw, two ways
+(the OS-fused attitude yaw `rotation_alpha`, and the raw gyro `rotation_rate`
+projected on the session's median gravity direction), and the Doppler speed
+on the degraded and quarantined fixes. `utils/holeBridge.ts` integrates
+heading from the yaw and distance from the speed, closes the path onto the
+trusted fixes on both sides, and the session map draws the result as a dashed
+line in its own colour under its own legend entry. Timing, storage and the
+export never see it; it is recomputed on every open of the session.
 
-Three clock parameters are measured on each session's own trusted fixes,
-from chords between fixes ~1 s apart: the yaw sign and the yaw-to-fix clock
+Clock parameters are measured on each session's own trusted fixes, from
+chords between fixes ~1 s apart: per heading source its sign and clock
 offset (best r² over a −1.5…+0.5 s sweep), and the lag between the reported
 speed and the position it describes (0.8 s on this iPhone). Anchor headings
 are fitted over the four fixes on either side, so a single noisy course never
 steers the bridge. The closure residual is spread linearly along the bridge;
 scaling or rotating the path instead was measured worse.
 
+Why two heading sources: expo-sensors requests the magnetic-north attitude
+frame on iOS, so the fused yaw is tied to the magnetometer. On good GPS it
+under-reports sustained turns by 5 % (up to 15 % in fast 5 s corners), and
+in every tunnel hole it over-rotated, by up to 14° — a steel structure does
+that to a compass, and structures are what cause holes. The raw gyro has the
+right scale (1.03) but picks up cradle vibration (4–6 °/s at idle on two
+axes), so it is noisier in open sky. Each hole keeps the source whose
+integrated heading closes better on the two anchors; on the Motegi session
+the gyro wins 7 of 9 tunnel holes and 17 of 45 open-sky windows.
+
+Why the ribbon bound: after the tunnel exit the Doppler speed reads low for a
+few seconds while the receiver re-acquires, and a low speed at a given yaw
+rate draws a tighter radius — the line cut 10–17 m inside the long right-
+hander on every lap, with both heading sources. The car was on the asphalt,
+so a point reconstructed beyond half the track width (the ribbon the circuit
+screen draws, 12 m when no width is stored) is moved onto the ribbon edge.
+Those points show the nearest edge, not a measured position; the share is
+reported per bridge. Scaling the speed inside the hole to fit the corridor
+was tried and measured worse on open-sky windows.
+
 Evidence (`bench/hole-bridge.ts`, windows of real good GPS degraded to
-speed-only fixes and bridged from the real yaw stream; the hidden 4.7 m
-fixes are the truth):
+speed-only fixes and bridged from the real IMU stream with the outline
+available as in the app; the hidden 4.7 m fixes are the truth):
 
-| hole | windows | bridge mean err | 9 of 10 windows under | worst | chord mean err |
-| --- | --- | --- | --- | --- | --- |
-| 10 s | 61 | 1.7 m | 2.9 m | 6.3 m | 41 m |
-| 20 s | 54 | 3.2 m | 5.1 m | 12.7 m | 103 m |
-| 31 s | 46 | 4.3 m | 7.2 m | 25.8 m | 166 m |
+| hole | windows | bridge mean err | 9 of 10 windows under | worst | chord mean err | points bounded |
+| --- | --- | --- | --- | --- | --- | --- |
+| 10 s | 60 | 1.6 m | 2.8 m | 6.5 m | 41 m | 16 % |
+| 20 s | 53 | 2.8 m | 4.7 m | 11.8 m | 104 m | 20 % |
+| 31 s | 45 | 3.7 m | 5.1 m | 14.1 m | 165 m | 27 % |
 
-The nine real tunnel holes (eight laps and the out-lap) all bridge, staying
-within 6–18 m of the outline at their farthest point, and the laps agree
-with each other inside the 14 m ribbon, wide on the entry to the slow corner.
+The nine real tunnel holes (eight laps and the out-lap) all bridge and stay
+on the ribbon, with 0–30 % of their points moved onto its edge; the laps
+agree with each other through the slow corner and the long right-hander.
 
 Guards — any failure keeps the hole open: hole ≤ 45 s; a speed sample at
-most every 3 s inside it; the car moving (≥ 3 m/s) throughout; calibration
-on ≥ 50 chord pairs with r² ≥ 0.9; closure miss ≤ 10 % of the path; no point
-more than 25 m from the track outline when the track has one. Holes without
-speed inside — true silence — reconstruct at 39 m mean over 31 s and are
-therefore never bridged.
+most every 3 s inside it; the car moving (≥ 3 m/s) throughout; at least one
+heading source calibrated on ≥ 50 chord pairs with r² ≥ 0.9; closure miss
+≤ 10 % of the path; no point more than 25 m from the track outline when the
+track has one (checked before the bound). Holes without speed inside — true
+silence — reconstruct at 39 m mean over 31 s and are therefore never
+bridged.
 
 This does not reopen the Phase 2 phone-IMU verdict
 (`docs/kalman/phase-2-imu-fusion.md`): that verdict killed integrating
-CoreMotion's *user acceleration*, which the OS filters. Yaw is not filtered
-that way, and speed here comes from the GNSS Doppler, not the accelerometer.
+CoreMotion's *user acceleration*, which the OS filters. Yaw and gyro rate
+are not filtered that way, and speed here comes from the GNSS Doppler, not
+the accelerometer.
 
 ## What remains
 

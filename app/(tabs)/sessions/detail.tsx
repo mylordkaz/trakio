@@ -23,7 +23,7 @@ import {
   addSessionNote,
   deleteSession,
   getImuSamplesForSession,
-  getImuYawForSession,
+  getImuHeadingSamplesForSession,
   getRejectedGpsPointsForSession,
   deleteSessionNote,
   getSessionById,
@@ -92,7 +92,7 @@ function getMapLatitudeDelta(lengthMeters: number | null) {
 
 const BRIDGE_LINE_COLOR = '#38bdf8';
 
-// Bridges are derived on every load and never stored; the yaw timeline is
+// Bridges are derived on every load and never stored; the IMU timeline is
 // read only when the line has holes.
 async function loadHoleBridges(
   db: SQLiteDatabase,
@@ -107,8 +107,10 @@ async function loadHoleBridges(
     return bridgeDisplayHoles({
       holes,
       fixes: [...sessionDetail.gpsPoints, ...quarantined],
-      yaw: await getImuYawForSession(db, sessionDetail.session.id),
-      outline: sessionDetail.track.path,
+      samples: await getImuHeadingSamplesForSession(db, sessionDetail.session.id),
+      outline: sessionDetail.track.path
+        ? { path: sessionDetail.track.path, widthMeters: sessionDetail.track.pathWidthMeters }
+        : null,
     });
   } catch {
     return [];

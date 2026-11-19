@@ -1,18 +1,27 @@
 import { DEFAULT_DISPLAY_LINE_CONFIG, type DisplayHole, type GeoPoint } from '@/utils/displayLine';
 import { toRadians } from '@/utils/geo';
+import { DEFAULT_TRACK_WIDTH_METERS } from '@/utils/trackRibbon';
 
 // Display-only reconstruction of the path across a hole in the trusted GPS
-// stream. Two measurements keep arriving while the position is lost: the
-// OS-fused yaw (imu_samples.rotation_alpha) and the Doppler speed on the
-// degraded and quarantined fixes inside the hole. Heading is integrated from
-// the yaw, distance from the speed, and the path is closed onto the trusted
-// fixes on both sides. A hole stays open when it has no speed inside or any
-// guard fails. Timing, storage and the export never see a bridge.
+// stream. Measurements keep arriving while the position is lost: the phone's
+// yaw, measured two ways (the OS-fused attitude yaw and the raw gyro), and
+// the Doppler speed on the degraded and quarantined fixes inside the hole.
+// Heading is integrated from the yaw, distance from the speed, and the path
+// is closed onto the trusted fixes on both sides. A hole stays open when it
+// has no speed inside or any guard fails. Timing, storage and the export
+// never see a bridge.
 //
-// The three clock parameters (yaw sign, yaw offset, speed lag) are measured
+// The fused yaw is magnetometer-referenced and is pulled by steel structures
+// (the very places that cause holes); the raw gyro has the right scale but
+// picks up cradle vibration. Each hole keeps the source whose integrated
+// heading closes better on the two anchors. The track ribbon is a hard
+// bound: the car was on the asphalt, so a point reconstructed beyond the
+// ribbon edge is moved onto it.
+//
+// Clock parameters (yaw sign and offset per source, speed lag) are measured
 // on the session's own trusted fixes; nothing is assumed about the platform.
 // Validated on real data with bench/hole-bridge.ts: hidden 31 s windows of
-// good GPS reconstruct within 4.3 m mean against the hidden fixes.
+// good GPS reconstruct within 3.7 m mean against the hidden fixes.
 
 export type BridgeFix = {
   recordedAt: string;
@@ -22,27 +31,46 @@ export type BridgeFix = {
   accuracyM: number | null;
 };
 
-export type YawSample = {
+export type ImuSample = {
   recordedAt: number;
   yawRad: number;
+  // As delivered by expo-sensors: [alpha, beta, gamma] in deg/s.
+  rotationRate: [number, number, number];
+  // Gravity estimate in device axes, m/s².
+  gravity: [number, number, number];
+};
+
+export type TrackOutline = {
+  path: GeoPoint[];
+  widthMeters: number | null;
+};
+
+export type HeadingSource = 'fusedYaw' | 'gyro';
+
+export type HeadingCalibration = {
+  sign: 1 | -1;
+  // Heading stamped at t + offsetMs describes the fix stamped at t.
+  offsetMs: number;
+  chordPairs: number;
+  r2: number;
+};
+
+export type ImuTimelineCalibration = {
+  // Speed stamped at t + speedLagMs describes the fix stamped at t.
+  speedLagMs: number;
+  fusedYaw: HeadingCalibration | null;
+  gyro: HeadingCalibration | null;
 };
 
 export type HoleBridge = {
   fromMs: number;
   toMs: number;
+  headingSource: HeadingSource;
   // Distance between the integrated end and the closing fix, before closure.
   closureMissM: number;
+  // Share of points moved onto the ribbon edge.
+  boundedShare: number;
   points: { timeMs: number; latitude: number; longitude: number }[];
-};
-
-export type ImuTimelineCalibration = {
-  yawSign: 1 | -1;
-  // Yaw stamped at t + yawOffsetMs describes the fix stamped at t.
-  yawOffsetMs: number;
-  // Speed stamped at t + speedLagMs describes the fix stamped at t.
-  speedLagMs: number;
-  chordPairs: number;
-  r2: number;
 };
 
 export type BridgeLapGroup = {
@@ -57,8 +85,8 @@ const METERS_PER_DEG_LAT = 111320;
 const CHORD_MIN_DT_MS = 800;
 const CHORD_MAX_DT_MS = 1500;
 const CHORD_MIN_SPEED_MPS = 8;
-const YAW_OFFSET_MIN_MS = -1500;
-const YAW_OFFSET_MAX_MS = 500;
+const HEADING_OFFSET_MIN_MS = -1500;
+const HEADING_OFFSET_MAX_MS = 500;
 const SPEED_LAG_MIN_MS = -500;
 const SPEED_LAG_MAX_MS = 1500;
 const CALIBRATION_STEP_MS = 50;
@@ -67,7 +95,10 @@ const MIN_R2 = 0.9;
 const MAX_HOLE_MS = 45_000;
 const MAX_SPEED_SAMPLE_GAP_MS = 3000;
 const MIN_MOVING_SPEED_MPS = 3;
-const MAX_YAW_SAMPLE_GAP_MS = 1000;
+const MAX_IMU_SAMPLE_GAP_MS = 1000;
+// Gyro integration step cap: a stamp gap wider than this is a capture gap,
+// not a long sample.
+const MAX_GYRO_STEP_S = 0.04;
 const ANCHOR_FIX_COUNT = 4;
 const ANCHOR_MAX_SPAN_MS = ANCHOR_FIX_COUNT * CHORD_MAX_DT_MS + 500;
 const INTEGRATION_STEP_MS = 50;
@@ -84,9 +115,10 @@ type Context = {
   lngScaleM: number;
   trusted: Fix[];
   trustedIndexByTime: Map<number, number>;
-  yaw: Series;
+  heading: Record<HeadingSource, Series>;
   speed: Series;
   outline: XY[];
+  halfWidthM: number;
   calibration: ImuTimelineCalibration;
 };
 
@@ -104,6 +136,11 @@ function directionDeg(from: XY, to: XY) {
 
 function distanceM(a: XY, b: XY) {
   return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+function median(values: number[]) {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[sorted.length >> 1];
 }
 
 // Index of the last time at or before tMs; -1 when none.
@@ -157,7 +194,7 @@ function speedAt(series: Series, tMs: number) {
   return series.values[i] + (series.values[i + 1] - series.values[i]) * fraction;
 }
 
-function unwrapYaw(samples: YawSample[]): Series {
+function fusedYawSeries(samples: ImuSample[]): Series {
   const timesMs: number[] = [];
   const values: number[] = [];
   let unwrapped = 0;
@@ -166,6 +203,38 @@ function unwrapYaw(samples: YawSample[]): Series {
     unwrapped = timesMs.length === 0 ? degrees : unwrapped + wrapDegrees(degrees - unwrapped);
     timesMs.push(sample.recordedAt);
     values.push(unwrapped);
+  }
+  return { timesMs, values };
+}
+
+// Rotation rate about the vertical, integrated. The vertical is the median
+// gravity direction over the session: the phone sits in a cradle, and the
+// per-sample gravity estimate tilts under cornering and braking. The rate
+// vector arrives as [alpha, beta, gamma] = device [z, y, x].
+function gyroSeries(samples: ImuSample[]): Series {
+  const unit = samples.map((sample) => {
+    const [x, y, z] = sample.gravity;
+    const norm = Math.hypot(x, y, z) || 1;
+    return [x / norm, y / norm, z / norm];
+  });
+  const vertical = [0, 1, 2].map((axis) => median(unit.map((g) => g[axis])));
+
+  const timesMs: number[] = [];
+  const values: number[] = [];
+  let integrated = 0;
+  let previousRate = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const [alpha, beta, gamma] = samples[i].rotationRate;
+    const rate = gamma * vertical[0] + beta * vertical[1] + alpha * vertical[2];
+    if (i > 0) {
+      const dt = Math.min(MAX_GYRO_STEP_S, (samples[i].recordedAt - samples[i - 1].recordedAt) / 1000);
+      if (dt > 0) {
+        integrated += ((rate + previousRate) / 2) * dt;
+      }
+    }
+    previousRate = rate;
+    timesMs.push(samples[i].recordedAt);
+    values.push(integrated);
   }
   return { timesMs, values };
 }
@@ -212,17 +281,11 @@ function linearFit(xs: number[], ys: number[]) {
   return { slope: sxy / sxx, r2: (sxy * sxy) / (sxx * syy) };
 }
 
-// Reported speed interpolated between trusted fixes only; null across a gap.
-function trustedSpeedSeries(trusted: Fix[]): Series {
-  const withSpeed = trusted.filter((fix) => fix.speedMps !== null);
-  return { timesMs: withSpeed.map((fix) => fix.timeMs), values: withSpeed.map((fix) => fix.speedMps!) };
-}
-
-function calibrate(trusted: Fix[], yaw: Series): ImuTimelineCalibration | null {
-  const chords = buildChords(trusted);
-
-  let bestYaw: { r2: number; slope: number; offsetMs: number; pairs: number } | null = null;
-  for (let offsetMs = YAW_OFFSET_MIN_MS; offsetMs <= YAW_OFFSET_MAX_MS; offsetMs += CALIBRATION_STEP_MS) {
+// Sign and clock offset of a heading series against the course change
+// between consecutive chords.
+function calibrateHeading(chords: Chord[], heading: Series): HeadingCalibration | null {
+  let best: { r2: number; slope: number; offsetMs: number; pairs: number } | null = null;
+  for (let offsetMs = HEADING_OFFSET_MIN_MS; offsetMs <= HEADING_OFFSET_MAX_MS; offsetMs += CALIBRATION_STEP_MS) {
     const xs: number[] = [];
     const ys: number[] = [];
     for (let i = 1; i < chords.length; i++) {
@@ -231,28 +294,37 @@ function calibrate(trusted: Fix[], yaw: Series): ImuTimelineCalibration | null {
       if (b.midMs - a.midMs > CHORD_MAX_DT_MS) {
         continue;
       }
-      const yawA = interpolate(yaw, a.midMs + offsetMs, MAX_YAW_SAMPLE_GAP_MS);
-      const yawB = interpolate(yaw, b.midMs + offsetMs, MAX_YAW_SAMPLE_GAP_MS);
-      if (yawA === null || yawB === null) {
+      const headingA = interpolate(heading, a.midMs + offsetMs, MAX_IMU_SAMPLE_GAP_MS);
+      const headingB = interpolate(heading, b.midMs + offsetMs, MAX_IMU_SAMPLE_GAP_MS);
+      if (headingA === null || headingB === null) {
         continue;
       }
-      xs.push(yawB - yawA);
+      xs.push(headingB - headingA);
       ys.push(wrapDegrees(b.directionDeg - a.directionDeg));
     }
     if (xs.length < MIN_CHORD_PAIRS) {
       continue;
     }
     const fit = linearFit(xs, ys);
-    if (bestYaw === null || fit.r2 > bestYaw.r2) {
-      bestYaw = { ...fit, offsetMs, pairs: xs.length };
+    if (best === null || fit.r2 > best.r2) {
+      best = { ...fit, offsetMs, pairs: xs.length };
     }
   }
-  if (bestYaw === null || bestYaw.r2 < MIN_R2) {
+  if (best === null || best.r2 < MIN_R2) {
     return null;
   }
+  return { sign: best.slope < 0 ? -1 : 1, offsetMs: best.offsetMs, chordPairs: best.pairs, r2: best.r2 };
+}
 
+// Reported speed interpolated between trusted fixes only; null across a gap.
+function trustedSpeedSeries(trusted: Fix[]): Series {
+  const withSpeed = trusted.filter((fix) => fix.speedMps !== null);
+  return { timesMs: withSpeed.map((fix) => fix.timeMs), values: withSpeed.map((fix) => fix.speedMps!) };
+}
+
+function calibrateSpeedLag(chords: Chord[], trusted: Fix[]): number | null {
   const reported = trustedSpeedSeries(trusted);
-  let bestLag: { rms: number; lagMs: number } | null = null;
+  let best: { rms: number; lagMs: number } | null = null;
   for (let lagMs = SPEED_LAG_MIN_MS; lagMs <= SPEED_LAG_MAX_MS; lagMs += CALIBRATION_STEP_MS) {
     let sum = 0;
     let count = 0;
@@ -268,29 +340,19 @@ function calibrate(trusted: Fix[], yaw: Series): ImuTimelineCalibration | null {
       continue;
     }
     const rms = Math.sqrt(sum / count);
-    if (bestLag === null || rms < bestLag.rms) {
-      bestLag = { rms, lagMs };
+    if (best === null || rms < best.rms) {
+      best = { rms, lagMs };
     }
   }
-  if (bestLag === null) {
-    return null;
-  }
-
-  return {
-    yawSign: bestYaw.slope < 0 ? -1 : 1,
-    yawOffsetMs: bestYaw.offsetMs,
-    speedLagMs: bestLag.lagMs,
-    chordPairs: bestYaw.pairs,
-    r2: bestYaw.r2,
-  };
+  return best?.lagMs ?? null;
 }
 
-function buildContext(fixes: BridgeFix[], yawSamples: YawSample[], outline: GeoPoint[]): Context | null {
+function buildContext(fixes: BridgeFix[], samples: ImuSample[], outline: TrackOutline | null): Context | null {
   const maxAccuracyM = DEFAULT_DISPLAY_LINE_CONFIG.maxAccuracyM;
   const trustedInput = fixes.filter(
     (fix) => fix.accuracyM === null || fix.accuracyM <= maxAccuracyM
   );
-  if (trustedInput.length < 2) {
+  if (trustedInput.length < 2 || samples.length === 0) {
     return null;
   }
 
@@ -312,9 +374,14 @@ function buildContext(fixes: BridgeFix[], yawSamples: YawSample[], outline: GeoP
 
   const trusted = trustedInput.map(project).sort(byTime);
   const withSpeed = fixes.map(project).filter((fix) => fix.speedMps !== null).sort(byTime);
-  const yaw = unwrapYaw(yawSamples);
-  const calibration = calibrate(trusted, yaw);
-  if (calibration === null) {
+  const chords = buildChords(trusted);
+  const heading = { fusedYaw: fusedYawSeries(samples), gyro: gyroSeries(samples) };
+  const calibration: ImuTimelineCalibration = {
+    speedLagMs: calibrateSpeedLag(chords, trusted) ?? NaN,
+    fusedYaw: calibrateHeading(chords, heading.fusedYaw),
+    gyro: calibrateHeading(chords, heading.gyro),
+  };
+  if (!Number.isFinite(calibration.speedLagMs) || (calibration.fusedYaw === null && calibration.gyro === null)) {
     return null;
   }
 
@@ -322,24 +389,32 @@ function buildContext(fixes: BridgeFix[], yawSamples: YawSample[], outline: GeoP
     lngScaleM,
     trusted,
     trustedIndexByTime: new Map(trusted.map((fix, index) => [fix.timeMs, index])),
-    yaw,
+    heading,
     speed: { timesMs: withSpeed.map((fix) => fix.timeMs), values: withSpeed.map((fix) => fix.speedMps!) },
-    outline: outline.map((point) => ({ x: point.longitude * lngScaleM, y: point.latitude * METERS_PER_DEG_LAT })),
+    outline: (outline?.path ?? []).map((point) => ({
+      x: point.longitude * lngScaleM,
+      y: point.latitude * METERS_PER_DEG_LAT,
+    })),
+    halfWidthM: (outline?.widthMeters ?? DEFAULT_TRACK_WIDTH_METERS) / 2,
     calibration,
   };
 }
 
-// Heading change between two fix-clock instants, from the calibrated yaw.
-function yawDeltaDeg(context: Context, tMs: number, referenceMs: number): number | null {
-  const { yawOffsetMs, yawSign } = context.calibration;
-  const at = interpolate(context.yaw, tMs + yawOffsetMs, MAX_YAW_SAMPLE_GAP_MS);
-  const reference = interpolate(context.yaw, referenceMs + yawOffsetMs, MAX_YAW_SAMPLE_GAP_MS);
-  return at === null || reference === null ? null : yawSign * (at - reference);
+// Heading change between two fix-clock instants from one source.
+function headingDeltaDeg(context: Context, source: HeadingSource, tMs: number, referenceMs: number): number | null {
+  const calibration = context.calibration[source];
+  if (calibration === null) {
+    return null;
+  }
+  const series = context.heading[source];
+  const at = interpolate(series, tMs + calibration.offsetMs, MAX_IMU_SAMPLE_GAP_MS);
+  const reference = interpolate(series, referenceMs + calibration.offsetMs, MAX_IMU_SAMPLE_GAP_MS);
+  return at === null || reference === null ? null : calibration.sign * (at - reference);
 }
 
 type DeadReckoning = { end: XY; path: { timeMs: number; x: number; y: number }[] };
 
-// Integrates heading and speed from the origin; null when yaw is missing
+// Integrates heading and speed from the origin; null when heading is missing
 // anywhere on the way.
 function deadReckon(
   context: Context,
@@ -367,10 +442,10 @@ function deadReckon(
   return { end: { x, y }, path };
 }
 
-// Heading at a trusted fix, chosen so that integrating yaw and speed across
-// the neighbouring fixes reproduces their displacement. Null when the
-// neighbours are not contiguous or yaw is missing there.
-function fitAnchorHeading(context: Context, index: number, side: -1 | 1): number | null {
+// Heading at a trusted fix, chosen so that integrating heading and speed
+// across the neighbouring fixes reproduces their displacement. Null when the
+// neighbours are not contiguous or the heading source is missing there.
+function fitAnchorHeading(context: Context, source: HeadingSource, index: number, side: -1 | 1): number | null {
   const { trusted } = context;
   const first = side < 0 ? Math.max(0, index - ANCHOR_FIX_COUNT) : index;
   const last = side < 0 ? index : Math.min(trusted.length - 1, index + ANCHOR_FIX_COUNT);
@@ -383,15 +458,19 @@ function fitAnchorHeading(context: Context, index: number, side: -1 | 1): number
     return null;
   }
   const anchorMs = trusted[index].timeMs;
-  const relative = deadReckon(context, from.timeMs, to.timeMs, (tMs) => yawDeltaDeg(context, tMs, anchorMs));
+  const relative = deadReckon(context, from.timeMs, to.timeMs, (tMs) =>
+    headingDeltaDeg(context, source, tMs, anchorMs)
+  );
   if (relative === null || (relative.end.x === 0 && relative.end.y === 0)) {
     return null;
   }
   return wrapDegrees(directionDeg(from, to) - directionDeg({ x: 0, y: 0 }, relative.end));
 }
 
-function distanceToOutlineM(point: XY, outline: XY[]) {
-  let best = Infinity;
+type NearestOutline = { distanceM: number; x: number; y: number };
+
+function nearestOutlinePoint(point: XY, outline: XY[]): NearestOutline {
+  let best: NearestOutline = { distanceM: Infinity, x: point.x, y: point.y };
   for (let i = 1; i < outline.length; i++) {
     const a = outline[i - 1];
     const b = outline[i];
@@ -399,10 +478,36 @@ function distanceToOutlineM(point: XY, outline: XY[]) {
     const dy = b.y - a.y;
     const lengthSq = dx * dx + dy * dy;
     const u = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSq));
-    const d = Math.hypot(point.x - (a.x + u * dx), point.y - (a.y + u * dy));
-    if (d < best) best = d;
+    const x = a.x + u * dx;
+    const y = a.y + u * dy;
+    const d = Math.hypot(point.x - x, point.y - y);
+    if (d < best.distanceM) {
+      best = { distanceM: d, x, y };
+    }
   }
   return best;
+}
+
+type Candidate = { source: HeadingSource; reckoned: DeadReckoning; driftDeg: number };
+
+// One source's integration across the hole, with the heading drift that
+// closes it onto the far anchor spread linearly.
+function reckonHole(context: Context, source: HeadingSource, indexA: number, indexB: number): Candidate | null {
+  const A = context.trusted[indexA];
+  const B = context.trusted[indexB];
+  const spanMs = B.timeMs - A.timeMs;
+  const headingA = fitAnchorHeading(context, source, indexA, -1);
+  const headingB = fitAnchorHeading(context, source, indexB, 1);
+  const headingSpan = headingDeltaDeg(context, source, B.timeMs, A.timeMs);
+  if (headingA === null || headingB === null || headingSpan === null) {
+    return null;
+  }
+  const driftDeg = wrapDegrees(headingB - (headingA + headingSpan));
+  const reckoned = deadReckon(context, A.timeMs, B.timeMs, (tMs) => {
+    const delta = headingDeltaDeg(context, source, tMs, A.timeMs);
+    return delta === null ? null : headingA + delta + (driftDeg * (tMs - A.timeMs)) / spanMs;
+  });
+  return reckoned === null ? null : { source, reckoned, driftDeg };
 }
 
 function bridgeHole(context: Context, hole: DisplayHole): HoleBridge | null {
@@ -434,20 +539,16 @@ function bridgeHole(context: Context, hole: DisplayHole): HoleBridge | null {
     return null;
   }
 
-  const headingA = fitAnchorHeading(context, indexA, -1);
-  const headingB = fitAnchorHeading(context, indexB, 1);
-  const yawSpan = yawDeltaDeg(context, B.timeMs, A.timeMs);
-  if (headingA === null || headingB === null || yawSpan === null) {
+  // The source whose heading closes better on the anchors wins the hole.
+  const candidates = (['fusedYaw', 'gyro'] as const)
+    .map((source) => reckonHole(context, source, indexA, indexB))
+    .filter((candidate): candidate is Candidate => candidate !== null)
+    .sort((a, b) => Math.abs(a.driftDeg) - Math.abs(b.driftDeg));
+  const chosen = candidates[0];
+  if (!chosen) {
     return null;
   }
-  const driftDeg = wrapDegrees(headingB - (headingA + yawSpan));
-  const reckoned = deadReckon(context, A.timeMs, B.timeMs, (tMs) => {
-    const delta = yawDeltaDeg(context, tMs, A.timeMs);
-    return delta === null ? null : headingA + delta + (driftDeg * (tMs - A.timeMs)) / spanMs;
-  });
-  if (reckoned === null) {
-    return null;
-  }
+  const { reckoned } = chosen;
 
   const residual = { x: B.x - A.x - reckoned.end.x, y: B.y - A.y - reckoned.end.y };
   const closureMissM = Math.hypot(residual.x, residual.y);
@@ -474,17 +575,28 @@ function bridgeHole(context: Context, hole: DisplayHole): HoleBridge | null {
     nextOutputMs = sample.timeMs + OUTPUT_STEP_MS;
   }
 
-  if (
-    context.outline.length >= 2 &&
-    closed.some((point) => distanceToOutlineM(point, context.outline) > MAX_OUTLINE_DISTANCE_M)
-  ) {
-    return null;
+  let bounded = 0;
+  if (context.outline.length >= 2) {
+    for (const point of closed) {
+      const nearest = nearestOutlinePoint(point, context.outline);
+      if (nearest.distanceM > MAX_OUTLINE_DISTANCE_M) {
+        return null;
+      }
+      if (nearest.distanceM > context.halfWidthM) {
+        const scale = context.halfWidthM / nearest.distanceM;
+        point.x = nearest.x + (point.x - nearest.x) * scale;
+        point.y = nearest.y + (point.y - nearest.y) * scale;
+        bounded++;
+      }
+    }
   }
 
   return {
     fromMs: hole.fromMs,
     toMs: hole.toMs,
+    headingSource: chosen.source,
     closureMissM,
+    boundedShare: bounded / closed.length,
     points: closed.map((point) => ({
       timeMs: point.timeMs,
       latitude: point.y / METERS_PER_DEG_LAT,
@@ -493,20 +605,20 @@ function bridgeHole(context: Context, hole: DisplayHole): HoleBridge | null {
   };
 }
 
-export function calibrateImuTimeline(fixes: BridgeFix[], yaw: YawSample[]): ImuTimelineCalibration | null {
-  return buildContext(fixes, yaw, [])?.calibration ?? null;
+export function calibrateImuTimeline(fixes: BridgeFix[], samples: ImuSample[]): ImuTimelineCalibration | null {
+  return buildContext(fixes, samples, null)?.calibration ?? null;
 }
 
 export function bridgeDisplayHoles(input: {
   holes: DisplayHole[];
   fixes: BridgeFix[];
-  yaw: YawSample[];
-  outline?: GeoPoint[] | null;
+  samples: ImuSample[];
+  outline?: TrackOutline | null;
 }): HoleBridge[] {
-  if (input.holes.length === 0 || input.yaw.length === 0) {
+  if (input.holes.length === 0 || input.samples.length === 0) {
     return [];
   }
-  const context = buildContext(input.fixes, input.yaw, input.outline ?? []);
+  const context = buildContext(input.fixes, input.samples, input.outline ?? null);
   if (context === null) {
     return [];
   }

@@ -4,28 +4,31 @@ import {
   calibrateImuTimeline,
   type BridgeFix,
   type HoleBridge,
-  type YawSample,
+  type ImuSample,
+  type TrackOutline,
 } from '@/utils/holeBridge';
 import * as fs from 'fs';
 
 // Masked-GPS validation of the display hole bridge on a real capture
 // (docs/line-continuity.md, "Hole bridging from the phone IMU"): windows of
-// good GPS are degraded to speed-only fixes, bridged from the real yaw and
-// speed streams, and compared against the hidden fixes — exact ground truth
-// to GPS noise. Then every real hole of the session is bridged and measured
-// against the track outline.
+// good GPS are degraded to speed-only fixes, bridged from the real IMU and
+// speed streams with the track outline available as in the app, and compared
+// against the hidden fixes — exact ground truth to GPS noise. Then every real
+// hole of the session is bridged.
 //
 //   npx tsx bench/hole-bridge.ts bench/data/<v3-export>.json
 
 // The export fields this bench reads; replay.ts is not imported because it
 // pulls React Native in through the runtime.
+type Vec3 = [number | null, number | null, number | null];
+
 type SessionExport = {
   session: { id: string; name: string | null };
-  track: { path?: unknown };
+  track: { path?: unknown; pathWidthMeters?: number | null };
   laps: { startedAt: string }[];
   gpsPoints: BridgeFix[];
   rejectedGpsPoints?: BridgeFix[];
-  imuSamples?: { recordedAt: number; rotation: [number | null, number | null, number | null] }[];
+  imuSamples?: { recordedAt: number; rotation: Vec3; rotationRate: Vec3; accel: Vec3; accelInclGravity: Vec3 }[];
 };
 
 function loadSessionExport(path: string): SessionExport {
@@ -60,21 +63,33 @@ function toFixes(data: SessionExport): Fix[] {
   return [...accepted, ...rejected].sort((a, b) => a.timeMs - b.timeMs);
 }
 
-function toYaw(data: SessionExport): YawSample[] {
+function complete(v: Vec3): v is [number, number, number] {
+  return v.every((c) => c !== null);
+}
+
+function toSamples(data: SessionExport): ImuSample[] {
   return (data.imuSamples ?? [])
-    .filter((s) => s.rotation[0] !== null)
-    .map((s) => ({ recordedAt: s.recordedAt, yawRad: s.rotation[0]! }))
+    .filter((s) => s.rotation[0] !== null && complete(s.rotationRate) && complete(s.accel) && complete(s.accelInclGravity))
+    .map((s) => ({
+      recordedAt: s.recordedAt,
+      yawRad: s.rotation[0]!,
+      rotationRate: s.rotationRate as [number, number, number],
+      gravity: [0, 1, 2].map((k) => s.accelInclGravity[k]! - s.accel[k]!) as [number, number, number],
+    }))
     .sort((a, b) => a.recordedAt - b.recordedAt);
 }
 
-function toOutline(data: SessionExport): { latitude: number; longitude: number }[] {
+function toOutline(data: SessionExport): TrackOutline | null {
   const path = data.track.path;
-  if (!Array.isArray(path)) return [];
-  return path.map((p: unknown) =>
-    Array.isArray(p)
-      ? { latitude: Number(p[0]), longitude: Number(p[1]) }
-      : (p as { latitude: number; longitude: number })
-  );
+  if (!Array.isArray(path) || path.length < 2) return null;
+  return {
+    path: path.map((p: unknown) =>
+      Array.isArray(p)
+        ? { latitude: Number(p[0]), longitude: Number(p[1]) }
+        : (p as { latitude: number; longitude: number })
+    ),
+    widthMeters: data.track.pathWidthMeters ?? null,
+  };
 }
 
 function isTrusted(fix: BridgeFix) {
@@ -94,11 +109,11 @@ function distanceM(a: { latitude: number; longitude: number }, b: { latitude: nu
   return Math.hypot((b.longitude - a.longitude) * lngScale, (b.latitude - a.latitude) * M_LAT);
 }
 
-function distanceToOutlineM(point: { latitude: number; longitude: number }, outline: { latitude: number; longitude: number }[], lngScale: number) {
+function distanceToOutlineM(point: { latitude: number; longitude: number }, outline: TrackOutline, lngScale: number) {
   let best = Infinity;
-  for (let i = 1; i < outline.length; i++) {
-    const ax = outline[i - 1].longitude * lngScale, ay = outline[i - 1].latitude * M_LAT;
-    const bx = outline[i].longitude * lngScale, by = outline[i].latitude * M_LAT;
+  for (let i = 1; i < outline.path.length; i++) {
+    const ax = outline.path[i - 1].longitude * lngScale, ay = outline.path[i - 1].latitude * M_LAT;
+    const bx = outline.path[i].longitude * lngScale, by = outline.path[i].latitude * M_LAT;
     const px = point.longitude * lngScale, py = point.latitude * M_LAT;
     const dx = bx - ax, dy = by - ay;
     const lengthSq = dx * dx + dy * dy;
@@ -108,9 +123,9 @@ function distanceToOutlineM(point: { latitude: number; longitude: number }, outl
   return best;
 }
 
-type WindowResult = { meanErrorM: number; maxErrorM: number; chordMeanM: number; closureMissM: number };
+type WindowResult = { meanErrorM: number; maxErrorM: number; chordMeanM: number; closureMissM: number; source: string; boundedShare: number };
 
-function runWindow(fixes: Fix[], trusted: Fix[], yaw: YawSample[], startMs: number, durationS: number, lngScale: number): WindowResult | null {
+function runWindow(fixes: Fix[], trusted: Fix[], samples: ImuSample[], outline: TrackOutline | null, startMs: number, durationS: number, lngScale: number): WindowResult | null {
   const endMs = startMs + durationS * 1000;
   const hiddenIndices: number[] = [];
   for (let i = 0; i < trusted.length; i++) {
@@ -133,7 +148,7 @@ function runWindow(fixes: Fix[], trusted: Fix[], yaw: YawSample[], startMs: numb
   const hole: DisplayHole | undefined = findDisplayHoles(masked).find((h) => h.fromMs === anchorA.timeMs);
   if (!hole || hole.toMs !== anchorB.timeMs) return null;
 
-  const [bridge] = bridgeDisplayHoles({ holes: [hole], fixes: masked, yaw });
+  const [bridge] = bridgeDisplayHoles({ holes: [hole], fixes: masked, samples, outline });
   if (!bridge) return null;
 
   const errors: number[] = [];
@@ -155,6 +170,8 @@ function runWindow(fixes: Fix[], trusted: Fix[], yaw: YawSample[], startMs: numb
     maxErrorM: Math.max(...errors),
     chordMeanM: chordErrors.reduce((a, b) => a + b, 0) / chordErrors.length,
     closureMissM: bridge.closureMissM,
+    source: bridge.headingSource,
+    boundedShare: bridge.boundedShare,
   };
 }
 
@@ -166,42 +183,43 @@ function main() {
   }
   const data = loadSessionExport(path);
   const fixes = toFixes(data);
-  const yaw = toYaw(data);
+  const samples = toSamples(data);
   const outline = toOutline(data);
   const trusted = fixes.filter(isTrusted);
-  if (trusted.length < 2 || yaw.length === 0) {
+  if (trusted.length < 2 || samples.length === 0) {
     console.error('export needs trusted fixes and imuSamples (v2+ capture)');
     process.exit(1);
   }
   const lngScale = M_LAT * Math.cos((trusted[0].latitude * Math.PI) / 180);
 
   console.log(`# Hole bridge validation — ${data.session.name ?? data.session.id}\n`);
-  const calibration = calibrateImuTimeline(fixes, yaw);
+  const calibration = calibrateImuTimeline(fixes, samples);
   if (!calibration) {
     console.log('calibration: FAILED (no bridges would be drawn for this session)');
     process.exit(0);
   }
-  console.log(
-    `calibration: yaw sign ${calibration.yawSign}, yaw offset ${calibration.yawOffsetMs} ms, speed lag ${calibration.speedLagMs} ms, ${calibration.chordPairs} chord pairs, r² ${calibration.r2.toFixed(3)}\n`
-  );
+  const describe = (name: string, c: { sign: number; offsetMs: number; chordPairs: number; r2: number } | null) =>
+    c ? `${name}: sign ${c.sign}, offset ${c.offsetMs} ms, ${c.chordPairs} chord pairs, r² ${c.r2.toFixed(3)}` : `${name}: unusable`;
+  console.log(`calibration: speed lag ${calibration.speedLagMs} ms | ${describe('fused yaw', calibration.fusedYaw)} | ${describe('gyro', calibration.gyro)}`);
+  console.log(`track ribbon half width: ${outline ? ((outline.widthMeters ?? 12) / 2).toFixed(1) : '-'} m\n`);
 
-  console.log('| hole | windows | bridge mean err | 9 of 10 windows under | worst | chord mean err | closure miss mean |');
-  console.log('| --- | --- | --- | --- | --- | --- | --- |');
+  console.log('| hole | windows | bridge mean err | 9 of 10 windows under | worst | chord mean err | closure miss mean | gyro picked | points bounded |');
+  console.log('| --- | --- | --- | --- | --- | --- | --- | --- | --- |');
   const firstLapMs = data.laps.length > 0 ? Date.parse(data.laps[0].startedAt) : trusted[0].timeMs;
   for (const durationS of MASK_DURATIONS_S) {
     const results: WindowResult[] = [];
     for (let startMs = firstLapMs; startMs < trusted[trusted.length - 1].timeMs - durationS * 1000; startMs += WINDOW_STRIDE_MS) {
-      const result = runWindow(fixes, trusted, yaw, startMs, durationS, lngScale);
+      const result = runWindow(fixes, trusted, samples, outline, startMs, durationS, lngScale);
       if (result) results.push(result);
     }
     if (results.length === 0) {
-      console.log(`| ${durationS} s | 0 | - | - | - | - | - |`);
+      console.log(`| ${durationS} s | 0 | - | - | - | - | - | - | - |`);
       continue;
     }
     const means = results.map((r) => r.meanErrorM).sort((a, b) => a - b);
     const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
     console.log(
-      `| ${durationS} s | ${results.length} | ${mean(means).toFixed(1)} m | ${means[Math.floor(0.9 * means.length)].toFixed(1)} m | ${Math.max(...results.map((r) => r.maxErrorM)).toFixed(1)} m | ${mean(results.map((r) => r.chordMeanM)).toFixed(1)} m | ${mean(results.map((r) => r.closureMissM)).toFixed(1)} m |`
+      `| ${durationS} s | ${results.length} | ${mean(means).toFixed(1)} m | ${means[Math.floor(0.9 * means.length)].toFixed(1)} m | ${Math.max(...results.map((r) => r.maxErrorM)).toFixed(1)} m | ${mean(results.map((r) => r.chordMeanM)).toFixed(1)} m | ${mean(results.map((r) => r.closureMissM)).toFixed(1)} m | ${results.filter((r) => r.source === 'gyro').length} | ${(100 * mean(results.map((r) => r.boundedShare))).toFixed(0)} % |`
     );
   }
 
@@ -210,18 +228,18 @@ function main() {
     {},
     data.rejectedGpsPoints ?? []
   );
-  const bridges = bridgeDisplayHoles({ holes, fixes, yaw, outline });
+  const bridges = bridgeDisplayHoles({ holes, fixes, samples, outline });
   console.log(`\nreal holes: ${holes.length} | bridged: ${bridges.length}`);
-  console.log('| hole | length | bridged | closure miss | max outline distance |');
-  console.log('| --- | --- | --- | --- | --- |');
+  console.log('| hole | length | bridged | source | closure miss | points bounded | max outline distance |');
+  console.log('| --- | --- | --- | --- | --- | --- | --- |');
   holes.forEach((hole, index) => {
     const bridge = bridges.find((b) => b.fromMs === hole.fromMs);
     const outlineMax =
-      bridge && outline.length >= 2
+      bridge && outline
         ? Math.max(...bridge.points.map((p) => distanceToOutlineM(p, outline, lngScale))).toFixed(1) + ' m'
         : '-';
     console.log(
-      `| ${index + 1} | ${((hole.toMs - hole.fromMs) / 1000).toFixed(0)} s | ${bridge ? 'yes' : 'no'} | ${bridge ? bridge.closureMissM.toFixed(1) + ' m' : '-'} | ${outlineMax} |`
+      `| ${index + 1} | ${((hole.toMs - hole.fromMs) / 1000).toFixed(0)} s | ${bridge ? 'yes' : 'no'} | ${bridge?.headingSource ?? '-'} | ${bridge ? bridge.closureMissM.toFixed(1) + ' m' : '-'} | ${bridge ? (100 * bridge.boundedShare).toFixed(0) + ' %' : '-'} | ${outlineMax} |`
     );
   });
 }
