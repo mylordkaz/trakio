@@ -7,9 +7,10 @@ import { DEFAULT_TRACK_WIDTH_METERS } from '@/utils/trackRibbon';
 // yaw, measured two ways (the OS-fused attitude yaw and the raw gyro), and
 // the Doppler speed on the degraded and quarantined fixes inside the hole.
 // Heading is integrated from the yaw, distance from the speed, and the path
-// is closed onto the trusted fixes on both sides. A hole stays open when it
-// has no speed inside or any guard fails. Timing, storage and the export
-// never see a bridge.
+// is closed onto the trusted fixes on both sides. Quarantined fixes
+// contribute speed only; their positions are never trusted here, whatever
+// accuracy they report. A hole stays open when it has no speed inside or any
+// guard fails. Timing, storage and the export never see a bridge.
 //
 // The fused yaw is magnetometer-referenced and is pulled by steel structures
 // (the very places that cause holes); the raw gyro has the right scale but
@@ -21,7 +22,11 @@ import { DEFAULT_TRACK_WIDTH_METERS } from '@/utils/trackRibbon';
 // Clock parameters (yaw sign and offset per source, speed lag) are measured
 // on the session's own trusted fixes; nothing is assumed about the platform.
 // Validated on real data with bench/hole-bridge.ts: hidden 31 s windows of
-// good GPS reconstruct within 3.7 m mean against the hidden fixes.
+// good GPS reconstruct within 3.9 m mean against the hidden fixes.
+//
+// Holes are found per lap run, with the stored crossing clips in place, so a
+// bridge never spans a lap boundary and never overlaps a line the clips
+// already make continuous; the caller keeps each hole's lap.
 
 export type BridgeFix = {
   recordedAt: string;
@@ -71,11 +76,6 @@ export type HoleBridge = {
   // Share of points moved onto the ribbon edge.
   boundedShare: number;
   points: { timeMs: number; latitude: number; longitude: number }[];
-};
-
-export type BridgeLapGroup = {
-  lapId: string | null;
-  points: GeoPoint[];
 };
 
 const METERS_PER_DEG_LAT = 111320;
@@ -347,7 +347,12 @@ function calibrateSpeedLag(chords: Chord[], trusted: Fix[]): number | null {
   return best?.lagMs ?? null;
 }
 
-function buildContext(fixes: BridgeFix[], samples: ImuSample[], outline: TrackOutline | null): Context | null {
+function buildContext(
+  fixes: BridgeFix[],
+  quarantined: BridgeFix[],
+  samples: ImuSample[],
+  outline: TrackOutline | null
+): Context | null {
   const maxAccuracyM = DEFAULT_DISPLAY_LINE_CONFIG.maxAccuracyM;
   const trustedInput = fixes.filter(
     (fix) => fix.accuracyM === null || fix.accuracyM <= maxAccuracyM
@@ -373,7 +378,10 @@ function buildContext(fixes: BridgeFix[], samples: ImuSample[], outline: TrackOu
   const byTime = (a: Fix, b: Fix) => a.timeMs - b.timeMs;
 
   const trusted = trustedInput.map(project).sort(byTime);
-  const withSpeed = fixes.map(project).filter((fix) => fix.speedMps !== null).sort(byTime);
+  const withSpeed = [...fixes, ...quarantined]
+    .map(project)
+    .filter((fix) => fix.speedMps !== null)
+    .sort(byTime);
   const chords = buildChords(trusted);
   const heading = { fusedYaw: fusedYawSeries(samples), gyro: gyroSeries(samples) };
   const calibration: ImuTimelineCalibration = {
@@ -575,14 +583,15 @@ function bridgeHole(context: Context, hole: DisplayHole): HoleBridge | null {
     nextOutputMs = sample.timeMs + OUTPUT_STEP_MS;
   }
 
+  // The two ends are the measured anchors and stay where they were measured.
   let bounded = 0;
   if (context.outline.length >= 2) {
-    for (const point of closed) {
+    for (const [index, point] of closed.entries()) {
       const nearest = nearestOutlinePoint(point, context.outline);
       if (nearest.distanceM > MAX_OUTLINE_DISTANCE_M) {
         return null;
       }
-      if (nearest.distanceM > context.halfWidthM) {
+      if (index > 0 && index < closed.length - 1 && nearest.distanceM > context.halfWidthM) {
         const scale = context.halfWidthM / nearest.distanceM;
         point.x = nearest.x + (point.x - nearest.x) * scale;
         point.y = nearest.y + (point.y - nearest.y) * scale;
@@ -606,58 +615,27 @@ function bridgeHole(context: Context, hole: DisplayHole): HoleBridge | null {
 }
 
 export function calibrateImuTimeline(fixes: BridgeFix[], samples: ImuSample[]): ImuTimelineCalibration | null {
-  return buildContext(fixes, samples, null)?.calibration ?? null;
+  return buildContext(fixes, [], samples, null)?.calibration ?? null;
 }
 
+// `fixes` are the accepted points; `quarantined` fixes add speed only. Holes
+// whose anchors are not accepted fixes (a lap-boundary clip, for instance)
+// stay open.
 export function bridgeDisplayHoles(input: {
   holes: DisplayHole[];
   fixes: BridgeFix[];
+  quarantined?: BridgeFix[];
   samples: ImuSample[];
   outline?: TrackOutline | null;
 }): HoleBridge[] {
   if (input.holes.length === 0 || input.samples.length === 0) {
     return [];
   }
-  const context = buildContext(input.fixes, input.samples, input.outline ?? null);
+  const context = buildContext(input.fixes, input.quarantined ?? [], input.samples, input.outline ?? null);
   if (context === null) {
     return [];
   }
   return input.holes
     .map((hole) => bridgeHole(context, hole))
     .filter((bridge): bridge is HoleBridge => bridge !== null);
-}
-
-// Bridges rendered per lap: a point belongs to the lap whose stored interval
-// contains its time. Consecutive laps share the boundary point so the line
-// stays continuous across it.
-export function splitBridgesByLap(
-  bridges: HoleBridge[],
-  laps: { id: string; startedAt: string; endedAt: string | null }[]
-): BridgeLapGroup[] {
-  const intervals = laps
-    .map((lap) => ({
-      id: lap.id,
-      startMs: Date.parse(lap.startedAt),
-      endMs: lap.endedAt ? Date.parse(lap.endedAt) : Infinity,
-    }))
-    .sort((a, b) => a.startMs - b.startMs);
-  const lapIdAt = (tMs: number) =>
-    intervals.find((lap) => tMs >= lap.startMs && tMs < lap.endMs)?.id ?? null;
-
-  const groups: BridgeLapGroup[] = [];
-  for (const bridge of bridges) {
-    let current: BridgeLapGroup | null = null;
-    for (const point of bridge.points) {
-      const lapId = lapIdAt(point.timeMs);
-      const geo = { latitude: point.latitude, longitude: point.longitude };
-      if (current === null || current.lapId !== lapId) {
-        current?.points.push(geo);
-        current = { lapId, points: [geo] };
-        groups.push(current);
-      } else {
-        current.points.push(geo);
-      }
-    }
-  }
-  return groups.filter((group) => group.points.length >= 2);
 }

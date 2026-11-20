@@ -168,9 +168,17 @@ rate draws a tighter radius — the line cut 10–17 m inside the long right-
 hander on every lap, with both heading sources. The car was on the asphalt,
 so a point reconstructed beyond half the track width (the ribbon the circuit
 screen draws, 12 m when no width is stored) is moved onto the ribbon edge.
+The two ends of a bridge are the measured anchor fixes and are never moved.
 Those points show the nearest edge, not a measured position; the share is
 reported per bridge. Scaling the speed inside the hole to fit the corridor
 was tried and measured worse on open-sky windows.
+
+Holes are found on the per-lap runs the measured line is drawn from, with
+the stored crossing clips in place, so a bridge never spans a lap boundary
+and never overlaps a stretch the clips already make continuous; a hole that
+touches a clip stays open, as the measured line shows it. Quarantined fixes
+contribute speed only — their positions are never trusted here, whatever
+accuracy they report, because a rejected jump reports a confident accuracy.
 
 Evidence (`bench/hole-bridge.ts`, windows of real good GPS degraded to
 speed-only fixes and bridged from the real IMU stream with the outline
@@ -178,9 +186,9 @@ available as in the app; the hidden 4.7 m fixes are the truth):
 
 | hole | windows | bridge mean err | 9 of 10 windows under | worst | chord mean err | points bounded |
 | --- | --- | --- | --- | --- | --- | --- |
-| 10 s | 60 | 1.6 m | 2.8 m | 6.5 m | 41 m | 16 % |
-| 20 s | 53 | 2.8 m | 4.7 m | 11.8 m | 104 m | 20 % |
-| 31 s | 45 | 3.7 m | 5.1 m | 14.1 m | 165 m | 27 % |
+| 10 s | 55 | 1.6 m | 2.8 m | 6.5 m | 41 m | 15 % |
+| 20 s | 42 | 2.9 m | 5.0 m | 11.8 m | 101 m | 19 % |
+| 31 s | 31 | 3.9 m | 6.2 m | 14.1 m | 161 m | 22 % |
 
 The nine real tunnel holes (eight laps and the out-lap) all bridge and stay
 on the ribbon, with 0–30 % of their points moved onto its edge; the laps

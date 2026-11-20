@@ -2,7 +2,6 @@ import { findDisplayHoles } from '@/utils/displayLine';
 import {
   bridgeDisplayHoles,
   calibrateImuTimeline,
-  splitBridgesByLap,
   type BridgeFix,
   type HoleBridge,
   type ImuSample,
@@ -279,7 +278,7 @@ describe('bridgeDisplayHoles', () => {
     ).toEqual([]);
   });
 
-  it('moves points beyond the ribbon edge onto it and leaves points inside alone', () => {
+  it('moves interior points beyond the ribbon edge onto it, keeps the anchors, and leaves points inside alone', () => {
     const fixes = buildFixes(inHole);
     const holes = findDisplayHoles(fixes);
     const outline = shiftedOutline(8);
@@ -288,38 +287,42 @@ describe('bridgeDisplayHoles', () => {
     const [wide] = bridgeDisplayHoles({ holes, fixes, samples: buildSamples(), outline: { ...outline, widthMeters: 20 } });
 
     expect(narrow.boundedShare).toBeGreaterThan(0.9);
-    for (const point of narrow.points) {
+    const [first, last] = [narrow.points[0], narrow.points[narrow.points.length - 1]];
+    const [anchorA, anchorB] = [fixAt(59, 5), fixAt(81, 5)];
+    expect(Math.hypot((first.longitude - anchorA.longitude) * M_LNG, (first.latitude - anchorA.latitude) * M_LAT)).toBeLessThan(0.01);
+    expect(Math.hypot((last.longitude - anchorB.longitude) * M_LNG, (last.latitude - anchorB.latitude) * M_LAT)).toBeLessThan(0.01);
+    for (const point of narrow.points.slice(1, -1)) {
       expect(distanceToPathM(point, outline)).toBeLessThanOrEqual(6.2);
     }
     expect(wide.boundedShare).toBe(0);
   });
-});
 
-describe('splitBridgesByLap', () => {
-  it('splits a bridge at the stored lap boundary and shares the boundary point', () => {
+  it('uses quarantined fixes for speed only, whatever accuracy they report', () => {
     const fixes = buildFixes(inHole);
-    const [bridge] = bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, samples: buildSamples() });
-    const boundaryAt = fixAt(70, 5).recordedAt;
-
-    const groups = splitBridgesByLap(
-      [bridge],
-      [
-        { id: 'lap-1', startedAt: fixAt(0, 5).recordedAt, endedAt: boundaryAt },
-        { id: 'lap-2', startedAt: boundaryAt, endedAt: null },
-      ]
+    // Displaced fixes with a confident accuracy, as a rejected jump has, next
+    // to both anchors and every second inside the hole: the only speed the
+    // hole has, and positions that would wreck the anchors if trusted.
+    const quarantined = [55, 56, 57, 58, ...Array.from({ length: 21 }, (_, i) => 60 + i), 82, 83, 84, 85].map(
+      (tauS) => ({ ...fixAt(tauS, 5), latitude: fixAt(tauS, 5).latitude + 500 / M_LAT })
     );
 
-    expect(groups.map((group) => group.lapId)).toEqual(['lap-1', 'lap-2']);
-    expect(groups[0].points[groups[0].points.length - 1]).toEqual(groups[1].points[0]);
-    expect(groups[0].points.length + groups[1].points.length).toBe(bridge.points.length + 1);
+    const withSpeedOnly = fixes.filter((fix) => !inHole(fix.tauS));
+    const [bridge] = bridgeDisplayHoles({
+      holes: findDisplayHoles(withSpeedOnly),
+      fixes: withSpeedOnly,
+      quarantined,
+      samples: buildSamples(),
+    });
+
+    expect(bridge).toBeDefined();
+    const errors = fixes.filter((fix) => inHole(fix.tauS)).map((fix) => bridgeErrorM(bridge, fix));
+    expect(Math.max(...errors)).toBeLessThan(3);
   });
 
-  it('assigns points outside every lap to no lap', () => {
+  it('leaves a hole open when an anchor is not an accepted fix', () => {
     const fixes = buildFixes(inHole);
-    const [bridge] = bridgeDisplayHoles({ holes: findDisplayHoles(fixes), fixes, samples: buildSamples() });
+    const [hole] = findDisplayHoles(fixes);
 
-    const groups = splitBridgesByLap([bridge], [{ id: 'lap-1', startedAt: fixAt(100, 5).recordedAt, endedAt: null }]);
-
-    expect(groups).toEqual([{ lapId: null, points: bridge.points.map(({ latitude, longitude }) => ({ latitude, longitude })) }]);
+    expect(bridgeDisplayHoles({ holes: [{ ...hole, fromMs: hole.fromMs + 500 }], fixes, samples: buildSamples() })).toEqual([]);
   });
 });

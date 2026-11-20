@@ -51,7 +51,7 @@ import { useEntitlements } from '@/contexts/EntitlementContext';
 import { RAW_DATA_EXPORT_ENABLED } from '@/constants/featureFlags';
 import { formatLapTime, formatGapSeconds, formatDateTime, formatDuration, formatSpeed } from '@/utils/format';
 import { buildDisplayPolylines, findDisplayHoles, groupPointsIntoLapRuns } from '@/utils/displayLine';
-import { bridgeDisplayHoles, splitBridgesByLap, type HoleBridge } from '@/utils/holeBridge';
+import { bridgeDisplayHoles } from '@/utils/holeBridge';
 import { getBestLapRacingLine } from '@/utils/racingLine';
 import {
   getBestLap,
@@ -92,26 +92,37 @@ function getMapLatitudeDelta(lengthMeters: number | null) {
 
 const LINE_COLOR = '#f59e0b';
 
+type BridgeLine = { lapId: string | null; points: { latitude: number; longitude: number }[] };
+
 // Bridges are derived on every load and never stored; the IMU timeline is
-// read only when the line has holes.
+// read only when the line has holes. Holes are those of the per-lap runs the
+// measured line is drawn from, so a bridge never overlaps it.
 async function loadHoleBridges(
   db: SQLiteDatabase,
   sessionDetail: SessionDetail,
   quarantined: Awaited<ReturnType<typeof getRejectedGpsPointsForSession>>
-): Promise<HoleBridge[]> {
-  const holes = findDisplayHoles(sessionDetail.gpsPoints, {}, quarantined);
+): Promise<BridgeLine[]> {
+  const holes: { fromMs: number; toMs: number; lapId: string | null }[] = [];
+  for (const run of groupPointsIntoLapRuns(sessionDetail.gpsPoints, sessionDetail.laps, quarantined)) {
+    for (const hole of findDisplayHoles(run.points, {}, run.fillers)) {
+      holes.push({ ...hole, lapId: run.lapId });
+    }
+  }
   if (holes.length === 0) {
     return [];
   }
   try {
-    return bridgeDisplayHoles({
+    const lapIdByHoleStart = new Map(holes.map((hole) => [hole.fromMs, hole.lapId]));
+    const bridges = bridgeDisplayHoles({
       holes,
-      fixes: [...sessionDetail.gpsPoints, ...quarantined],
+      fixes: sessionDetail.gpsPoints,
+      quarantined,
       samples: await getImuHeadingSamplesForSession(db, sessionDetail.session.id),
       outline: sessionDetail.track.path
         ? { path: sessionDetail.track.path, widthMeters: sessionDetail.track.pathWidthMeters }
         : null,
     });
+    return bridges.map((bridge) => ({ lapId: lapIdByHoleStart.get(bridge.fromMs) ?? null, points: bridge.points }));
   } catch {
     return [];
   }
@@ -198,7 +209,7 @@ export default function SessionDetailScreen() {
   const [quarantinedPoints, setQuarantinedPoints] = useState<
     Awaited<ReturnType<typeof getRejectedGpsPointsForSession>>
   >([]);
-  const [holeBridges, setHoleBridges] = useState<{ sessionId: string; bridges: HoleBridge[] } | null>(
+  const [holeBridges, setHoleBridges] = useState<{ sessionId: string; bridges: BridgeLine[] } | null>(
     null
   );
   const share = useShareSession(sessionDetail);
@@ -489,12 +500,8 @@ export default function SessionDetailScreen() {
       ),
     }));
   }, [sessionDetail, quarantinedPoints]);
-  const bridgeLineGroups = useMemo(() => {
-    if (!sessionDetail || holeBridges?.sessionId !== sessionDetail.session.id) {
-      return [];
-    }
-    return splitBridgesByLap(holeBridges.bridges, sessionDetail.laps);
-  }, [sessionDetail, holeBridges]);
+  const bridgeLineGroups =
+    sessionDetail && holeBridges?.sessionId === sessionDetail.session.id ? holeBridges.bridges : [];
   const lapIdsWithPoints = useMemo(() => {
     const lapIds = new Set<string>();
     for (const group of lapLineGroups) {

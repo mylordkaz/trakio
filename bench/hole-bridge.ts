@@ -1,4 +1,4 @@
-import { findDisplayHoles, type DisplayHole } from '@/utils/displayLine';
+import { findDisplayHoles, groupPointsIntoLapRuns, type DisplayHole } from '@/utils/displayLine';
 import {
   bridgeDisplayHoles,
   calibrateImuTimeline,
@@ -22,11 +22,21 @@ import * as fs from 'fs';
 // pulls React Native in through the runtime.
 type Vec3 = [number | null, number | null, number | null];
 
+type ExportedLap = {
+  id: string;
+  startedAt: string;
+  startedLatitude?: number | null;
+  startedLongitude?: number | null;
+  endedAt?: string | null;
+  endedLatitude?: number | null;
+  endedLongitude?: number | null;
+};
+
 type SessionExport = {
   session: { id: string; name: string | null };
   track: { path?: unknown; pathWidthMeters?: number | null };
-  laps: { startedAt: string }[];
-  gpsPoints: BridgeFix[];
+  laps: ExportedLap[];
+  gpsPoints: (BridgeFix & { lapId: string | null })[];
   rejectedGpsPoints?: BridgeFix[];
   imuSamples?: { recordedAt: number; rotation: Vec3; rotationRate: Vec3; accel: Vec3; accelInclGravity: Vec3 }[];
 };
@@ -41,26 +51,25 @@ const TRUSTED_ACCURACY_M = 15;
 const MIN_MOVING_SPEED_MPS = 5;
 const M_LAT = 111320;
 
-type Fix = BridgeFix & { timeMs: number };
+type Fix = BridgeFix & { timeMs: number; lapId: string | null };
 
-function toFixes(data: SessionExport): Fix[] {
-  const accepted: Fix[] = data.gpsPoints.map((p) => ({
+function toFix(p: BridgeFix & { lapId?: string | null }): Fix {
+  return {
     recordedAt: p.recordedAt,
     latitude: p.latitude,
     longitude: p.longitude,
     speedMps: p.speedMps,
     accuracyM: p.accuracyM,
     timeMs: Date.parse(p.recordedAt),
-  }));
-  const rejected: Fix[] = (data.rejectedGpsPoints ?? []).map((p) => ({
-    recordedAt: p.recordedAt,
-    latitude: p.latitude,
-    longitude: p.longitude,
-    speedMps: p.speedMps,
-    accuracyM: p.accuracyM,
-    timeMs: Date.parse(p.recordedAt),
-  }));
-  return [...accepted, ...rejected].sort((a, b) => a.timeMs - b.timeMs);
+    lapId: p.lapId ?? null,
+  };
+}
+
+// Holes as the session screen finds them: per lap run, clips in place.
+function findRunHoles(accepted: Fix[], laps: ExportedLap[], quarantined: Fix[]): DisplayHole[] {
+  return groupPointsIntoLapRuns(accepted, laps, quarantined).flatMap((run) =>
+    findDisplayHoles(run.points, {}, run.fillers)
+  );
 }
 
 function complete(v: Vec3): v is [number, number, number] {
@@ -125,7 +134,7 @@ function distanceToOutlineM(point: { latitude: number; longitude: number }, outl
 
 type WindowResult = { meanErrorM: number; maxErrorM: number; chordMeanM: number; closureMissM: number; source: string; boundedShare: number };
 
-function runWindow(fixes: Fix[], trusted: Fix[], samples: ImuSample[], outline: TrackOutline | null, startMs: number, durationS: number, lngScale: number): WindowResult | null {
+function runWindow(data: SessionExport, accepted: Fix[], quarantined: Fix[], trusted: Fix[], samples: ImuSample[], outline: TrackOutline | null, startMs: number, durationS: number, lngScale: number): WindowResult | null {
   const endMs = startMs + durationS * 1000;
   const hiddenIndices: number[] = [];
   for (let i = 0; i < trusted.length; i++) {
@@ -144,11 +153,11 @@ function runWindow(fixes: Fix[], trusted: Fix[], samples: ImuSample[], outline: 
   if (anchorB.timeMs - anchorA.timeMs > (durationS + 3) * 1000) return null;
 
   const hidden = new Set(hiddenIndices.map((i) => trusted[i].timeMs));
-  const masked = fixes.map((fix) => (isTrusted(fix) && hidden.has(fix.timeMs) ? { ...fix, accuracyM: 50 } : fix));
-  const hole: DisplayHole | undefined = findDisplayHoles(masked).find((h) => h.fromMs === anchorA.timeMs);
+  const masked = accepted.map((fix) => (isTrusted(fix) && hidden.has(fix.timeMs) ? { ...fix, accuracyM: 50 } : fix));
+  const hole = findRunHoles(masked, data.laps, quarantined).find((h) => h.fromMs === anchorA.timeMs);
   if (!hole || hole.toMs !== anchorB.timeMs) return null;
 
-  const [bridge] = bridgeDisplayHoles({ holes: [hole], fixes: masked, samples, outline });
+  const [bridge] = bridgeDisplayHoles({ holes: [hole], fixes: masked, quarantined, samples, outline });
   if (!bridge) return null;
 
   const errors: number[] = [];
@@ -182,10 +191,11 @@ function main() {
     process.exit(1);
   }
   const data = loadSessionExport(path);
-  const fixes = toFixes(data);
+  const accepted = data.gpsPoints.map(toFix).sort((a, b) => a.timeMs - b.timeMs);
+  const quarantined = (data.rejectedGpsPoints ?? []).map(toFix).sort((a, b) => a.timeMs - b.timeMs);
   const samples = toSamples(data);
   const outline = toOutline(data);
-  const trusted = fixes.filter(isTrusted);
+  const trusted = accepted.filter(isTrusted);
   if (trusted.length < 2 || samples.length === 0) {
     console.error('export needs trusted fixes and imuSamples (v2+ capture)');
     process.exit(1);
@@ -193,7 +203,7 @@ function main() {
   const lngScale = M_LAT * Math.cos((trusted[0].latitude * Math.PI) / 180);
 
   console.log(`# Hole bridge validation — ${data.session.name ?? data.session.id}\n`);
-  const calibration = calibrateImuTimeline(fixes, samples);
+  const calibration = calibrateImuTimeline(accepted, samples);
   if (!calibration) {
     console.log('calibration: FAILED (no bridges would be drawn for this session)');
     process.exit(0);
@@ -209,7 +219,7 @@ function main() {
   for (const durationS of MASK_DURATIONS_S) {
     const results: WindowResult[] = [];
     for (let startMs = firstLapMs; startMs < trusted[trusted.length - 1].timeMs - durationS * 1000; startMs += WINDOW_STRIDE_MS) {
-      const result = runWindow(fixes, trusted, samples, outline, startMs, durationS, lngScale);
+      const result = runWindow(data, accepted, quarantined, trusted, samples, outline, startMs, durationS, lngScale);
       if (result) results.push(result);
     }
     if (results.length === 0) {
@@ -223,12 +233,8 @@ function main() {
     );
   }
 
-  const holes = findDisplayHoles(
-    data.gpsPoints,
-    {},
-    data.rejectedGpsPoints ?? []
-  );
-  const bridges = bridgeDisplayHoles({ holes, fixes, samples, outline });
+  const holes = findRunHoles(accepted, data.laps, quarantined);
+  const bridges = bridgeDisplayHoles({ holes, fixes: accepted, quarantined, samples, outline });
   console.log(`\nreal holes: ${holes.length} | bridged: ${bridges.length}`);
   console.log('| hole | length | bridged | source | closure miss | points bounded | max outline distance |');
   console.log('| --- | --- | --- | --- | --- | --- | --- |');
