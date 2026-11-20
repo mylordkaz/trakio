@@ -172,6 +172,14 @@ Tools added: `bench/reconstruct.ts` (masked reconstruction on any v2
 capture) — the RaceBox capture, when hardware arrives, gets judged by the
 same command.
 
+**2026-11 addendum (display only):** the verdict above concerns the
+*acceleration* stream. The fused yaw (`rotation.alpha`) and the raw gyro
+rate are not subject to the same filtering, and with the Doppler speed of
+the degraded fixes they bridge display holes of up to 45 s within a few
+metres — `docs/line-continuity.md`, "Hole bridging from the phone IMU",
+which also records that the fused yaw is magnetometer-referenced on iOS and
+is pulled by steel structures. Timing still never consumes IMU data.
+
 - `bench/imu-quality.ts` — stream-quality report for any capture (rate,
   jitter, gaps, field coverage, stationary-window accelerometer bias).
 - `bench/mask.ts` — masked-GPS naive baseline, locked on the April session

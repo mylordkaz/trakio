@@ -105,9 +105,11 @@ those laps are flagged.
   real data; corner lag slides crossings off finite gates and loses laps.
 - **Doppler re-timing across dropouts**: worsened real lap error
   (0.383 → 0.462 s mean); removed.
-- **Phone IMU fusion for bridging**: CoreMotion absorbs sustained
+- **Phone IMU fusion for timing**: CoreMotion absorbs sustained
   acceleration into its gravity estimate; 57–131 m bridge errors vs the
-  ≤12 m requirement. Capture stays (research dataset); fusion does not ship.
+  ≤12 m requirement. Capture stays; fusion does not feed detection. The
+  fused yaw plus Doppler speed does bridge *display* holes (Motegi tunnel,
+  2026-11, `docs/line-continuity.md`) — a different signal, display only.
 
 ## Remaining Work
 

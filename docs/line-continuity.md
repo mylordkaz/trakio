@@ -127,6 +127,87 @@ silently threw inside the rejection branch and masked Fix B in replays
 until the error-swallowing `catch` was removed. Bench errors now crash
 loudly.
 
+## Hole bridging from the phone IMU (2026-11, Motegi)
+
+Motegi's road course passes under the oval. On every lap the phone's fixes
+degrade from ~600 m before the Sector 1 line to ~230 m after it: accuracy
+climbs through 20–40 m (accepted, hidden by the 15 m display filter) to
+40–85 m (quarantined), then snaps back with a ~100 m jump. The trusted line
+has a 31 s / ~850 m hole there on every lap, with the sector line inside it.
+
+Measurements keep flowing through such a hole: the phone's yaw, two ways
+(the OS-fused attitude yaw `rotation_alpha`, and the raw gyro `rotation_rate`
+projected on the session's median gravity direction), and the Doppler speed
+on the degraded and quarantined fixes. `utils/holeBridge.ts` integrates
+heading from the yaw and distance from the speed, closes the path onto the
+trusted fixes on both sides, and the session map draws the result in the
+same amber and width as the measured line, with no legend entry. Timing, storage and the
+export never see it; it is recomputed on every open of the session.
+
+Clock parameters are measured on each session's own trusted fixes, from
+chords between fixes ~1 s apart: per heading source its sign and clock
+offset (best r² over a −1.5…+0.5 s sweep), and the lag between the reported
+speed and the position it describes (0.8 s on this iPhone). Anchor headings
+are fitted over the four fixes on either side, so a single noisy course never
+steers the bridge. The closure residual is spread linearly along the bridge;
+scaling or rotating the path instead was measured worse.
+
+Why two heading sources: expo-sensors requests the magnetic-north attitude
+frame on iOS, so the fused yaw is tied to the magnetometer. On good GPS it
+under-reports sustained turns by 5 % (up to 15 % in fast 5 s corners), and
+in every tunnel hole it over-rotated, by up to 14° — a steel structure does
+that to a compass, and structures are what cause holes. The raw gyro has the
+right scale (1.03) but picks up cradle vibration (4–6 °/s at idle on two
+axes), so it is noisier in open sky. Each hole keeps the source whose
+integrated heading closes better on the two anchors; on the Motegi session
+the gyro wins 7 of 9 tunnel holes and 17 of 45 open-sky windows.
+
+Why the ribbon bound: after the tunnel exit the Doppler speed reads low for a
+few seconds while the receiver re-acquires, and a low speed at a given yaw
+rate draws a tighter radius — the line cut 10–17 m inside the long right-
+hander on every lap, with both heading sources. The car was on the asphalt,
+so a point reconstructed beyond half the track width (the ribbon the circuit
+screen draws, 12 m when no width is stored) is moved onto the ribbon edge.
+The two ends of a bridge are the measured anchor fixes and are never moved.
+Those points show the nearest edge, not a measured position; the share is
+reported per bridge. Scaling the speed inside the hole to fit the corridor
+was tried and measured worse on open-sky windows.
+
+Holes are found on the per-lap runs the measured line is drawn from, with
+the stored crossing clips in place, so a bridge never spans a lap boundary
+and never overlaps a stretch the clips already make continuous; a hole that
+touches a clip stays open, as the measured line shows it. Quarantined fixes
+contribute speed only — their positions are never trusted here, whatever
+accuracy they report, because a rejected jump reports a confident accuracy.
+
+Evidence (`bench/hole-bridge.ts`, windows of real good GPS degraded to
+speed-only fixes and bridged from the real IMU stream with the outline
+available as in the app; the hidden 4.7 m fixes are the truth):
+
+| hole | windows | bridge mean err | 9 of 10 windows under | worst | chord mean err | points bounded |
+| --- | --- | --- | --- | --- | --- | --- |
+| 10 s | 55 | 1.6 m | 2.8 m | 6.5 m | 41 m | 15 % |
+| 20 s | 42 | 2.9 m | 5.0 m | 11.8 m | 101 m | 19 % |
+| 31 s | 31 | 3.9 m | 6.2 m | 14.1 m | 161 m | 22 % |
+
+The nine real tunnel holes (eight laps and the out-lap) all bridge and stay
+on the ribbon, with 0–30 % of their points moved onto its edge; the laps
+agree with each other through the slow corner and the long right-hander.
+
+Guards — any failure keeps the hole open: hole ≤ 45 s; a speed sample at
+most every 3 s inside it; the car moving (≥ 3 m/s) throughout; at least one
+heading source calibrated on ≥ 50 chord pairs with r² ≥ 0.9; closure miss
+≤ 10 % of the path; no point more than 25 m from the track outline when the
+track has one (checked before the bound). Holes without speed inside — true
+silence — reconstruct at 39 m mean over 31 s and are therefore never
+bridged.
+
+This does not reopen the Phase 2 phone-IMU verdict
+(`docs/kalman/phase-2-imu-fusion.md`): that verdict killed integrating
+CoreMotion's *user acceleration*, which the OS filters. Yaw and gyro rate
+are not filtered that way, and speed here comes from the GNSS Doppler, not
+the accelerometer.
+
 ## What remains
 
 True-silence holes (nothing delivered at all — e.g. the gantry) are not

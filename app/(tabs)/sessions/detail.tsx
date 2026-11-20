@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Pla
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useSQLiteContext, type SQLiteDatabase } from 'expo-sqlite';
 import MapView, { Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { useT } from '@/hooks/useT';
@@ -23,6 +23,7 @@ import {
   addSessionNote,
   deleteSession,
   getImuSamplesForSession,
+  getImuHeadingSamplesForSession,
   getRejectedGpsPointsForSession,
   deleteSessionNote,
   getSessionById,
@@ -49,7 +50,8 @@ import { getSessionOutcome, shouldOfferShareOnCompletion } from '@/utils/session
 import { useEntitlements } from '@/contexts/EntitlementContext';
 import { RAW_DATA_EXPORT_ENABLED } from '@/constants/featureFlags';
 import { formatLapTime, formatGapSeconds, formatDateTime, formatDuration, formatSpeed } from '@/utils/format';
-import { buildDisplayPolylines, groupPointsIntoLapRuns } from '@/utils/displayLine';
+import { buildDisplayPolylines, findDisplayHoles, groupPointsIntoLapRuns } from '@/utils/displayLine';
+import { bridgeDisplayHoles } from '@/utils/holeBridge';
 import { getBestLapRacingLine } from '@/utils/racingLine';
 import {
   getBestLap,
@@ -86,6 +88,44 @@ function getMapLatitudeDelta(lengthMeters: number | null) {
   }
 
   return Math.min(Math.max(lengthMeters / 450000, 0.0015), 0.0055);
+}
+
+const LINE_COLOR = '#f59e0b';
+
+type BridgeLine = { lapId: string | null; points: { latitude: number; longitude: number }[] };
+
+// Bridges are derived on every load and never stored; the IMU timeline is
+// read only when the line has holes. Holes are those of the per-lap runs the
+// measured line is drawn from, so a bridge never overlaps it.
+async function loadHoleBridges(
+  db: SQLiteDatabase,
+  sessionDetail: SessionDetail,
+  quarantined: Awaited<ReturnType<typeof getRejectedGpsPointsForSession>>
+): Promise<BridgeLine[]> {
+  const holes: { fromMs: number; toMs: number; lapId: string | null }[] = [];
+  for (const run of groupPointsIntoLapRuns(sessionDetail.gpsPoints, sessionDetail.laps, quarantined)) {
+    for (const hole of findDisplayHoles(run.points, {}, run.fillers)) {
+      holes.push({ ...hole, lapId: run.lapId });
+    }
+  }
+  if (holes.length === 0) {
+    return [];
+  }
+  try {
+    const lapIdByHoleStart = new Map(holes.map((hole) => [hole.fromMs, hole.lapId]));
+    const bridges = bridgeDisplayHoles({
+      holes,
+      fixes: sessionDetail.gpsPoints,
+      quarantined,
+      samples: await getImuHeadingSamplesForSession(db, sessionDetail.session.id),
+      outline: sessionDetail.track.path
+        ? { path: sessionDetail.track.path, widthMeters: sessionDetail.track.pathWidthMeters }
+        : null,
+    });
+    return bridges.map((bridge) => ({ lapId: lapIdByHoleStart.get(bridge.fromMs) ?? null, points: bridge.points }));
+  } catch {
+    return [];
+  }
 }
 
 function getMapRegion(sessionDetail: SessionDetail | null) {
@@ -169,6 +209,9 @@ export default function SessionDetailScreen() {
   const [quarantinedPoints, setQuarantinedPoints] = useState<
     Awaited<ReturnType<typeof getRejectedGpsPointsForSession>>
   >([]);
+  const [holeBridges, setHoleBridges] = useState<{ sessionId: string; bridges: BridgeLine[] } | null>(
+    null
+  );
   const share = useShareSession(sessionDetail);
   const { hasProAccess } = useEntitlements();
   const leaderboardShare = useLeaderboardShare(sessionDetail?.track.id);
@@ -222,8 +265,12 @@ export default function SessionDetailScreen() {
       }
 
       setSessionDetail(nextSessionDetail);
-      setQuarantinedPoints(
-        await getRejectedGpsPointsForSession(db, nextSessionDetail.session.id).catch(() => [])
+      const quarantined = await getRejectedGpsPointsForSession(db, nextSessionDetail.session.id).catch(
+        () => []
+      );
+      setQuarantinedPoints(quarantined);
+      void loadHoleBridges(db, nextSessionDetail, quarantined).then((bridges) =>
+        setHoleBridges({ sessionId: nextSessionDetail.session.id, bridges })
       );
       setCarText(nextSessionDetail.session.car ?? '');
       if (isArrivalFromRecordingRef.current) {
@@ -453,6 +500,8 @@ export default function SessionDetailScreen() {
       ),
     }));
   }, [sessionDetail, quarantinedPoints]);
+  const bridgeLineGroups =
+    sessionDetail && holeBridges?.sessionId === sessionDetail.session.id ? holeBridges.bridges : [];
   const lapIdsWithPoints = useMemo(() => {
     const lapIds = new Set<string>();
     for (const group of lapLineGroups) {
@@ -534,7 +583,7 @@ export default function SessionDetailScreen() {
                 >
                   {lapLineGroups.map((group) => {
                     const isVisible = activeLapId === null || group.lapId === activeLapId;
-                    const strokeColor = isVisible ? '#f59e0b' : 'transparent';
+                    const strokeColor = isVisible ? LINE_COLOR : 'transparent';
                     const strokeWidth = activeLapId !== null && isVisible ? 3.5 : 3;
 
                     return group.segments.map((segment, segmentIndex) => (
@@ -546,6 +595,20 @@ export default function SessionDetailScreen() {
                         strokeWidth={strokeWidth}
                       />
                     ));
+                  })}
+                  {bridgeLineGroups.map((group, index) => {
+                    const isVisible = activeLapId === null || group.lapId === activeLapId;
+                    const strokeColor = isVisible ? LINE_COLOR : 'transparent';
+
+                    return (
+                      <Polyline
+                        key={`bridge-${index}`}
+                        coordinates={group.points}
+                        strokeColor={strokeColor}
+                        strokeColors={Platform.OS === 'ios' ? [strokeColor] : undefined}
+                        strokeWidth={activeLapId !== null && isVisible ? 3.5 : 3}
+                      />
+                    );
                   })}
                   {runBoundaryLines.map((line) => (
                     <Polyline
@@ -634,7 +697,7 @@ export default function SessionDetailScreen() {
                 </Text>
               </View>
               <View className="flex-row items-center gap-1.5">
-                <View className="h-0.5 w-3 rounded-full" style={{ backgroundColor: '#f59e0b' }} />
+                <View className="h-0.5 w-3 rounded-full" style={{ backgroundColor: LINE_COLOR }} />
                 <Text className="text-xs text-zinc-500 dark:text-zinc-400">
                   {t('sessions.gpsLine')}
                 </Text>
