@@ -125,6 +125,14 @@ const JAPANESE_TRACK_METADATA: Record<string, JapaneseTrackMetadata> = {
     name: 'YZサーキット',
     layoutName: '東コース',
   },
+  'ts-takata-1500': {
+    name: 'TSタカタサーキット',
+    layoutName: '1500コース',
+  },
+  'ts-takata-1800': {
+    name: 'TSタカタサーキット',
+    layoutName: '1800コース',
+  },
 };
 
 const JAPANESE_COUNTRY_NAMES: Record<string, string> = {
@@ -149,6 +157,7 @@ const JAPANESE_LOCATION_NAMES: Record<string, string> = {
   Kumamoto: '熊本県',
   Niigata: '新潟県',
   Gifu: '岐阜県',
+  Hiroshima: '広島県',
 };
 
 const JAPANESE_LAYOUT_NAMES: Record<string, string> = {
